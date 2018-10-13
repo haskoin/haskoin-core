@@ -27,7 +27,6 @@ module Network.Haskoin.Block.Common
     , encodeCompact
     ) where
 
-import           Control.DeepSeq                    (NFData, rnf)
 import           Control.Monad                      (forM_, liftM2, mzero,
                                                      replicateM)
 import           Data.Aeson                         (FromJSON, ToJSON,
@@ -64,9 +63,6 @@ data Block =
           , blockTxns   :: ![Tx]
           } deriving (Eq, Show, Read)
 
-instance NFData Block where
-    rnf (Block h ts) = rnf h `seq` rnf ts
-
 instance Serialize Block where
     get = do
         header     <- get
@@ -81,7 +77,7 @@ instance Serialize Block where
 -- | Block header hash. To be serialized reversed for display purposes.
 newtype BlockHash = BlockHash
     { getBlockHash :: Hash256 }
-    deriving (Eq, Ord, NFData, Hashable, Serialize)
+    deriving (Eq, Ord, Hashable, Serialize)
 
 instance Show BlockHash where
     showsPrec _ = shows . blockHashToHex
@@ -140,11 +136,6 @@ data BlockHeader =
 headerHash :: BlockHeader -> BlockHash
 headerHash = BlockHash . doubleSHA256 . encode
 
-instance NFData BlockHeader where
-    rnf (BlockHeader v p m t b n) =
-        rnf v `seq` rnf p `seq` rnf m `seq`
-        rnf t `seq` rnf b `seq` rnf n
-
 instance Serialize BlockHeader where
     get = do
         v <- getWord32le
@@ -193,9 +184,6 @@ data GetBlocks =
               , getBlocksHashStop :: !BlockHash
               } deriving (Eq, Show)
 
-instance NFData GetBlocks where
-    rnf (GetBlocks v l h) = rnf v `seq` rnf l `seq` rnf h
-
 instance Serialize GetBlocks where
 
     get = GetBlocks <$> getWord32le
@@ -228,9 +216,6 @@ data GetHeaders =
                , getHeadersHashStop :: !BlockHash
                } deriving (Eq, Show)
 
-instance NFData GetHeaders where
-    rnf (GetHeaders v l h) = rnf v `seq` rnf l `seq` rnf h
-
 instance Serialize GetHeaders where
 
     get = GetHeaders <$> getWord32le
@@ -251,9 +236,6 @@ newtype Headers =
               headersList :: [BlockHeaderCount]
             }
     deriving (Eq, Show)
-
-instance NFData Headers where
-    rnf (Headers l) = rnf l
 
 instance Serialize Headers where
 

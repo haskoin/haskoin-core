@@ -41,7 +41,7 @@ spec = do
             forAll arbitraryTxHash $ \h -> fromString (cs $ txHashToHex h) == h
         it "building address tx" $
             property $
-            forAll (arbitraryAddress net) $
+            forAll arbitraryAddress $
             forAll (arbitrarySatoshi net) . testBuildAddrTx net
         it "guess transaction size" $
             property $ forAll (arbitraryAddrOnlyTxFull net) (testGuessSize net)
@@ -170,7 +170,7 @@ testBuildAddrTx net a (TestCoin v)
     | isScriptAddress a = Right (PayScriptHash (getAddrHash160 a)) == out
     | otherwise = undefined
   where
-    tx = buildAddrTx net [] [(addrToString a, v)]
+    tx = buildAddrTx net [] [(addrToString net a, v)]
     out =
         decodeOutputBS $
         scriptOutput $

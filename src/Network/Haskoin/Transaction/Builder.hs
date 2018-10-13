@@ -40,7 +40,6 @@ module Network.Haskoin.Transaction.Builder
     ) where
 
 import           Control.Arrow                      (first)
-import           Control.DeepSeq                    (NFData, rnf)
 import           Control.Monad                      (foldM, mzero, unless, when)
 import           Control.Monad.Identity             (runIdentity)
 import           Crypto.Secp256k1
@@ -275,10 +274,6 @@ data SigInput = SigInput
     , sigInputRedeem :: !(Maybe RedeemScript) -- ^ sedeem script
     } deriving (Eq, Show)
 
-instance NFData SigInput where
-    rnf (SigInput o v p h b) =
-        rnf o `seq` rnf v `seq` rnf p `seq` rnf h `seq` rnf b
-
 instance ToJSON SigInput where
     toJSON (SigInput so val op sh rdm) = object $
         [ "pkscript" .= so
@@ -311,7 +306,7 @@ signTx net otx sigis allKeys
   where
     ti = txIn otx
     go tx (sigi@(SigInput so _ _ _ rdmM), i) = do
-        keys <- sigKeys net so rdmM allKeys
+        keys <- sigKeys so rdmM allKeys
         foldM (\t k -> signInput net t i sigi k) tx keys
 
 -- | Sign a single input in a transaction deterministically (RFC-6979).
@@ -339,21 +334,20 @@ findSigInput si ti =
 -- | Find from the list of provided private keys which one is required to sign
 -- the 'ScriptOutput'.
 sigKeys ::
-       Network
-    -> ScriptOutput
+       ScriptOutput
     -> Maybe RedeemScript
     -> [SecKey]
     -> Either String [SecKeyI]
-sigKeys net so rdmM keys =
+sigKeys so rdmM keys =
     case (so, rdmM) of
         (PayPK p, Nothing) ->
             return . map fst . maybeToList $ find ((== p) . snd) zipKeys
         (PayPKHash h, Nothing) ->
             return . map fst . maybeToList $
-            find ((== h) . getAddrHash160 . pubKeyAddr net . snd) zipKeys
+            find ((== h) . getAddrHash160 . pubKeyAddr . snd) zipKeys
         (PayMulSig ps r, Nothing) ->
             return $ map fst $ take r $ filter ((`elem` ps) . snd) zipKeys
-        (PayScriptHash _, Just rdm) -> sigKeys net rdm Nothing keys
+        (PayScriptHash _, Just rdm) -> sigKeys rdm Nothing keys
         _ -> Left "sigKeys: Could not decode output script"
   where
     zipKeys =
@@ -494,7 +488,7 @@ verifyStdInput net tx i = go (scriptInput $ txIn tx !! i)
             Right (RegularInput (SpendPKHash (TxSignature sig sh) pub)) ->
                 case so of
                     PayPKHash h ->
-                        pubKeyAddr net pub == p2pkhAddr net h &&
+                        pubKeyAddr pub == p2pkhAddr h &&
                         verifyHashSig
                             (txSigHash net tx out val i sh)
                             sig
@@ -509,7 +503,7 @@ verifyStdInput net tx i = go (scriptInput $ txIn tx !! i)
             Right (ScriptHashInput si rdm) ->
                 case so of
                     PayScriptHash h ->
-                        payToScriptAddress net rdm == p2shAddr net h &&
+                        payToScriptAddress rdm == p2shAddr h &&
                         go (encodeInputBS $ RegularInput si) rdm val
                     _ -> False
             _ -> False

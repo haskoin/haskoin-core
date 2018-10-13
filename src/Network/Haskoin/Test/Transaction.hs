@@ -124,7 +124,7 @@ arbitraryAddrOnlyTxInFull net = do
 arbitraryAddrOnlyTxOut :: Network -> Gen TxOut
 arbitraryAddrOnlyTxOut net = do
     v <- getTestCoin <$> arbitrarySatoshi net
-    out <- oneof [ arbitraryPKHashOutput, arbitrarySHOutput net ]
+    out <- oneof [arbitraryPKHashOutput, arbitrarySHOutput]
     return $ TxOut v $ encodeOutputBS out
 
 -- | Arbitrary 'SigInput' with the corresponding private keys used
@@ -150,7 +150,7 @@ arbitraryPKHashSigInput net = arbitraryAnyInput net True
 arbitraryAnyInput :: Network -> Bool -> Gen (SigInput, SecKeyI)
 arbitraryAnyInput net pkh = do
     (k, p) <- arbitraryKeyPair
-    let out | pkh = PayPKHash $ getAddrHash160 $ pubKeyAddr net p
+    let out | pkh = PayPKHash $ getAddrHash160 $ pubKeyAddr p
             | otherwise = PayPK p
     (val, op, sh) <- arbitraryInputStuff net
     return (SigInput out val op sh Nothing, k)
@@ -183,7 +183,7 @@ arbitrarySHSigInput net = do
         , f <$> arbitraryPKHashSigInput net
         , arbitraryMSSigInput net
         ]
-    let out = PayScriptHash $ getAddrHash160 $ payToScriptAddress net rdm
+    let out = PayScriptHash $ getAddrHash160 $ payToScriptAddress rdm
     return (SigInput out val op sh $ Just rdm, ks)
   where
     f (si, k) = (si, [k])
@@ -245,7 +245,7 @@ arbitraryPartialTxs net = do
         let so = PayMulSig pubKeys m
         elements
             [ (so, val, Nothing, prvKeys, m, n)
-            , ( PayScriptHash $ getAddrHash160 $ payToScriptAddress net so
+            , ( PayScriptHash $ getAddrHash160 $ payToScriptAddress so
               , val
               , Just so
               , prvKeys

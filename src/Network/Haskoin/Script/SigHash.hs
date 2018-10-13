@@ -34,7 +34,6 @@ module Network.Haskoin.Script.SigHash
 , decodeTxSig
 ) where
 
-import           Control.DeepSeq                    (NFData, rnf)
 import           Control.Monad
 import           Crypto.Secp256k1
 import qualified Data.Aeson                         as J
@@ -93,7 +92,7 @@ instance Enum SigHashFlag where
 -- is signed. Otherwise, all of the inputs of a transaction are signed. The
 -- default value for 'SIGHASH_ANYONECANPAY' is unset (false).
 newtype SigHash = SigHash Word32
-    deriving (Eq, Ord, Enum, Bits, Num, Real, Integral, NFData, Show, Read)
+    deriving (Eq, Ord, Enum, Bits, Num, Real, Integral, Show, Read)
 
 instance J.FromJSON SigHash where
     parseJSON =
@@ -275,10 +274,6 @@ data TxSignature
                   }
     | TxSignatureEmpty
     deriving (Eq, Show)
-
-instance NFData TxSignature where
-    rnf (TxSignature s h) = s `seq` rnf h `seq` ()
-    rnf TxSignatureEmpty  = ()
 
 -- | Serialize a 'TxSignature'.
 encodeTxSig :: TxSignature -> ByteString

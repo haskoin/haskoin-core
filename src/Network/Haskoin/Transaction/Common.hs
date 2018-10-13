@@ -28,7 +28,6 @@ module Network.Haskoin.Transaction.Common
     ) where
 
 import           Control.Applicative            ((<|>))
-import           Control.DeepSeq                (NFData, rnf)
 import           Control.Monad                  (forM_, guard, liftM2, mzero,
                                                  replicateM, (<=<))
 import           Data.Aeson                     as A
@@ -49,7 +48,7 @@ import           Text.Read                      as R
 
 -- | Transaction id: hash of transaction excluding witness data.
 newtype TxHash = TxHash { getTxHash :: Hash256 }
-    deriving (Eq, Ord, NFData, Hashable, Serialize)
+    deriving (Eq, Ord, Hashable, Serialize)
 
 instance Show TxHash where
     showsPrec _ = shows . txHashToHex
@@ -127,9 +126,6 @@ instance IsString Tx where
         fromMaybe e . (eitherToMaybe . S.decode <=< decodeHex) . cs
       where
         e = error "Could not read transaction from hex string"
-
-instance NFData Tx where
-    rnf (Tx v i o w l) = rnf v `seq` rnf i `seq` rnf o `seq` rnf w `seq` rnf l
 
 instance Serialize Tx where
     get = parseWitnessTx <|> parseLegacyTx
@@ -231,9 +227,6 @@ data TxIn =
          , txInSequence :: !Word32
          } deriving (Eq, Show, Ord)
 
-instance NFData TxIn where
-    rnf (TxIn p i s) = rnf p `seq` rnf i `seq` rnf s
-
 instance Serialize TxIn where
     get =
         TxIn <$> S.get <*> (readBS =<< S.get) <*> getWord32le
@@ -255,9 +248,6 @@ data TxOut =
           , scriptOutput :: !ByteString
           } deriving (Eq, Show, Ord)
 
-instance NFData TxOut where
-    rnf (TxOut v o) = rnf v `seq` rnf o
-
 instance Serialize TxOut where
     get = do
         val <- getWord64le
@@ -276,9 +266,6 @@ data OutPoint = OutPoint
       -- | position of output in previous transaction
     , outPointIndex :: !Word32
     } deriving (Show, Read, Eq, Ord)
-
-instance NFData OutPoint where
-    rnf (OutPoint h i) = rnf h `seq` rnf i
 
 instance FromJSON OutPoint where
     parseJSON = withText "OutPoint" $

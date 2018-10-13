@@ -364,7 +364,7 @@ runMulSigVector (a, ops) = assertBool "multisig vector" $ Just a == b
     b = do
         o <- s
         d <- eitherToMaybe $ decodeOutput o
-        return . addrToString $ payToScriptAddress btc d
+        return . addrToString btc $ payToScriptAddress d
 
 sigDecodeMap :: Network -> (Text, Int) -> Spec
 sigDecodeMap net (_, i) =

@@ -9,19 +9,17 @@ Portability : POSIX
 module Network.Haskoin.Test.Address where
 
 import           Network.Haskoin.Address
-import           Network.Haskoin.Constants
 import           Network.Haskoin.Test.Crypto
 import           Test.QuickCheck
 
 -- | Arbitrary pay-to-public-key-hash or pay-to-script-hash address.
-arbitraryAddress :: Network -> Gen Address
-arbitraryAddress net =
-    oneof [arbitraryPubKeyAddress net, arbitraryScriptAddress net]
+arbitraryAddress :: Gen Address
+arbitraryAddress = oneof [arbitraryPubKeyAddress, arbitraryScriptAddress]
 
 -- | Arbitrary pay-to-public-key-hash address.
-arbitraryPubKeyAddress :: Network -> Gen Address
-arbitraryPubKeyAddress net = p2pkhAddr net <$> arbitraryHash160
+arbitraryPubKeyAddress :: Gen Address
+arbitraryPubKeyAddress = p2pkhAddr <$> arbitraryHash160
 
 -- | Arbitrary pay-to-script-hash address.
-arbitraryScriptAddress :: Network -> Gen Address
-arbitraryScriptAddress net = p2shAddr net <$> arbitraryHash160
+arbitraryScriptAddress :: Gen Address
+arbitraryScriptAddress = p2shAddr <$> arbitraryHash160

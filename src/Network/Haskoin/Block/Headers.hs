@@ -59,7 +59,6 @@ module Network.Haskoin.Block.Headers
     , ) where
 
 import           Control.Applicative                ((<|>))
-import           Control.DeepSeq                    (NFData, rnf)
 import           Control.Monad                      (guard, unless, when)
 import           Control.Monad.Except               (ExceptT (..), runExceptT,
                                                      throwError)
@@ -134,12 +133,6 @@ instance Serialize BlockNode where
             GenesisNode {} -> return ()
             BlockNode {}   -> put $ nodeSkip bn
 
-instance NFData BlockNode where
-    rnf BlockNode {..} =
-        rnf nodeHeader `seq` rnf nodeHeight `seq` rnf nodeSkip
-    rnf GenesisNode {..} =
-        rnf nodeHeader `seq` rnf nodeHeight `seq` rnf nodeWork
-
 instance Eq BlockNode where
     (==) = (==) `on` nodeHeader
 
@@ -151,10 +144,6 @@ data HeaderMemory = HeaderMemory
     { memoryHeaderMap  :: !BlockMap
     , memoryBestHeader :: !BlockNode
     } deriving (Eq, Typeable)
-
-instance NFData HeaderMemory where
-    rnf HeaderMemory{..} =
-        rnf memoryHeaderMap `seq` rnf memoryBestHeader
 
 -- | Typeclass for block header chain storage monad.
 class Monad m => BlockHeaders m where

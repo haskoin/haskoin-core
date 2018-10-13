@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveAnyClass    #-}
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -12,16 +13,14 @@ Portability : POSIX
 Base58, CashAddr, Bech32 address and WIF private key serialization support.
 -}
 module Network.Haskoin.Address
-    ( Address
-    , getAddrHash160
-    , getAddrHash256
-    , getAddrNet
+    ( Address(..)
     , isPubKeyAddress
     , isScriptAddress
     , isWitnessPubKeyAddress
     , isWitnessScriptAddress
     , addrToString
     , stringToAddr
+    , addrToJSON
     , addrFromJSON
     , pubKeyAddr
     , pubKeyWitnessAddr
@@ -44,7 +43,6 @@ module Network.Haskoin.Address
     ) where
 
 import           Control.Applicative
-import           Control.DeepSeq
 import           Control.Monad
 import           Data.Aeson                       as A
 import           Data.Aeson.Types
@@ -52,12 +50,10 @@ import           Data.ByteString                  (ByteString)
 import qualified Data.ByteString                  as B
 import           Data.Function
 import           Data.Hashable
-import           Data.List
 import           Data.Maybe
 import           Data.Serialize                   as S
-import           Data.String.Conversions
 import           Data.Text                        (Text)
-import           GHC.Generics                     as G (Generic)
+import           GHC.Generics                     (Generic)
 import           Network.Haskoin.Address.Base58
 import           Network.Haskoin.Address.Bech32
 import           Network.Haskoin.Address.CashAddr
@@ -66,68 +62,44 @@ import           Network.Haskoin.Crypto
 import           Network.Haskoin.Keys.Common
 import           Network.Haskoin.Script
 import           Network.Haskoin.Util
-import           Text.Read                        as R
 
 -- | Address format for Bitcoin and Bitcoin Cash.
 data Address
     -- | pay to public key hash (regular)
     = PubKeyAddress { getAddrHash160 :: !Hash160
-                        -- ^ RIPEMD160 hash of public key's SHA256 hash
-                    , getAddrNet     :: !Network
-                        -- ^ address network
+                      -- ^ RIPEMD160 hash of public key's SHA256 hash
                      }
     -- | pay to script hash
     | ScriptAddress { getAddrHash160 :: !Hash160
-                        -- ^ RIPEMD160 hash of script's SHA256 hash
-                    , getAddrNet     :: !Network
-                        -- ^ address network
+                      -- ^ RIPEMD160 hash of script's SHA256 hash
                      }
     -- | pay to witness public key hash
     | WitnessPubKeyAddress { getAddrHash160 :: !Hash160
-                               -- ^ RIPEMD160 hash of public key's SHA256 hash
-                           , getAddrNet     :: !Network
-                               -- ^ address network
-                           }
+                             -- ^ RIPEMD160 hash of public key's SHA256 hash
+                            }
     -- | pay to witness script hash
     | WitnessScriptAddress { getAddrHash256 :: !Hash256
-                               -- ^ HASH256 hash of script
-                           , getAddrNet     :: !Network
-                               -- ^ address network
-                           }
-    deriving (Eq, G.Generic)
-
-instance Serialize Address where
-    put a = do
-        put $ getAddrNet a
-        let bs = addressToScriptBS a
-        put $ B.length bs
-        putByteString bs
-    get = do
-        net <- S.get
-        bs <- getByteString =<< S.get
-        case scriptToAddressBS net bs of
-            Nothing -> fail "Could not decode address"
-            Just a -> return a
+                             -- ^ HASH256 hash of script
+                            }
+    deriving (Eq, Generic, Show, Read, Serialize)
 
 instance Hashable Address where
-    hashWithSalt i (PubKeyAddress h _)        = i `hashWithSalt` h
-    hashWithSalt i (ScriptAddress h _)        = i `hashWithSalt` h
-    hashWithSalt i (WitnessPubKeyAddress h _) = i `hashWithSalt` h
-    hashWithSalt i (WitnessScriptAddress h _) = i `hashWithSalt` h
-    hash (PubKeyAddress h _)        = hash h
-    hash (ScriptAddress h _)        = hash h
-    hash (WitnessPubKeyAddress h _) = hash h
-    hash (WitnessScriptAddress h _) = hash h
+    hashWithSalt i (PubKeyAddress h)        = i `hashWithSalt` h
+    hashWithSalt i (ScriptAddress h)        = i `hashWithSalt` h
+    hashWithSalt i (WitnessPubKeyAddress h) = i `hashWithSalt` h
+    hashWithSalt i (WitnessScriptAddress h) = i `hashWithSalt` h
+    hash (PubKeyAddress h)        = hash h
+    hash (ScriptAddress h)        = hash h
+    hash (WitnessPubKeyAddress h) = hash h
+    hash (WitnessScriptAddress h) = hash h
 
 instance Ord Address where
     compare = compare `on` f
       where
-        f (PubKeyAddress h _)        = S.encode h
-        f (ScriptAddress h _)        = S.encode h
-        f (WitnessPubKeyAddress h _) = S.encode h
-        f (WitnessScriptAddress h _) = S.encode h
-
-instance NFData Address
+        f (PubKeyAddress h)        = S.encode h
+        f (ScriptAddress h)        = S.encode h
+        f (WitnessPubKeyAddress h) = S.encode h
+        f (WitnessScriptAddress h) = S.encode h
 
 -- | 'Address' pays to a public key hash.
 isPubKeyAddress :: Address -> Bool
@@ -158,32 +130,22 @@ base58get net = do
     f pfx addr
   where
     f x a
-        | x == getAddrPrefix net = return (PubKeyAddress a net)
-        | x == getScriptPrefix net = return (ScriptAddress a net)
+        | x == getAddrPrefix net = return $ PubKeyAddress a
+        | x == getScriptPrefix net = return $ ScriptAddress a
         | otherwise = fail "Does not recognize address prefix"
 
 -- | Binary serializer for 'Base58' addresses.
-base58put :: Putter Address
-base58put (PubKeyAddress h net) = do
+base58put :: Network -> Putter Address
+base58put net (PubKeyAddress h) = do
         putWord8 (getAddrPrefix net)
         put h
-base58put (ScriptAddress h net) = do
+base58put net (ScriptAddress h) = do
         putWord8 (getScriptPrefix net)
         put h
-base58put _ = error "Cannot serialize this address as Base58"
+base58put _ _ = error "Cannot serialize this address as Base58"
 
-instance Show Address where
-    showsPrec _ a = shows (addrToString a)
-
-instance Read Address where
-    readPrec = do
-        R.String str <- lexP
-        let bs = cs str
-        maybe pfail return $
-            foldl' (\a n -> a <|> stringToAddr n bs) Nothing allNets
-
-instance ToJSON Address where
-    toJSON = A.String . addrToString
+addrToJSON :: Network -> Address -> Value
+addrToJSON net = String . addrToString net
 
 -- | JSON parsing for Bitcoin addresses. Works with 'Base58', 'CashAddr' and
 -- 'Bech32'.
@@ -196,28 +158,25 @@ addrFromJSON net =
 
 -- | Convert address to human-readable string. Uses 'Base58', 'Bech32', or
 -- 'CashAddr' depending on network.
-addrToString :: Address -> Text
-addrToString a@PubKeyAddress {getAddrHash160 = h, getAddrNet = net}
+addrToString :: Network -> Address -> Text
+addrToString net a@PubKeyAddress {getAddrHash160 = h}
     | isNothing (getCashAddrPrefix net) =
-        encodeBase58Check $ runPut $ base58put a
+        encodeBase58Check $ runPut $ base58put net a
     | otherwise =
         fromMaybe (error "Colud not encode a CashAddr") $
         cashAddrEncode net 0 (S.encode h)
-
-addrToString a@ScriptAddress {getAddrHash160 = h, getAddrNet = net}
+addrToString net a@ScriptAddress {getAddrHash160 = h}
     | isNothing (getCashAddrPrefix net) =
-        encodeBase58Check $ runPut $ base58put a
+        encodeBase58Check $ runPut $ base58put net a
     | otherwise =
         fromMaybe (error "Could not encode a CashAddr") $
         cashAddrEncode net 1 (S.encode h)
-
-addrToString WitnessPubKeyAddress {getAddrHash160 = h, getAddrNet = net} =
+addrToString net WitnessPubKeyAddress {getAddrHash160 = h} =
     let mt = do
             hrp <- getBech32Prefix net
             segwitEncode hrp 0 (B.unpack (S.encode h))
      in fromMaybe (error "Could not encode a Bech32 address") mt
-
-addrToString WitnessScriptAddress {getAddrHash256 = h, getAddrNet = net} =
+addrToString net WitnessScriptAddress {getAddrHash256 = h} =
     let mt = do
             hrp <- getBech32Prefix net
             segwitEncode hrp 0 (B.unpack (S.encode h))
@@ -231,10 +190,10 @@ stringToAddr net bs = cash <|> segwit <|> b58
     cash = cashAddrDecode net bs >>= \(ver, bs') -> case ver of
         0 -> do
             h <- eitherToMaybe (S.decode bs')
-            return $ PubKeyAddress h net
+            return $ PubKeyAddress h
         1 -> do
             h <- eitherToMaybe (S.decode bs')
-            return $ ScriptAddress h net
+            return $ ScriptAddress h
         _ -> Nothing
     segwit = do
         hrp <- getBech32Prefix net
@@ -244,60 +203,52 @@ stringToAddr net bs = cash <|> segwit <|> b58
         case B.length bs'' of
             20 -> do
                 h <- eitherToMaybe (S.decode bs'')
-                return $ WitnessPubKeyAddress h net
+                return $ WitnessPubKeyAddress h
             32 -> do
                 h <- eitherToMaybe (S.decode bs'')
-                return $ WitnessScriptAddress h net
+                return $ WitnessScriptAddress h
             _ -> Nothing
 
 -- | Obtain a P2PKH address from a public key.
-pubKeyAddr :: Network -> PubKeyI -> Address
-pubKeyAddr net k = PubKeyAddress (addressHash (S.encode k)) net
+pubKeyAddr :: PubKeyI -> Address
+pubKeyAddr = PubKeyAddress . addressHash . S.encode
 
 -- | Obtain a P2PKH address from a 'Hash160'.
-p2pkhAddr :: Network -> Hash160 -> Address
-p2pkhAddr net h = PubKeyAddress h net
+p2pkhAddr :: Hash160 -> Address
+p2pkhAddr = PubKeyAddress
 
 -- | Obtain a P2WPKH address from a public key. Only on SegWit networks.
-pubKeyWitnessAddr :: Network -> PubKeyI -> Maybe Address
-pubKeyWitnessAddr net k
-    | getSegWit net = Just $ WitnessPubKeyAddress (addressHash (S.encode k)) net
-    | otherwise = Nothing
+pubKeyWitnessAddr :: PubKeyI -> Address
+pubKeyWitnessAddr = WitnessPubKeyAddress . addressHash . S.encode
 
 -- | Obtain a P2WPKH address from a 'Hash160'.
-p2wpkhAddr :: Network -> Hash160 -> Maybe Address
-p2wpkhAddr net h
-    | getSegWit net = Just $ WitnessPubKeyAddress h net
-    | otherwise = Nothing
+p2wpkhAddr :: Hash160 -> Address
+p2wpkhAddr = WitnessPubKeyAddress
 
 -- | Obtain a P2SH address from a 'Hash160'.
-p2shAddr :: Network -> Hash160 -> Address
-p2shAddr net h = ScriptAddress h net
+p2shAddr :: Hash160 -> Address
+p2shAddr = ScriptAddress
 
 -- | Obtain a P2WSH address from a 'Hash256'
-p2wshAddr :: Network -> Hash256 -> Maybe Address
-p2wshAddr net h
-    | getSegWit net = Just $ WitnessScriptAddress h net
-    | otherwise = Nothing
+p2wshAddr :: Hash256 -> Address
+p2wshAddr = WitnessScriptAddress
 
 -- | Compute a pay-to-script-hash address for an output script.
-payToScriptAddress :: Network -> ScriptOutput -> Address
-payToScriptAddress net out = p2shAddr net (addressHash (encodeOutputBS out))
+payToScriptAddress :: ScriptOutput -> Address
+payToScriptAddress = p2shAddr . addressHash . encodeOutputBS
 
 -- | Compute a pay-to-witness-script-hash address for an output script. Only on
 -- SegWit networks.
-payToWitnessScriptAddress :: Network -> ScriptOutput -> Maybe Address
-payToWitnessScriptAddress net out = p2wshAddr net (sha256 (encodeOutputBS out))
+payToWitnessScriptAddress :: ScriptOutput -> Address
+payToWitnessScriptAddress = p2wshAddr . sha256 . encodeOutputBS
 
 -- | Encode an output script from an address. Will fail if using a
 -- pay-to-witness address on a non-SegWit network.
 addressToOutput :: Address -> ScriptOutput
-addressToOutput a
-    | isPubKeyAddress a = PayPKHash (getAddrHash160 a)
-    | isScriptAddress a = PayScriptHash (getAddrHash160 a)
-    | isWitnessPubKeyAddress a = PayWitnessPKHash (getAddrHash160 a)
-    | isWitnessScriptAddress a = PayWitnessScriptHash (getAddrHash256 a)
-    | otherwise = undefined
+addressToOutput (PubKeyAddress h)        = PayPKHash h
+addressToOutput (ScriptAddress h)        = PayScriptHash h
+addressToOutput (WitnessPubKeyAddress h) = PayWitnessPKHash h
+addressToOutput (WitnessScriptAddress h) = PayWitnessScriptHash h
 
 -- | Get output script AST for an 'Address'.
 addressToScript :: Address -> Script
@@ -308,34 +259,29 @@ addressToScriptBS :: Address -> ByteString
 addressToScriptBS = S.encode . addressToScript
 
 -- | Decode an output script into an 'Address' if it has such representation.
-scriptToAddress :: Network -> Script -> Maybe Address
-scriptToAddress net = eitherToMaybe . (outputAddress net <=< decodeOutput)
+scriptToAddress :: Script -> Either String Address
+scriptToAddress =
+    maybeToEither "Could not decode address" . outputAddress <=< decodeOutput
 
 -- | Decode a serialized script into an 'Address'.
-scriptToAddressBS :: Network -> ByteString -> Maybe Address
-scriptToAddressBS net = eitherToMaybe . (outputAddress net <=< decodeOutputBS)
+scriptToAddressBS :: ByteString -> Either String Address
+scriptToAddressBS =
+    maybeToEither "Could not decode address" . outputAddress <=< decodeOutputBS
 
 -- | Get the 'Address' of a 'ScriptOutput'.
-outputAddress :: Network -> ScriptOutput -> Either String Address
-outputAddress net s =
-    case s of
-        PayPKHash h -> Right $ p2pkhAddr net h
-        PayScriptHash h -> Right $ p2shAddr net h
-        PayPK k -> Right $ pubKeyAddr net k
-        PayWitnessPKHash h ->
-            maybeToEither "outputAddress: segwit not supported in this network" $
-            p2wpkhAddr net h
-        PayWitnessScriptHash h ->
-            maybeToEither "outputAddress: segwit not supported in this network" $
-            p2wshAddr net h
-        _ -> Left "outputAddress: bad output script type"
+outputAddress :: ScriptOutput -> Maybe Address
+outputAddress (PayPKHash h)            = Just $ PubKeyAddress h
+outputAddress (PayScriptHash h)        = Just $ ScriptAddress h
+outputAddress (PayPK k)                = Just $ pubKeyAddr k
+outputAddress (PayWitnessPKHash h)     = Just $ WitnessPubKeyAddress h
+outputAddress (PayWitnessScriptHash h) = Just $ WitnessScriptAddress h
+outputAddress _                        = Nothing
 
--- | Infer the address of a 'ScriptInput'
-inputAddress :: Network -> ScriptInput -> Either String Address
-inputAddress net s = case s of
-    RegularInput (SpendPKHash _ key) -> return $ pubKeyAddr net key
-    ScriptHashInput _ rdm -> return $ payToScriptAddress net rdm
-    _ -> Left "inputAddress: bad input script type"
+-- | Infer the 'Address' of a 'ScriptInput'.
+inputAddress :: ScriptInput -> Maybe Address
+inputAddress (RegularInput (SpendPKHash _ key)) = Just $ pubKeyAddr key
+inputAddress (ScriptHashInput _ rdm) = Just $ payToScriptAddress rdm
+inputAddress _ = Nothing
 
 -- | Decode private key from WIF (wallet import format) string.
 fromWif :: Network -> Base58 -> Maybe SecKeyI

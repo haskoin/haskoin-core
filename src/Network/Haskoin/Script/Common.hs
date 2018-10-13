@@ -31,18 +31,16 @@ module Network.Haskoin.Script.Common
 , scriptOpToInt
 ) where
 
-import           Control.DeepSeq                    (NFData, rnf)
 import           Control.Monad
-import           Data.Aeson                         as A
-import           Data.ByteString                    (ByteString)
-import qualified Data.ByteString                    as B
-import           Data.Serialize                     as S
-import           Data.Serialize.Get                 (getByteString, getWord16le,
-                                                     getWord32le, getWord8,
-                                                     isEmpty)
-import           Data.Serialize.Put                 (putByteString, putWord16le,
-                                                     putWord32le, putWord8)
-import           Data.Word                          (Word8)
+import           Data.Aeson                  as A
+import           Data.ByteString             (ByteString)
+import qualified Data.ByteString             as B
+import           Data.Serialize              as S
+import           Data.Serialize.Get          (getByteString, getWord16le,
+                                              getWord32le, getWord8, isEmpty)
+import           Data.Serialize.Put          (putByteString, putWord16le,
+                                              putWord32le, putWord8)
+import           Data.Word                   (Word8)
 import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Keys.Common
 import           Network.Haskoin.Util
@@ -62,9 +60,6 @@ newtype Script =
              scriptOps :: [ScriptOp]
            }
     deriving (Eq, Show, Read)
-
-instance NFData Script where
-    rnf (Script o) = rnf o
 
 instance Serialize Script where
     get =
@@ -91,32 +86,41 @@ data PushDataType
     | OPDATA4
     deriving (Show, Read, Eq)
 
-instance NFData PushDataType where rnf x = seq x ()
-
 -- | Data type representing an operator allowed inside a 'Script'.
 data ScriptOp
       -- Pushing Data
-    = OP_PUSHDATA !ByteString !PushDataType
+    = OP_PUSHDATA !ByteString
+                  !PushDataType
     | OP_0
     | OP_1NEGATE
     | OP_RESERVED
-    | OP_1  | OP_2  | OP_3  | OP_4
-    | OP_5  | OP_6  | OP_7  | OP_8
-    | OP_9  | OP_10 | OP_11 | OP_12
-    | OP_13 | OP_14 | OP_15 | OP_16
-
+    | OP_1
+    | OP_2
+    | OP_3
+    | OP_4
+    | OP_5
+    | OP_6
+    | OP_7
+    | OP_8
+    | OP_9
+    | OP_10
+    | OP_11
+    | OP_12
+    | OP_13
+    | OP_14
+    | OP_15
+    | OP_16
       -- Flow control
     | OP_NOP
-    | OP_VER        -- reserved
+    | OP_VER -- reserved
     | OP_IF
     | OP_NOTIF
-    | OP_VERIF      -- resreved
-    | OP_VERNOTIF   -- reserved
+    | OP_VERIF -- resreved
+    | OP_VERNOTIF -- reserved
     | OP_ELSE
     | OP_ENDIF
     | OP_VERIFY
     | OP_RETURN
-
       -- Stack operations
     | OP_TOALTSTACK
     | OP_FROMALTSTACK
@@ -137,14 +141,12 @@ data ScriptOp
     | OP_2OVER
     | OP_2ROT
     | OP_2SWAP
-
       -- Splice
     | OP_CAT
     | OP_SUBSTR
     | OP_LEFT
     | OP_RIGHT
     | OP_SIZE
-
       -- Bitwise logic
     | OP_INVERT
     | OP_AND
@@ -154,7 +156,6 @@ data ScriptOp
     | OP_EQUALVERIFY
     | OP_RESERVED1
     | OP_RESERVED2
-
       -- Arithmetic
     | OP_1ADD
     | OP_1SUB
@@ -183,7 +184,6 @@ data ScriptOp
     | OP_MIN
     | OP_MAX
     | OP_WITHIN
-
       -- Crypto
     | OP_RIPEMD160
     | OP_SHA1
@@ -195,28 +195,24 @@ data ScriptOp
     | OP_CHECKSIGVERIFY
     | OP_CHECKMULTISIG
     | OP_CHECKMULTISIGVERIFY
-
       -- Expansion
-    | OP_NOP1 | OP_NOP2 | OP_NOP3 | OP_NOP4 | OP_NOP5
-    | OP_NOP6 | OP_NOP7 | OP_NOP8 | OP_NOP9 | OP_NOP10
-
-
+    | OP_NOP1
+    | OP_NOP2
+    | OP_NOP3
+    | OP_NOP4
+    | OP_NOP5
+    | OP_NOP6
+    | OP_NOP7
+    | OP_NOP8
+    | OP_NOP9
+    | OP_NOP10
       -- Other
     | OP_PUBKEYHASH
     | OP_PUBKEY
     | OP_INVALIDOPCODE !Word8
-
-        deriving (Show, Read, Eq)
-
-
-instance NFData ScriptOp where
-    rnf (OP_PUSHDATA b t)    = rnf b `seq` rnf t
-    rnf (OP_INVALIDOPCODE c) = rnf c
-    rnf x                    = x `seq` ()
-
+    deriving (Show, Read, Eq)
 
 instance Serialize ScriptOp where
-
     get = go =<< (fromIntegral <$> getWord8)
       where
         go op
@@ -255,6 +251,7 @@ instance Serialize ScriptOp where
             | op == 0x5e = return OP_14
             | op == 0x5f = return OP_15
             | op == 0x60 = return OP_16
+
             -- Flow control
             | op == 0x61 = return OP_NOP
             | op == 0x62 = return OP_VER        -- reserved
@@ -603,15 +600,6 @@ instance FromJSON ScriptOutput where
 
 instance ToJSON ScriptOutput where
     toJSON = String . encodeHex . encodeOutputBS
-
-instance NFData ScriptOutput where
-    rnf (PayPK k)                = rnf k
-    rnf (PayPKHash a)            = rnf a
-    rnf (PayMulSig k r)          = rnf k `seq` rnf r
-    rnf (PayScriptHash a)        = rnf a
-    rnf (PayWitnessPKHash a)     = rnf a
-    rnf (PayWitnessScriptHash h) = rnf h
-    rnf (DataCarrier a)          = rnf a
 
 -- | Is script a pay-to-public-key output?
 isPayPK :: ScriptOutput -> Bool

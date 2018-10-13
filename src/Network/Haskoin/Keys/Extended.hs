@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -33,7 +34,11 @@ module Network.Haskoin.Keys.Extended
     , xPrvFP
     , xPubAddr
     , xPubExport
+    , xPubToJSON
+    , xPubFromJSON
     , xPrvExport
+    , xPrvToJSON
+    , xPrvFromJSON
     , xPubImport
     , xPrvImport
     , xPrvWif
@@ -41,8 +46,6 @@ module Network.Haskoin.Keys.Extended
     , putXPubKey
     , getXPrvKey
     , getXPubKey
-    , xPubFromJSON
-    , xPrvFromJSON
 
       -- ** Helpers
     , prvSubKeys
@@ -88,7 +91,6 @@ module Network.Haskoin.Keys.Extended
     ) where
 
 import           Control.Applicative
-import           Control.DeepSeq                (NFData, rnf)
 import           Control.Exception              (Exception, throw)
 import           Control.Monad                  (guard, mzero, unless, (<=<))
 import           Crypto.Secp256k1
@@ -114,6 +116,7 @@ import           Data.String                    (IsString, fromString)
 import           Data.String.Conversions        (cs)
 import           Data.Typeable                  (Typeable)
 import           Data.Word                      (Word32, Word8)
+import           GHC.Generics                   (Generic)
 import           Network.Haskoin.Address
 import           Network.Haskoin.Address.Base58
 import           Network.Haskoin.Constants
@@ -147,29 +150,10 @@ data XPrvKey = XPrvKey
     , xPrvIndex  :: !KeyIndex  -- ^ derivation index
     , xPrvChain  :: !ChainCode -- ^ chain code
     , xPrvKey    :: !SecKey    -- ^ private key of this node
-    , xPrvNet    :: !Network
-    } deriving (Eq)
+    } deriving (Generic, Eq, Show, Read)
 
-instance Ord XPrvKey where
-    compare k1 k2 = xPrvExport k1 `compare` xPrvExport k2
-
-instance Show XPrvKey where
-    showsPrec _ = shows . xPrvExport
-
-instance Read XPrvKey where
-    readPrec = do
-        R.String str <- lexP
-        let bs = cs str
-            f k n = k <|> xPrvImport n bs
-        maybe pfail return $ foldl' f Nothing allNets
-
-instance NFData XPrvKey where
-    rnf (XPrvKey d p i c k n) =
-        rnf d `seq`
-        rnf p `seq` rnf i `seq` rnf c `seq` k `seq` rnf n `seq` ()
-
-instance ToJSON XPrvKey where
-    toJSON = A.String . xPrvExport
+xPrvToJSON :: Network -> XPrvKey -> Value
+xPrvToJSON net = A.String . xPrvExport net
 
 -- | Data type representing an extended BIP32 public key.
 data XPubKey = XPubKey
@@ -178,29 +162,8 @@ data XPubKey = XPubKey
     , xPubIndex  :: !KeyIndex  -- ^ derivation index
     , xPubChain  :: !ChainCode -- ^ chain code
     , xPubKey    :: !PubKey    -- ^ public key of this node
-    , xPubNet    :: !Network
-    } deriving (Eq)
+    } deriving (Eq, Show, Read)
 
-instance Ord XPubKey where
-    compare k1 k2 = xPubExport k1 `compare` xPubExport k2
-
-instance Show XPubKey where
-    showsPrec _ = shows . xPubExport
-
-instance Read XPubKey where
-    readPrec = do
-        R.String str <- lexP
-        let bs = cs str
-            f k n = k <|> xPubImport n bs
-        maybe pfail return $ foldl' f Nothing allNets
-
-instance NFData XPubKey where
-    rnf (XPubKey d p i c k n) =
-        rnf d `seq`
-        rnf p `seq` rnf i `seq` rnf c `seq` k `seq` rnf n `seq` ()
-
-instance ToJSON XPubKey where
-    toJSON = A.String . xPubExport
 
 -- | Decode an extended public key from a JSON string
 xPubFromJSON :: Network -> Value -> Parser XPubKey
@@ -209,6 +172,10 @@ xPubFromJSON net =
         case xPubImport net t of
             Nothing -> fail "could not read xpub"
             Just x  -> return x
+
+-- | Get JSON 'Value' from 'XPubKey'.
+xPubToJSON :: Network -> XPubKey -> Value
+xPubToJSON net = A.String . xPubExport net
 
 -- | Decode an extended private key from a JSON string
 xPrvFromJSON :: Network -> Value -> Parser XPrvKey
@@ -220,9 +187,9 @@ xPrvFromJSON net =
 
 -- | Build a BIP32 compatible extended private key from a bytestring. This will
 -- produce a root node (@depth=0@ and @parent=0@).
-makeXPrvKey :: Network -> ByteString -> XPrvKey
-makeXPrvKey net bs =
-    XPrvKey 0 0 0 c k net
+makeXPrvKey :: ByteString -> XPrvKey
+makeXPrvKey bs =
+    XPrvKey 0 0 0 c k
   where
     (p, c) = split512 $ hmac512 "Bitcoin seed" bs
     k     = fromMaybe err (secKey (encode p))
@@ -232,7 +199,7 @@ makeXPrvKey net bs =
 -- will preserve the depth, parent, index and chaincode fields of the extended
 -- private keys.
 deriveXPubKey :: XPrvKey -> XPubKey
-deriveXPubKey (XPrvKey d p i c k n) = XPubKey d p i c (derivePubKey k) n
+deriveXPubKey (XPrvKey d p i c k) = XPubKey d p i c (derivePubKey k)
 
 -- | Compute a private, soft child key derivation. A private soft derivation
 -- will allow the equivalent extended public key to derive the public key for
@@ -248,7 +215,7 @@ prvSubKey :: XPrvKey  -- ^ extended parent private key
           -> XPrvKey  -- ^ extended child private key
 prvSubKey xkey child
     | child >= 0 && child < 0x80000000 =
-        XPrvKey (xPrvDepth xkey + 1) (xPrvFP xkey) child c k (xPrvNet xkey)
+        XPrvKey (xPrvDepth xkey + 1) (xPrvFP xkey) child c k
     | otherwise = error "Invalid child derivation index"
   where
     pK = xPubKey $ deriveXPubKey xkey
@@ -264,7 +231,7 @@ pubSubKey :: XPubKey  -- ^ extended parent public key
           -> XPubKey  -- ^ extended child public key
 pubSubKey xKey child
     | child >= 0 && child < 0x80000000 =
-        XPubKey (xPubDepth xKey + 1) (xPubFP xKey) child c pK (xPubNet xKey)
+        XPubKey (xPubDepth xKey + 1) (xPubFP xKey) child c pK
     | otherwise = error "Invalid child derivation index"
   where
     m      = B.append (exportPubKey True (xPubKey xKey)) (encode child)
@@ -283,7 +250,7 @@ hardSubKey :: XPrvKey  -- ^ extended parent private key
            -> XPrvKey  -- ^ extended child private key
 hardSubKey xkey child
     | child >= 0 && child < 0x80000000 =
-        XPrvKey (xPrvDepth xkey + 1) (xPrvFP xkey) i c k (xPrvNet xkey)
+        XPrvKey (xPrvDepth xkey + 1) (xPrvFP xkey) i c k
     | otherwise = error "Invalid child derivation index"
   where
     i      = setBit child 31
@@ -336,15 +303,15 @@ xPubFP =
 
 -- | Computer the 'Address' of an extended public key.
 xPubAddr :: XPubKey -> Address
-xPubAddr xkey = pubKeyAddr (xPubNet xkey) (wrapPubKey True (xPubKey xkey))
+xPubAddr xkey = pubKeyAddr (wrapPubKey True (xPubKey xkey))
 
 -- | Exports an extended private key to the BIP32 key export format ('Base58').
-xPrvExport :: XPrvKey -> Base58
-xPrvExport = encodeBase58Check . runPut . putXPrvKey
+xPrvExport :: Network -> XPrvKey -> Base58
+xPrvExport net = encodeBase58Check . runPut . putXPrvKey net
 
 -- | Exports an extended public key to the BIP32 key export format ('Base58').
-xPubExport :: XPubKey -> Base58
-xPubExport = encodeBase58Check . runPut . putXPubKey
+xPubExport :: Network -> XPubKey -> Base58
+xPubExport net = encodeBase58Check . runPut . putXPubKey net
 
 -- | Decodes a BIP32 encoded extended private key. This function will fail if
 -- invalid base 58 characters are detected or if the checksum fails.
@@ -357,8 +324,8 @@ xPubImport :: Network -> Base58 -> Maybe XPubKey
 xPubImport net = eitherToMaybe . runGet (getXPubKey net) <=< decodeBase58Check
 
 -- | Export an extended private key to WIF (Wallet Import Format).
-xPrvWif :: XPrvKey -> Base58
-xPrvWif xkey = toWif (xPrvNet xkey) (wrapSecKey True (xPrvKey xkey))
+xPrvWif :: Network -> XPrvKey -> Base58
+xPrvWif net xkey = toWif net (wrapSecKey True (xPrvKey xkey))
 
 -- | Parse a binary extended private key.
 getXPrvKey :: Network -> Get XPrvKey
@@ -371,12 +338,11 @@ getXPrvKey net = do
                 <*> getWord32be
                 <*> S.get
                 <*> getPadPrvKey
-                <*> pure net
 
 -- | Serialize an extended private key.
-putXPrvKey :: Putter XPrvKey
-putXPrvKey k = do
-        putWord32be  $ getExtSecretPrefix (xPrvNet k)
+putXPrvKey :: Network -> Putter XPrvKey
+putXPrvKey net k = do
+        putWord32be  $ getExtSecretPrefix net
         putWord8     $ xPrvDepth k
         putWord32be  $ xPrvParent k
         putWord32be  $ xPrvIndex k
@@ -394,12 +360,11 @@ getXPubKey net = do
                 <*> getWord32be
                 <*> S.get
                 <*> (pubKeyPoint <$> S.get)
-                <*> pure net
 
 -- | Serialize an extended public key.
-putXPubKey :: Putter XPubKey
-putXPubKey k = do
-        putWord32be $ getExtPubKeyPrefix (xPubNet k)
+putXPubKey :: Network -> Putter XPubKey
+putXPubKey net k = do
+        putWord32be $ getExtPubKeyPrefix net
         putWord8    $ xPubDepth k
         putWord32be $ xPubParent k
         putWord32be $ xPubIndex k
@@ -442,10 +407,8 @@ deriveAddrs k =
 -- | Derive a multisig address from a list of public keys, the number of
 -- required signatures /m/ and a derivation index. The derivation type is a
 -- public, soft derivation.
-deriveMSAddr :: Network -> [XPubKey] -> Int -> KeyIndex -> (Address, RedeemScript)
-deriveMSAddr net keys m i
-    | all ((== net) . xPubNet) keys = (payToScriptAddress net rdm, rdm)
-    | otherwise = error "Some extended public keys on the wrong network"
+deriveMSAddr :: [XPubKey] -> Int -> KeyIndex -> (Address, RedeemScript)
+deriveMSAddr keys m i = (payToScriptAddress rdm, rdm)
   where
     rdm = sortMulSig $ PayMulSig k m
     k = map (wrapPubKey True . xPubKey . flip pubSubKey i) keys
@@ -453,12 +416,12 @@ deriveMSAddr net keys m i
 -- | Cyclic list of all multisig addresses derived from a list of public keys,
 -- a number of required signatures /m/ and starting from an offset index. The
 -- derivation type is a public, soft derivation.
-deriveMSAddrs :: Network -> [XPubKey] -> Int -> KeyIndex
+deriveMSAddrs :: [XPubKey] -> Int -> KeyIndex
               -> [(Address, RedeemScript, KeyIndex)]
-deriveMSAddrs net keys m = map f . cycleIndex
+deriveMSAddrs keys m = map f . cycleIndex
   where
     f i =
-        let (a, rdm) = deriveMSAddr net keys m i
+        let (a, rdm) = deriveMSAddr keys m i
          in (a, rdm, i)
 
 -- | Helper function to go through derivation indices.
@@ -518,12 +481,6 @@ data DerivPathI t where
     (:|)  :: HardOrAny t => !(DerivPathI t) -> !KeyIndex -> DerivPathI t
     (:/)  :: AnyOrSoft t => !(DerivPathI t) -> !KeyIndex -> DerivPathI t
     Deriv :: DerivPathI t
-
-instance NFData (DerivPathI t) where
-    rnf p = case p of
-        next :| i -> rnf i `seq` rnf next
-        next :/ i -> rnf i `seq` rnf next
-        Deriv     -> ()
 
 instance Eq (DerivPathI t) where
     (nextA :| iA) == (nextB :| iB) = iA == iB && nextA == nextB
@@ -843,27 +800,25 @@ derivePathAddrs key path = deriveAddrs (derivePubPath path key)
 -- | Derive a multisig address from a given parent path. The number of required
 -- signatures (m in m of n) is also needed.
 derivePathMSAddr ::
-       Network
-    -> [XPubKey]
+       [XPubKey]
     -> SoftPath
     -> Int
     -> KeyIndex
     -> (Address, RedeemScript)
-derivePathMSAddr net keys path =
-    deriveMSAddr net $ map (derivePubPath path) keys
+derivePathMSAddr keys path =
+    deriveMSAddr $ map (derivePubPath path) keys
 
 -- | Cyclic list of all multisig addresses derived from a given parent path and
 -- starting from the given offset index. The number of required signatures
 -- (m in m of n) is also needed.
 derivePathMSAddrs ::
-       Network
-    -> [XPubKey]
+       [XPubKey]
     -> SoftPath
     -> Int
     -> KeyIndex
     -> [(Address, RedeemScript, KeyIndex)]
-derivePathMSAddrs net keys path =
-    deriveMSAddrs net $ map (derivePubPath path) keys
+derivePathMSAddrs keys path =
+    deriveMSAddrs $ map (derivePubPath path) keys
 
 {- Utilities for extended keys -}
 

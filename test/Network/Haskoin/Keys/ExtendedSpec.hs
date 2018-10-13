@@ -49,16 +49,15 @@ spec = do
     describe "extended keys" $ do
         let net = btc
         it "computes pubkey of a subkey is subkey of the pubkey" $
-            property $
-            forAll (arbitraryXPrvKey net) pubKeyOfSubKeyIsSubKeyOfPubKey
+            property $ forAll arbitraryXPrvKey pubKeyOfSubKeyIsSubKeyOfPubKey
         it "exports and imports extended private key" $
             property $
-            forAll (arbitraryXPrvKey net) $ \k ->
-                xPrvImport net (xPrvExport k) == Just k
+            forAll arbitraryXPrvKey $ \k ->
+                xPrvImport net (xPrvExport net k) == Just k
         it "exports and imports extended public key" $
             property $
-            forAll (arbitraryXPubKey net) $ \(_, k) ->
-                xPubImport net (xPubExport k) == Just k
+            forAll arbitraryXPubKey $ \(_, k) ->
+                xPubImport net (xPubExport net k) == Just k
         it "show and read derivation path" $
             property $ forAll arbitraryDerivPath $ \p -> read (show p) == p
         it "show and read hard derivation path" $
@@ -88,27 +87,28 @@ spec = do
         it "read and show parsed path" $
             property $ forAll arbitraryParsedPath $ \p -> read (show p) == p
         it "encodes and decodes extended private key" $
-            forAll (arbitraryXPrvKey net) (testCustom (xPrvFromJSON net))
+            forAll
+                arbitraryXPrvKey
+                (testCustom (xPrvFromJSON net) (xPrvToJSON net))
         it "encodes and decodes extended public key" $
-            forAll (arbitraryXPubKey net) (testCustom (xPubFromJSON net) . snd)
+            forAll
+                arbitraryXPubKey
+                (testCustom (xPubFromJSON net) (xPubToJSON net) . snd)
         it "encodes and decodes derivation path" $
             forAll arbitraryDerivPath testID
         it "encodes and decodes parsed derivation path" $
             forAll arbitraryParsedPath testID
         it "encodes and decodes extended private key" $
             property $
-            forAll (arbitraryXPrvKey net) $
-            testPutGet (getXPrvKey net) putXPrvKey
+            forAll arbitraryXPrvKey $
+            testPutGet (getXPrvKey net) (putXPrvKey net)
         it "shows and reads extended private key" $
             property $
-            forAll (arbitraryXPrvKey net) $ \k -> do
-                let k' = read (show k)
-                k' {xPrvNet = xPrvNet k} `shouldBe` k
+            forAll arbitraryXPrvKey $ \k -> read (show k) `shouldBe` k
         it "shows and reads extended private key" $
             property $
-            forAll (arbitraryXPubKey net) $ \(_, k) -> do
-                let k' = read (show k)
-                k' {xPubNet = xPubNet k} `shouldBe` k
+            forAll arbitraryXPubKey $ \(prv, pub) ->
+                read (show (prv, pub)) `shouldBe` (prv, pub)
 
 testFromJsonPath :: Assertion
 testFromJsonPath =
@@ -293,17 +293,17 @@ runXKeyVec (v, m) = do
     assertBool "xPrvID" $ encodeHex (S.encode $ xPrvID m) == head v
     assertBool "xPrvFP" $ encodeHex (S.encode $ xPrvFP m) == v !! 1
     assertBool "xPrvAddr" $
-        addrToString (xPubAddr $ deriveXPubKey m) == v !! 2
+        addrToString btc (xPubAddr $ deriveXPubKey m) == v !! 2
     assertBool "prvKey" $ encodeHex (getSecKey $ xPrvKey m) == v !! 3
-    assertBool "xPrvWIF" $ xPrvWif m == v !! 4
+    assertBool "xPrvWIF" $ xPrvWif btc m == v !! 4
     assertBool "pubKey" $
         encodeHex (exportPubKey True $ xPubKey $ deriveXPubKey m) == v !! 5
     assertBool "chain code" $ encodeHex (S.encode $ xPrvChain m) == v !! 6
     assertBool "Hex PubKey" $
-        encodeHex (runPut $ putXPubKey $ deriveXPubKey m) == v !! 7
-    assertBool "Hex PrvKey" $ encodeHex (runPut (putXPrvKey m)) == v !! 8
-    assertBool "Base58 PubKey" $ xPubExport (deriveXPubKey m) == v !! 9
-    assertBool "Base58 PrvKey" $ xPrvExport m == v !! 10
+        encodeHex (runPut $ putXPubKey btc $ deriveXPubKey m) == v !! 7
+    assertBool "Hex PrvKey" $ encodeHex (runPut (putXPrvKey btc m)) == v !! 8
+    assertBool "Base58 PubKey" $ xPubExport btc (deriveXPubKey m) == v !! 9
+    assertBool "Base58 PrvKey" $ xPrvExport btc m == v !! 10
 
 -- BIP 0032 Test Vectors
 -- https://en.bitcoin.it/wiki/BIP_0032_TestVectors
@@ -311,7 +311,7 @@ runXKeyVec (v, m) = do
 xKeyVec :: [([Text], XPrvKey)]
 xKeyVec = zip xKeyResVec $ foldl f [m] der
     where f acc d = acc ++ [d $ last acc]
-          m   = makeXPrvKey btc $ fromJust $ decodeHex m0
+          m   = makeXPrvKey $ fromJust $ decodeHex m0
           der = [ flip hardSubKey 0
                 , flip prvSubKey 1
                 , flip hardSubKey 2
@@ -322,7 +322,7 @@ xKeyVec = zip xKeyResVec $ foldl f [m] der
 xKeyVec2 :: [([Text], XPrvKey)]
 xKeyVec2 = zip xKeyResVec2 $ foldl f [m] der
     where f acc d = acc ++ [d $ last acc]
-          m   = makeXPrvKey btc $ fromJust $ decodeHex m1
+          m   = makeXPrvKey $ fromJust $ decodeHex m1
           der = [ flip prvSubKey 0
                 , flip hardSubKey 2147483647
                 , flip prvSubKey 1
@@ -514,8 +514,8 @@ testID x =
     (A.decode . A.encode) (singleton ("object" :: String) x) ==
     Just (singleton ("object" :: String) x)
 
-testCustom :: (ToJSON a, Eq a) => (Value -> Parser a) -> a -> Bool
-testCustom f x = parseMaybe f (toJSON x) == Just x
+testCustom :: Eq a => (Value -> Parser a) -> (a -> Value) -> a -> Bool
+testCustom f g x = parseMaybe f (g x) == Just x
 
 testPutGet :: Eq a => Get a -> Putter a -> a -> Bool
 testPutGet g p a = runGet g (runPut (p a)) == Right a

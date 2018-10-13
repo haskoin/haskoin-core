@@ -24,7 +24,6 @@ module Network.Haskoin.Constants
     , netByIdent
     ) where
 
-import           Control.DeepSeq
 import           Data.ByteString              (ByteString)
 import           Data.List
 import           Data.Maybe
@@ -116,8 +115,6 @@ instance Serialize Network where
         case find ((== magic) . getNetworkMagic) allNets of
             Nothing  -> fail $ "Network magic unknown: " <> show magic
             Just net -> return net
-
-instance NFData Network
 
 instance Show Network where
     show = getNetworkIdent

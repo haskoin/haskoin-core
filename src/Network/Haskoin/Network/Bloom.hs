@@ -26,7 +26,6 @@ module Network.Haskoin.Network.Bloom
     , acceptsFilters
     ) where
 
-import           Control.DeepSeq                (NFData, rnf)
 import           Control.Monad                  (forM_, replicateM)
 import           Data.Bits
 import           Data.ByteString                (ByteString)
@@ -67,8 +66,6 @@ data BloomFlags
     -- ^ auto-update on pay-to-pubkey or pay-to-multisig (default)
     deriving (Eq, Show, Read)
 
-instance NFData BloomFlags where rnf x = seq x ()
-
 instance Serialize BloomFlags where
     get = go =<< getWord8
       where
@@ -100,10 +97,6 @@ data BloomFilter = BloomFilter
     }
     deriving (Eq, Show, Read)
 
-instance NFData BloomFilter where
-    rnf (BloomFilter d h t g) =
-        rnf d `seq` rnf h `seq` rnf t `seq` rnf g
-
 instance Serialize BloomFilter where
 
     get = BloomFilter <$> (S.fromList <$> (readDat =<< get))
@@ -123,9 +116,6 @@ instance Serialize BloomFilter where
 newtype FilterLoad = FilterLoad { filterLoadBloomFilter :: BloomFilter }
     deriving (Eq, Show, Read)
 
-instance NFData FilterLoad where
-    rnf (FilterLoad f) = rnf f
-
 instance Serialize FilterLoad where
     get = FilterLoad <$> get
     put (FilterLoad f) = put f
@@ -134,9 +124,6 @@ instance Serialize FilterLoad where
 -- requiring a completely new one to be set.
 newtype FilterAdd = FilterAdd { getFilterData :: ByteString }
     deriving (Eq, Show, Read)
-
-instance NFData FilterAdd where
-    rnf (FilterAdd f) = rnf f
 
 instance Serialize FilterAdd where
     get = do

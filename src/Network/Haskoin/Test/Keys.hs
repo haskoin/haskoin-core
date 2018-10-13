@@ -11,7 +11,6 @@ module Network.Haskoin.Test.Keys where
 import           Data.Bits                     (clearBit)
 import           Data.List                     (foldl')
 import           Data.Word                     (Word32)
-import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto
 import           Network.Haskoin.Keys.Common
 import           Network.Haskoin.Keys.Extended
@@ -29,18 +28,17 @@ arbitraryKeyPair = do
     return (k, derivePubKeyI k)
 
 -- | Arbitrary extended private key.
-arbitraryXPrvKey :: Network -> Gen XPrvKey
-arbitraryXPrvKey net =
+arbitraryXPrvKey :: Gen XPrvKey
+arbitraryXPrvKey =
     XPrvKey <$> arbitrary
             <*> arbitrary
             <*> arbitrary
             <*> arbitraryHash256
             <*> arbitrary
-            <*> pure net
 
 -- | Arbitrary extended public key with its corresponding private key.
-arbitraryXPubKey :: Network -> Gen (XPrvKey, XPubKey)
-arbitraryXPubKey net = (\k -> (k, deriveXPubKey k)) <$> arbitraryXPrvKey net
+arbitraryXPubKey :: Gen (XPrvKey, XPubKey)
+arbitraryXPubKey = (\k -> (k, deriveXPubKey k)) <$> arbitraryXPrvKey
 
 {- Custom derivations -}
 

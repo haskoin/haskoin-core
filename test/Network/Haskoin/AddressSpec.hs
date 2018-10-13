@@ -25,7 +25,7 @@ spec = do
     describe "bch-regtest address" $ props bchRegTest
     describe "json serialization" $
         it "encodes and decodes address" $
-            forAll (arbitraryAddress net) (testCustom (addrFromJSON net))
+            forAll arbitraryAddress (testCustom (addrFromJSON net) (addrToJSON net))
 
 props :: Network -> Spec
 props net = do
@@ -38,10 +38,10 @@ props net = do
             decodeBase58Check (encodeBase58Check bs) == Just bs
     it "encodes and decodes address" $
         property $
-        forAll (arbitraryAddress net) $ \a ->
-            stringToAddr net (addrToString a) == Just a
+        forAll arbitraryAddress $ \a ->
+            stringToAddr net (addrToString net a) == Just a
     it "shows and reads address" $
-        property $ forAll (arbitraryAddress net) $ \a -> read (show a) == a
+        property $ forAll arbitraryAddress $ \a -> read (show a) == a
 
 runVector :: (ByteString, Text, Text) -> Assertion
 runVector (bs, e, chk) = do
@@ -66,5 +66,5 @@ vectors =
       )
     ]
 
-testCustom :: (ToJSON a, Eq a) => (Value -> Parser a) -> a -> Bool
-testCustom f x = parseMaybe f (toJSON x) == Just x
+testCustom :: Eq a => (Value -> Parser a) -> (a -> Value) -> a -> Bool
+testCustom f g x = parseMaybe f (g x) == Just x

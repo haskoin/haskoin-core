@@ -17,7 +17,6 @@ module Network.Haskoin.Network.Message
     , getMessage
     ) where
 
-import           Control.DeepSeq                    (NFData, rnf)
 import           Control.Monad                      (unless)
 import qualified Data.ByteString                    as BS
 import           Data.Serialize                     (Serialize, encode, get,
@@ -48,9 +47,6 @@ data MessageHeader = MessageHeader
       -- | checksum of payload
     , headChecksum    :: !CheckSum32
     } deriving (Eq, Show)
-
-instance NFData MessageHeader where
-    rnf (MessageHeader m c p s) = rnf m `seq` rnf c `seq` rnf p `seq` rnf s
 
 instance Serialize MessageHeader where
 

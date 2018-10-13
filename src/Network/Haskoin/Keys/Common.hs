@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -30,7 +31,6 @@ module Network.Haskoin.Keys.Common
     ) where
 
 import           Control.Applicative         ((<|>))
-import           Control.DeepSeq             (NFData, rnf)
 import           Control.Monad               (guard, mzero, (<=<))
 import           Crypto.Secp256k1
 import           Data.Aeson                  (FromJSON, ToJSON, Value (String),
@@ -44,33 +44,21 @@ import           Data.Serialize.Get          (Get, getByteString)
 import           Data.Serialize.Put          (Putter, putByteString)
 import           Data.String                 (IsString, fromString)
 import           Data.String.Conversions     (cs)
+import           GHC.Generics                (Generic)
 import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Util
-import           Text.Read                   (lexP, parens, pfail, readPrec)
-import qualified Text.Read                   as Read
 
 -- | Elliptic curve public key type with expected serialized compression flag.
 data PubKeyI = PubKeyI
     { pubKeyPoint      :: !PubKey
     , pubKeyCompressed :: !Bool
-    } deriving (Eq)
-
-instance Show PubKeyI where
-    showsPrec _ = shows . encodeHex . encode
-
-instance Read PubKeyI where
-    readPrec = parens $ do
-        Read.String str <- lexP
-        maybe pfail return $ eitherToMaybe . decode <=< decodeHex $ cs str
+    } deriving (Generic, Eq, Show, Read)
 
 instance IsString PubKeyI where
     fromString str =
         fromMaybe e $ eitherToMaybe . decode <=< decodeHex $ cs str
       where
         e = error "Could not decode public key"
-
-instance NFData PubKeyI where
-    rnf (PubKeyI p c) = p `seq` rnf c `seq` rnf ()
 
 instance ToJSON PubKeyI where
     toJSON = String . encodeHex . encode
@@ -114,9 +102,6 @@ data SecKeyI = SecKeyI
     { secKeyData       :: !SecKey
     , secKeyCompressed :: !Bool
     } deriving (Eq, Show, Read)
-
-instance NFData SecKeyI where
-    rnf (SecKeyI k c) = k `seq` rnf c `seq` ()
 
 -- | Wrap private key with corresponding public key compression flag.
 wrapSecKey :: Bool -> SecKey -> SecKeyI

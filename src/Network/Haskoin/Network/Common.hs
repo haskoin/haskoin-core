@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards   #-}
 {-|
 Module      : Network.Haskoin.Network.Common
 Copyright   : No rights reserved
@@ -41,7 +40,6 @@ module Network.Haskoin.Network.Common
     , stringToCommand
     ) where
 
-import           Control.DeepSeq             (NFData, rnf)
 import           Control.Monad               (forM_, liftM2, replicateM, unless)
 import           Data.Bits                   (shiftL)
 import           Data.ByteString             (ByteString)
@@ -90,9 +88,6 @@ data Alert =
           , alertSignature :: !VarString
           } deriving (Eq, Show, Read)
 
-instance NFData Alert where
-    rnf (Alert p s) = rnf p `seq` rnf s
-
 instance Serialize Alert where
     get = Alert <$> S.get <*> S.get
     put (Alert p s) = put p >> put s
@@ -108,9 +103,6 @@ newtype GetData =
     GetData { -- | list of object hashes
               getDataList :: [InvVector]
             } deriving (Eq, Show)
-
-instance NFData GetData where
-    rnf (GetData l) = rnf l
 
 instance Serialize GetData where
 
@@ -130,9 +122,6 @@ newtype Inv =
         -- | inventory
           invList :: [InvVector]
         } deriving (Eq, Show)
-
-instance NFData Inv where
-    rnf (Inv l) = rnf l
 
 instance Serialize Inv where
 
@@ -155,8 +144,6 @@ data InvType
     | InvWitnessBlock -- ^ segwit block
     | InvWitnessMerkleBlock -- ^ segwit filtere block
     deriving (Eq, Show, Read)
-
-instance NFData InvType where rnf x = seq x ()
 
 instance Serialize InvType where
     get = go =<< getWord32le
@@ -194,9 +181,6 @@ data InvVector =
               , invHash :: !Hash256
               } deriving (Eq, Show)
 
-instance NFData InvVector where
-    rnf (InvVector t h) = rnf t `seq` rnf h
-
 instance Serialize InvVector where
     get = InvVector <$> S.get <*> S.get
     put (InvVector t h) = put t >> put h
@@ -210,9 +194,6 @@ data NetworkAddress =
                      -- | address and port information
                    , naAddress  :: !SockAddr
                    } deriving (Eq, Show)
-
-instance NFData NetworkAddress where
-    rnf NetworkAddress{..} = rnf naServices `seq` naAddress `seq` ()
 
 instance Serialize NetworkAddress where
 
@@ -260,9 +241,6 @@ newtype NotFound =
                notFoundList :: [InvVector]
              } deriving (Eq, Show)
 
-instance NFData NotFound where
-    rnf (NotFound l) = rnf l
-
 instance Serialize NotFound where
 
     get = NotFound <$> (repList =<< S.get)
@@ -281,18 +259,12 @@ newtype Ping =
            pingNonce :: Word64
          } deriving (Eq, Show, Read)
 
-instance NFData Ping where
-    rnf (Ping n) = rnf n
-
 -- | A Pong message is sent as a response to a ping message.
 newtype Pong =
     Pong {
            -- | nonce from corresponding 'Ping'
            pongNonce :: Word64
          } deriving (Eq, Show, Read)
-
-instance NFData Pong where
-    rnf (Pong n) = rnf n
 
 instance Serialize Ping where
     get = Ping <$> getWord64le
@@ -379,9 +351,6 @@ instance Serialize Reject where
 newtype VarInt = VarInt { getVarInt :: Word64 }
     deriving (Eq, Show, Read)
 
-instance NFData VarInt where
-    rnf (VarInt w) = rnf w
-
 instance Serialize VarInt where
 
     get = VarInt <$> ( getWord8 >>= go )
@@ -407,9 +376,6 @@ instance Serialize VarInt where
 -- | Data type for serialization of variable-length strings.
 newtype VarString = VarString { getVarString :: ByteString }
     deriving (Eq, Show, Read)
-
-instance NFData VarString where
-    rnf (VarString s) = rnf s
 
 instance Serialize VarString where
 
@@ -445,18 +411,6 @@ data Version =
               -- | relay transactions flag (BIP-37)
             , relay       :: !Bool
             } deriving (Eq, Show)
-
-instance NFData Version where
-    rnf Version{..} =
-        rnf version `seq`
-        rnf services `seq`
-        rnf timestamp `seq`
-        rnf addrRecv `seq`
-        rnf addrSend `seq`
-        rnf verNonce `seq`
-        rnf userAgent `seq`
-        rnf startHeight `seq`
-        rnf relay
 
 instance Serialize Version where
 
@@ -532,8 +486,6 @@ instance Read MessageCommand where
     readPrec = do
         String str <- lexP
         maybe pfail return (stringToCommand (cs str))
-
-instance NFData MessageCommand where rnf x = seq x ()
 
 instance Serialize MessageCommand where
     get = go =<< getByteString 12

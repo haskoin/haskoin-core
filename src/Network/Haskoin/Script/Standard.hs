@@ -27,7 +27,6 @@ module Network.Haskoin.Script.Standard
     ) where
 
 import           Control.Applicative            ((<|>))
-import           Control.DeepSeq                (NFData, rnf)
 import           Control.Monad                  (guard, (<=<))
 import           Data.ByteString                (ByteString)
 import           Data.Function                  (on)
@@ -60,11 +59,6 @@ data SimpleInput
                       -- ^ list of signatures
                    }
     deriving (Eq, Show)
-
-instance NFData SimpleInput where
-    rnf (SpendPK i)       = rnf i
-    rnf (SpendPKHash i k) = rnf i `seq` rnf k
-    rnf (SpendMulSig k)   = rnf k
 
 -- | Returns true if the input script is spending from a pay-to-public-key
 -- output.
@@ -105,10 +99,6 @@ data ScriptInput
                 -- ^ redeem script
             }
     deriving (Eq, Show)
-
-instance NFData ScriptInput where
-    rnf (RegularInput i)      = rnf i
-    rnf (ScriptHashInput i o) = rnf i `seq` rnf o
 
 -- | Heuristic to decode an input script into one of the standard types.
 decodeSimpleInput :: Network -> Script -> Either String SimpleInput

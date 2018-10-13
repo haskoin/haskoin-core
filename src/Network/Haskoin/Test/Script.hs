@@ -220,7 +220,7 @@ arbitraryScriptOutput net =
     [ arbitraryPKOutput
     , arbitraryPKHashOutput
     , arbitraryMSOutput
-    , arbitrarySHOutput net
+    , arbitrarySHOutput
     , arbitraryDCOutput
     ] ++
     if getSegWit net
@@ -229,7 +229,7 @@ arbitraryScriptOutput net =
 
 -- | Arbitrary 'ScriptOutput' of type 'PayPK', 'PayPKHash' or 'PayMS'
 -- (Not 'PayScriptHash', 'DataCarrier', or SegWit)
-arbitrarySimpleOutput ::Gen ScriptOutput
+arbitrarySimpleOutput :: Gen ScriptOutput
 arbitrarySimpleOutput =
     oneof
         [ arbitraryPKOutput
@@ -270,9 +270,8 @@ arbitraryMSOutputC = do
     return $ PayMulSig keys m
 
 -- | Arbitrary 'ScriptOutput' of type 'PayScriptHash'.
-arbitrarySHOutput :: Network -> Gen ScriptOutput
-arbitrarySHOutput net =
-    PayScriptHash . getAddrHash160 <$> arbitraryScriptAddress net
+arbitrarySHOutput :: Gen ScriptOutput
+arbitrarySHOutput = PayScriptHash . getAddrHash160 <$> arbitraryScriptAddress
 
 -- | Arbitrary 'ScriptOutput' of type 'DataCarrier'.
 arbitraryDCOutput :: Gen ScriptOutput

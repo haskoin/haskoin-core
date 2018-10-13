@@ -15,80 +15,117 @@ import           Test.HUnit
 
 spec :: Spec
 spec = do
-  describe "cashaddr checksum test vectors" $ do
-    it "prefix:x64nx6hz" $ do
-      let mpb = cash32decode "prefix:x64nx6hz"
-      mpb `shouldBe` Just ("prefix", "")
-    it "p:gpf8m4h7" $ do
-      let mpb = cash32decode "p:gpf8m4h7"
-      mpb `shouldBe` Just ("p", "")
-    it "bitcoincash:qpzry9x8gf2tvdw0s3jn54khce6mua7lcw20ayyn" $ do
-      let mpb = cash32decode "bitcoincash:qpzry9x8gf2tvdw0s3jn54khce6mua7lcw20ayyn"
-      mpb `shouldBe` Just ("bitcoincash","\NULD2\DC4\199BT\182\&5\207\132e:V\215\198u\190w\223")
-    it "bchtest:testnetaddress4d6njnut" $ do
-      let mpb = cash32decode "bchtest:testnetaddress4d6njnut"
-      mpb `shouldBe` Just ("bchtest","^`\185\229}kG\152")
-    it "bchreg:555555555555555555555555555555555555555555555udxmlmrz" $ do
-      let mpb = cash32decode "bchreg:555555555555555555555555555555555555555555555udxmlmrz"
-      mpb `shouldBe` Just ("bchreg","\165)JR\148\165)JR\148\165)JR\148\165)JR\148\165)JR\148\165)J")
-
-  describe "cashaddr to base58 translation test vectors" $ do
-    it "1BpEi6DfDAUFd7GtittLSdBeYJvcoaVggu" $ do
-      let addr = base58ToCashAddr "1BpEi6DfDAUFd7GtittLSdBeYJvcoaVggu"
-      addr `shouldBe` Just "bitcoincash:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a"
-    it "1KXrWXciRDZUpQwQmuM1DbwsKDLYAYsVLR" $ do
-      let addr = base58ToCashAddr "1KXrWXciRDZUpQwQmuM1DbwsKDLYAYsVLR"
-      addr `shouldBe` Just "bitcoincash:qr95sy3j9xwd2ap32xkykttr4cvcu7as4y0qverfuy"
-    it "16w1D5WRVKJuZUsSRzdLp9w3YGcgoxDXb" $ do
-      let addr = base58ToCashAddr "16w1D5WRVKJuZUsSRzdLp9w3YGcgoxDXb"
-      addr `shouldBe` Just "bitcoincash:qqq3728yw0y47sqn6l2na30mcw6zm78dzqre909m2r"
-    it "3CWFddi6m4ndiGyKqzYvsFYagqDLPVMTzC" $ do
-      let addr = base58ToCashAddr "3CWFddi6m4ndiGyKqzYvsFYagqDLPVMTzC"
-      addr `shouldBe` Just "bitcoincash:ppm2qsznhks23z7629mms6s4cwef74vcwvn0h829pq"
-    it "3LDsS579y7sruadqu11beEJoTjdFiFCdX4" $ do
-      let addr = base58ToCashAddr "3LDsS579y7sruadqu11beEJoTjdFiFCdX4"
-      addr `shouldBe` Just "bitcoincash:pr95sy3j9xwd2ap32xkykttr4cvcu7as4yc93ky28e"
-    it "31nwvkZwyPdgzjBJZXfDmSWsC4ZLKpYyUw" $ do
-      let addr = base58ToCashAddr "31nwvkZwyPdgzjBJZXfDmSWsC4ZLKpYyUw"
-      addr `shouldBe` Just "bitcoincash:pqq3728yw0y47sqn6l2na30mcw6zm78dzq5ucqzc37"
-
-  describe "base58 to cashaddr translation test vectors" $ do
-    it "bitcoincash:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a" $ do
-      let addr = cashAddrtoBase58 "bitcoincash:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a"
-      addr `shouldBe` Just "1BpEi6DfDAUFd7GtittLSdBeYJvcoaVggu"
-    it "bitcoincash:qr95sy3j9xwd2ap32xkykttr4cvcu7as4y0qverfuy" $ do
-      let addr = cashAddrtoBase58 "bitcoincash:qr95sy3j9xwd2ap32xkykttr4cvcu7as4y0qverfuy"
-      addr `shouldBe` Just "1KXrWXciRDZUpQwQmuM1DbwsKDLYAYsVLR"
-    it "bitcoincash:qqq3728yw0y47sqn6l2na30mcw6zm78dzqre909m2r" $ do
-      let addr = cashAddrtoBase58 "bitcoincash:qqq3728yw0y47sqn6l2na30mcw6zm78dzqre909m2r"
-      addr `shouldBe` Just "16w1D5WRVKJuZUsSRzdLp9w3YGcgoxDXb"
-    it "bitcoincash:ppm2qsznhks23z7629mms6s4cwef74vcwvn0h829pq" $ do
-      let addr = cashAddrtoBase58 "bitcoincash:ppm2qsznhks23z7629mms6s4cwef74vcwvn0h829pq"
-      addr `shouldBe` Just "3CWFddi6m4ndiGyKqzYvsFYagqDLPVMTzC"
-    it "bitcoincash:pr95sy3j9xwd2ap32xkykttr4cvcu7as4yc93ky28e" $ do
-      let addr = cashAddrtoBase58 "bitcoincash:pr95sy3j9xwd2ap32xkykttr4cvcu7as4yc93ky28e"
-      addr `shouldBe` Just "3LDsS579y7sruadqu11beEJoTjdFiFCdX4"
-    it "bitcoincash:pqq3728yw0y47sqn6l2na30mcw6zm78dzq5ucqzc37" $ do
-      let addr = cashAddrtoBase58 "bitcoincash:pqq3728yw0y47sqn6l2na30mcw6zm78dzq5ucqzc37"
-      addr `shouldBe` Just "31nwvkZwyPdgzjBJZXfDmSWsC4ZLKpYyUw"
-
-  describe "cashaddr larger test vectors" $
-      forM_ (zip [0..] vectors) $ \(i, vec) ->
-          it ("cashaddr test vector " <> show (i :: Int)) $ testCashAddr vec
+    describe "cashaddr checksum test vectors" $ do
+        it "prefix:x64nx6hz" $ do
+            let mpb = cash32decode "prefix:x64nx6hz"
+            mpb `shouldBe` Just ("prefix", "")
+        it "p:gpf8m4h7" $ do
+            let mpb = cash32decode "p:gpf8m4h7"
+            mpb `shouldBe` Just ("p", "")
+        it "bitcoincash:qpzry9x8gf2tvdw0s3jn54khce6mua7lcw20ayyn" $ do
+            let mpb =
+                    cash32decode
+                        "bitcoincash:qpzry9x8gf2tvdw0s3jn54khce6mua7lcw20ayyn"
+            mpb `shouldBe`
+                Just
+                    ( "bitcoincash"
+                    , "\NULD2\DC4\199BT\182\&5\207\132e:V\215\198u\190w\223")
+        it "bchtest:testnetaddress4d6njnut" $ do
+            let mpb = cash32decode "bchtest:testnetaddress4d6njnut"
+            mpb `shouldBe` Just ("bchtest", "^`\185\229}kG\152")
+        it "bchreg:555555555555555555555555555555555555555555555udxmlmrz" $ do
+            let mpb =
+                    cash32decode
+                        "bchreg:555555555555555555555555555555555555555555555udxmlmrz"
+            mpb `shouldBe`
+                Just
+                    ( "bchreg"
+                    , "\165)JR\148\165)JR\148\165)JR\148\165)JR\148\165)JR\148\165)J")
+    describe "cashaddr to base58 translation test vectors" $ do
+        it "1BpEi6DfDAUFd7GtittLSdBeYJvcoaVggu" $ do
+            let addr =
+                    addrToString bch <$>
+                    stringToAddr btc "1BpEi6DfDAUFd7GtittLSdBeYJvcoaVggu"
+            addr `shouldBe`
+                Just "bitcoincash:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a"
+        it "1KXrWXciRDZUpQwQmuM1DbwsKDLYAYsVLR" $ do
+            let addr =
+                    addrToString bch <$>
+                    stringToAddr btc "1KXrWXciRDZUpQwQmuM1DbwsKDLYAYsVLR"
+            addr `shouldBe`
+                Just "bitcoincash:qr95sy3j9xwd2ap32xkykttr4cvcu7as4y0qverfuy"
+        it "16w1D5WRVKJuZUsSRzdLp9w3YGcgoxDXb" $ do
+            let addr =
+                    addrToString bch <$>
+                    stringToAddr btc "16w1D5WRVKJuZUsSRzdLp9w3YGcgoxDXb"
+            addr `shouldBe`
+                Just "bitcoincash:qqq3728yw0y47sqn6l2na30mcw6zm78dzqre909m2r"
+        it "3CWFddi6m4ndiGyKqzYvsFYagqDLPVMTzC" $ do
+            let addr =
+                    addrToString bch <$>
+                    stringToAddr btc "3CWFddi6m4ndiGyKqzYvsFYagqDLPVMTzC"
+            addr `shouldBe`
+                Just "bitcoincash:ppm2qsznhks23z7629mms6s4cwef74vcwvn0h829pq"
+        it "3LDsS579y7sruadqu11beEJoTjdFiFCdX4" $ do
+            let addr =
+                    addrToString bch <$>
+                    stringToAddr btc "3LDsS579y7sruadqu11beEJoTjdFiFCdX4"
+            addr `shouldBe`
+                Just "bitcoincash:pr95sy3j9xwd2ap32xkykttr4cvcu7as4yc93ky28e"
+        it "31nwvkZwyPdgzjBJZXfDmSWsC4ZLKpYyUw" $ do
+            let addr =
+                    addrToString bch <$>
+                    stringToAddr btc "31nwvkZwyPdgzjBJZXfDmSWsC4ZLKpYyUw"
+            addr `shouldBe`
+                Just "bitcoincash:pqq3728yw0y47sqn6l2na30mcw6zm78dzq5ucqzc37"
+    describe "base58 to cashaddr translation test vectors" $ do
+        it "bitcoincash:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a" $ do
+            let addr =
+                    addrToString btc <$>
+                    stringToAddr
+                        bch
+                        "bitcoincash:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a"
+            addr `shouldBe` Just "1BpEi6DfDAUFd7GtittLSdBeYJvcoaVggu"
+        it "bitcoincash:qr95sy3j9xwd2ap32xkykttr4cvcu7as4y0qverfuy" $ do
+            let addr =
+                    addrToString btc <$>
+                    stringToAddr
+                        bch
+                        "bitcoincash:qr95sy3j9xwd2ap32xkykttr4cvcu7as4y0qverfuy"
+            addr `shouldBe` Just "1KXrWXciRDZUpQwQmuM1DbwsKDLYAYsVLR"
+        it "bitcoincash:qqq3728yw0y47sqn6l2na30mcw6zm78dzqre909m2r" $ do
+            let addr =
+                    addrToString btc <$>
+                    stringToAddr
+                        bch
+                        "bitcoincash:qqq3728yw0y47sqn6l2na30mcw6zm78dzqre909m2r"
+            addr `shouldBe` Just "16w1D5WRVKJuZUsSRzdLp9w3YGcgoxDXb"
+        it "bitcoincash:ppm2qsznhks23z7629mms6s4cwef74vcwvn0h829pq" $ do
+            let addr =
+                    addrToString btc <$>
+                    stringToAddr
+                        bch
+                        "bitcoincash:ppm2qsznhks23z7629mms6s4cwef74vcwvn0h829pq"
+            addr `shouldBe` Just "3CWFddi6m4ndiGyKqzYvsFYagqDLPVMTzC"
+        it "bitcoincash:pr95sy3j9xwd2ap32xkykttr4cvcu7as4yc93ky28e" $ do
+            let addr =
+                    addrToString btc <$>
+                    stringToAddr
+                        bch
+                        "bitcoincash:pr95sy3j9xwd2ap32xkykttr4cvcu7as4yc93ky28e"
+            addr `shouldBe` Just "3LDsS579y7sruadqu11beEJoTjdFiFCdX4"
+        it "bitcoincash:pqq3728yw0y47sqn6l2na30mcw6zm78dzq5ucqzc37" $ do
+            let addr =
+                    addrToString btc <$>
+                    stringToAddr
+                        bch
+                        "bitcoincash:pqq3728yw0y47sqn6l2na30mcw6zm78dzq5ucqzc37"
+            addr `shouldBe` Just "31nwvkZwyPdgzjBJZXfDmSWsC4ZLKpYyUw"
+    describe "cashaddr larger test vectors" $
+        forM_ (zip [0 ..] vectors) $ \(i, vec) ->
+            it ("cashaddr test vector " <> show (i :: Int)) $ testCashAddr vec
 
 {- Various utilities -}
-
-base58ToCashAddr :: Text -> Maybe Text
-base58ToCashAddr b58 = toCashAddr <$> fromBase58 b58
-  where
-    fromBase58 = stringToAddr btc
-    toCashAddr a = addrToString a { getAddrNet = bch }
-
-cashAddrtoBase58 :: Text -> Maybe Text
-cashAddrtoBase58 c32 = toBase58 <$> fromCashAddr c32
-  where
-    fromCashAddr = stringToAddr bch
-    toBase58 a = addrToString a { getAddrNet = btc }
 
 testCashAddr :: (Int, CashVersion, Cash32, Text) -> Assertion
 testCashAddr (len, typ, addr, hex) = do

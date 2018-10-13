@@ -1,4 +1,5 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-|
 Module      : Network.Haskoin.Transaction.Common
@@ -40,6 +41,7 @@ import           Data.String                    (IsString, fromString)
 import           Data.String.Conversions        (cs)
 import           Data.Text                      (Text)
 import           Data.Word                      (Word32, Word64)
+import           GHC.Generics
 import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Network.Common
 import           Network.Haskoin.Script.Common
@@ -48,7 +50,7 @@ import           Text.Read                      as R
 
 -- | Transaction id: hash of transaction excluding witness data.
 newtype TxHash = TxHash { getTxHash :: Hash256 }
-    deriving (Eq, Ord, Hashable, Serialize)
+    deriving (Eq, Ord, Generic, Hashable, Serialize)
 
 instance Show TxHash where
     showsPrec _ = shows . txHashToHex
@@ -107,19 +109,11 @@ data Tx = Tx
     , txWitness  :: !WitnessData
       -- | earliest mining height or time
     , txLockTime :: !Word32
-    } deriving (Eq, Ord)
+    } deriving (Show, Read, Eq, Ord, Generic, Hashable)
 
 -- | Compute transaction hash.
 txHash :: Tx -> TxHash
 txHash tx = TxHash (doubleSHA256 (S.encode tx {txWitness = []}))
-
-instance Show Tx where
-    showsPrec _ = shows . encodeHex . S.encode
-
-instance Read Tx where
-    readPrec = do
-        R.String str <- R.lexP
-        maybe R.pfail return $ (eitherToMaybe . S.decode) =<< decodeHex (cs str)
 
 instance IsString Tx where
     fromString =
@@ -225,7 +219,7 @@ data TxIn =
          , scriptInput  :: !ByteString
            -- | lock-time using sequence numbers (BIP-68)
          , txInSequence :: !Word32
-         } deriving (Eq, Show, Ord)
+         } deriving (Eq, Show, Read, Ord, Generic, Hashable)
 
 instance Serialize TxIn where
     get =
@@ -246,7 +240,7 @@ data TxOut =
             outValue     :: !Word64
             -- | pubkey script
           , scriptOutput :: !ByteString
-          } deriving (Eq, Show, Ord)
+          } deriving (Eq, Show, Read, Ord, Generic, Hashable)
 
 instance Serialize TxOut where
     get = do
@@ -265,7 +259,7 @@ data OutPoint = OutPoint
       outPointHash  :: !TxHash
       -- | position of output in previous transaction
     , outPointIndex :: !Word32
-    } deriving (Show, Read, Eq, Ord)
+    } deriving (Show, Read, Eq, Ord, Generic, Hashable)
 
 instance FromJSON OutPoint where
     parseJSON = withText "OutPoint" $

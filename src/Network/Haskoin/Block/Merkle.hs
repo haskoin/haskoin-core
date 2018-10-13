@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric  #-}
 {-|
 Module      : Network.Haskoin.Block.Merkle
 Copyright   : No rights reserved
@@ -31,15 +33,18 @@ module Network.Haskoin.Block.Merkle
     , boolsToWord8
     ) where
 
-import           Control.Monad                     (forM_, replicateM, when)
+import           Control.Monad                      (forM_, replicateM, when)
 import           Data.Bits
-import qualified Data.ByteString                   as BS
-import           Data.Either                       (isRight)
+import qualified Data.ByteString                    as BS
+import           Data.Either                        (isRight)
+import           Data.Hashable
 import           Data.Maybe
-import           Data.Serialize                    (Serialize, encode, get, put)
-import           Data.Serialize.Get                (getWord32le, getWord8)
-import           Data.Serialize.Put                (putWord32le, putWord8)
-import           Data.Word                         (Word32, Word8)
+import           Data.Serialize                     (Serialize, encode, get,
+                                                     put)
+import           Data.Serialize.Get                 (getWord32le, getWord8)
+import           Data.Serialize.Put                 (putWord32le, putWord8)
+import           Data.Word                          (Word32, Word8)
+import           GHC.Generics
 import           Network.Haskoin.Block.Common
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto.Hash
@@ -67,7 +72,7 @@ data MerkleBlock =
                 , mHashes         :: !PartialMerkleTree
                 -- | bits to rebuild partial merkle tree
                 , mFlags          :: !FlagBits
-                } deriving (Eq, Show)
+                } deriving (Eq, Show, Read, Generic, Hashable)
 
 instance Serialize MerkleBlock where
 

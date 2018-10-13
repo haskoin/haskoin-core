@@ -48,7 +48,6 @@ import           Data.Aeson                       as A
 import           Data.Aeson.Types
 import           Data.ByteString                  (ByteString)
 import qualified Data.ByteString                  as B
-import           Data.Function
 import           Data.Hashable
 import           Data.Maybe
 import           Data.Serialize                   as S
@@ -81,25 +80,7 @@ data Address
     | WitnessScriptAddress { getAddrHash256 :: !Hash256
                              -- ^ HASH256 hash of script
                             }
-    deriving (Eq, Generic, Show, Read, Serialize)
-
-instance Hashable Address where
-    hashWithSalt i (PubKeyAddress h)        = i `hashWithSalt` h
-    hashWithSalt i (ScriptAddress h)        = i `hashWithSalt` h
-    hashWithSalt i (WitnessPubKeyAddress h) = i `hashWithSalt` h
-    hashWithSalt i (WitnessScriptAddress h) = i `hashWithSalt` h
-    hash (PubKeyAddress h)        = hash h
-    hash (ScriptAddress h)        = hash h
-    hash (WitnessPubKeyAddress h) = hash h
-    hash (WitnessScriptAddress h) = hash h
-
-instance Ord Address where
-    compare = compare `on` f
-      where
-        f (PubKeyAddress h)        = S.encode h
-        f (ScriptAddress h)        = S.encode h
-        f (WitnessPubKeyAddress h) = S.encode h
-        f (WitnessScriptAddress h) = S.encode h
+    deriving (Eq, Ord, Generic, Show, Read, Serialize, Hashable)
 
 -- | 'Address' pays to a public key hash.
 isPubKeyAddress :: Address -> Bool

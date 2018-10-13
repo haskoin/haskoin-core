@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveAnyClass    #-}
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -37,6 +38,7 @@ import           Data.Aeson                  (FromJSON, ToJSON, Value (String),
                                               parseJSON, toJSON, withText)
 import           Data.ByteString             (ByteString)
 import qualified Data.ByteString             as BS
+import           Data.Hashable
 import           Data.Maybe                  (fromMaybe)
 import           Data.Serialize              (Serialize, decode, encode, get,
                                               put)
@@ -52,7 +54,7 @@ import           Network.Haskoin.Util
 data PubKeyI = PubKeyI
     { pubKeyPoint      :: !PubKey
     , pubKeyCompressed :: !Bool
-    } deriving (Generic, Eq, Show, Read)
+    } deriving (Generic, Eq, Show, Read, Hashable)
 
 instance IsString PubKeyI where
     fromString str =

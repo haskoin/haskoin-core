@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveAnyClass    #-}
+{-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-|
 Module      : Network.Haskoin.Script.Common
@@ -10,37 +12,39 @@ Portability : POSIX
 Common script-related functions and data types.
 -}
 module Network.Haskoin.Script.Common
-( ScriptOp(..)
-, Script(..)
-, PushDataType(..)
-, ScriptOutput(..)
-, isPayPK
-, isPayPKHash
-, isPayMulSig
-, isPayScriptHash
-, isPayWitnessPKHash
-, isPayWitnessScriptHash
-, isDataCarrier
-, encodeOutput
-, encodeOutputBS
-, decodeOutput
-, decodeOutputBS
-, isPushOp
-, opPushData
-, intToScriptOp
-, scriptOpToInt
-) where
+    ( ScriptOp(..)
+    , Script(..)
+    , PushDataType(..)
+    , ScriptOutput(..)
+    , isPayPK
+    , isPayPKHash
+    , isPayMulSig
+    , isPayScriptHash
+    , isPayWitnessPKHash
+    , isPayWitnessScriptHash
+    , isDataCarrier
+    , encodeOutput
+    , encodeOutputBS
+    , decodeOutput
+    , decodeOutputBS
+    , isPushOp
+    , opPushData
+    , intToScriptOp
+    , scriptOpToInt
+    ) where
 
 import           Control.Monad
 import           Data.Aeson                  as A
 import           Data.ByteString             (ByteString)
 import qualified Data.ByteString             as B
+import           Data.Hashable
 import           Data.Serialize              as S
 import           Data.Serialize.Get          (getByteString, getWord16le,
                                               getWord32le, getWord8, isEmpty)
 import           Data.Serialize.Put          (putByteString, putWord16le,
                                               putWord32le, putWord8)
 import           Data.Word                   (Word8)
+import           GHC.Generics                (Generic)
 import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Keys.Common
 import           Network.Haskoin.Util
@@ -59,7 +63,7 @@ newtype Script =
              -- | script operators defining this script
              scriptOps :: [ScriptOp]
            }
-    deriving (Eq, Show, Read)
+    deriving (Eq, Show, Read, Generic, Hashable)
 
 instance Serialize Script where
     get =
@@ -84,7 +88,7 @@ data PushDataType
     | OPDATA2
       -- | next four bytes contains the number of bytes to be pushed
     | OPDATA4
-    deriving (Show, Read, Eq)
+    deriving (Show, Read, Eq, Generic, Hashable)
 
 -- | Data type representing an operator allowed inside a 'Script'.
 data ScriptOp
@@ -210,7 +214,7 @@ data ScriptOp
     | OP_PUBKEYHASH
     | OP_PUBKEY
     | OP_INVALIDOPCODE !Word8
-    deriving (Show, Read, Eq)
+    deriving (Show, Read, Eq, Generic, Hashable)
 
 instance Serialize ScriptOp where
     get = go =<< (fromIntegral <$> getWord8)
@@ -591,7 +595,7 @@ data ScriptOutput
     | PayWitnessScriptHash { getScriptHash :: !Hash256 }
       -- | provably unspendable data carrier
     | DataCarrier { getOutputData :: !ByteString }
-    deriving (Eq, Show)
+    deriving (Eq, Show, Read, Generic, Hashable)
 
 instance FromJSON ScriptOutput where
     parseJSON = withText "scriptoutput" $ \t -> either fail return $

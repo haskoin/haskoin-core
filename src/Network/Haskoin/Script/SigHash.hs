@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-|
@@ -40,11 +41,13 @@ import qualified Data.Aeson                         as J
 import           Data.Bits
 import           Data.ByteString                    (ByteString)
 import qualified Data.ByteString                    as BS
+import           Data.Hashable
 import           Data.Maybe
 import           Data.Scientific
 import           Data.Serialize
 import           Data.Serialize.Put                 (runPut)
 import           Data.Word
+import           GHC.Generics
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Crypto.Signature
@@ -65,7 +68,9 @@ data SigHashFlag
       -- ^ replay protection for Bitcoin Cash transactions
     | SIGHASH_ANYONECANPAY
       -- ^ new inputs can be added
-    deriving (Eq, Ord, Show)
+    deriving (Eq, Ord, Show, Read, Generic)
+
+instance Hashable SigHashFlag
 
 instance Enum SigHashFlag where
     fromEnum SIGHASH_ALL          = 0x01
@@ -91,8 +96,20 @@ instance Enum SigHashFlag where
 -- If the 'SIGHASH_ANYONECANPAY' flag is set (true), then only the current input
 -- is signed. Otherwise, all of the inputs of a transaction are signed. The
 -- default value for 'SIGHASH_ANYONECANPAY' is unset (false).
-newtype SigHash = SigHash Word32
-    deriving (Eq, Ord, Enum, Bits, Num, Real, Integral, Show, Read)
+newtype SigHash =
+    SigHash Word32
+    deriving ( Eq
+             , Ord
+             , Enum
+             , Bits
+             , Num
+             , Real
+             , Integral
+             , Show
+             , Read
+             , Generic
+             , Hashable
+             )
 
 instance J.FromJSON SigHash where
     parseJSON =

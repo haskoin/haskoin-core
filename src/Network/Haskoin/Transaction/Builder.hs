@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveAnyClass    #-}
+{-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-|
@@ -51,6 +53,7 @@ import qualified Data.ByteString                    as B
 import           Data.Conduit                       (ConduitT, Void, await,
                                                      runConduit, (.|))
 import           Data.Conduit.List                  (sourceList)
+import           Data.Hashable
 import           Data.List                          (find, nub)
 import           Data.Maybe                         (catMaybes, fromJust,
                                                      fromMaybe, isJust,
@@ -59,6 +62,7 @@ import           Data.Serialize                     (encode)
 import           Data.String.Conversions            (cs)
 import           Data.Text                          (Text)
 import           Data.Word                          (Word64)
+import           GHC.Generics
 import           Network.Haskoin.Address
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto.Signature
@@ -272,7 +276,7 @@ data SigInput = SigInput
     , sigInputOP     :: !OutPoint     -- ^ outpoint to spend
     , sigInputSH     :: !SigHash      -- ^ signature type
     , sigInputRedeem :: !(Maybe RedeemScript) -- ^ sedeem script
-    } deriving (Eq, Show)
+    } deriving (Eq, Show, Read, Generic, Hashable)
 
 instance ToJSON SigInput where
     toJSON (SigInput so val op sh rdm) = object $

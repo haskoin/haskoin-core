@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveAnyClass    #-}
+{-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase        #-}
@@ -70,6 +72,7 @@ import qualified Data.ByteString                    as B
 import           Data.ByteString.Short              (ShortByteString, fromShort,
                                                      toShort)
 import           Data.Function                      (on)
+import           Data.Hashable
 import           Data.HashMap.Strict                (HashMap)
 import qualified Data.HashMap.Strict                as HashMap
 import           Data.List                          (sort, sortBy)
@@ -81,6 +84,7 @@ import           Data.Serialize.Get                 as S
 import           Data.Serialize.Put                 as S
 import           Data.Typeable                      (Typeable)
 import           Data.Word                          (Word32, Word64)
+import           GHC.Generics
 import           Network.Haskoin.Block.Common
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto
@@ -113,7 +117,7 @@ data BlockNode
     | GenesisNode { nodeHeader :: !BlockHeader
                   , nodeHeight :: !BlockHeight
                   , nodeWork   :: !BlockWork }
-    deriving (Show)
+    deriving (Show, Read, Generic, Hashable)
 
 instance Serialize BlockNode where
     get = do
@@ -143,7 +147,7 @@ instance Ord BlockNode where
 data HeaderMemory = HeaderMemory
     { memoryHeaderMap  :: !BlockMap
     , memoryBestHeader :: !BlockNode
-    } deriving (Eq, Typeable)
+    } deriving (Eq, Typeable, Show, Read, Generic, Hashable)
 
 -- | Typeclass for block header chain storage monad.
 class Monad m => BlockHeaders m where
@@ -441,9 +445,9 @@ bip34 :: Network
       -> BlockHeight  -- ^ new child height
       -> BlockHash    -- ^ new child hash
       -> Bool
-bip34 net height hash
+bip34 net height hsh
     | fst (getBip34Block net) == 0 = True
-    | fst (getBip34Block net) == height = snd (getBip34Block net) == hash
+    | fst (getBip34Block net) == height = snd (getBip34Block net) == hsh
     | otherwise = True
 
 -- | Check if the provided block height and version are valid.

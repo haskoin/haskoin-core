@@ -1,4 +1,5 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric  #-}
 {-|
 Module      : Network.Haskoin.Block.Common
 Copyright   : No rights reserved
@@ -45,6 +46,7 @@ import           Data.String                        (IsString, fromString)
 import           Data.String.Conversions            (cs)
 import           Data.Text                          (Text)
 import           Data.Word                          (Word32)
+import           GHC.Generics
 import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Network.Common
 import           Network.Haskoin.Transaction.Common
@@ -61,7 +63,7 @@ type Timestamp = Word32
 data Block =
     Block { blockHeader :: !BlockHeader
           , blockTxns   :: ![Tx]
-          } deriving (Eq, Show, Read)
+          } deriving (Eq, Show, Read, Generic, Hashable)
 
 instance Serialize Block where
     get = do
@@ -77,7 +79,7 @@ instance Serialize Block where
 -- | Block header hash. To be serialized reversed for display purposes.
 newtype BlockHash = BlockHash
     { getBlockHash :: Hash256 }
-    deriving (Eq, Ord, Hashable, Serialize)
+    deriving (Eq, Ord, Generic, Hashable, Serialize)
 
 instance Show BlockHash where
     showsPrec _ = shows . blockHashToHex
@@ -130,7 +132,8 @@ data BlockHeader =
                 , blockBits      :: !Word32      -- 16 bytes
                   -- | random nonce
                 , bhNonce        :: !Word32      -- 16 bytes
-                } deriving (Eq, Ord, Show, Read) -- 208 bytes (above + 16 bytes)
+                } deriving (Eq, Ord, Show, Read, Generic, Hashable)
+                                                 -- 208 bytes (above + 16 bytes)
 
 -- | Compute hash of 'BlockHeader'.
 headerHash :: BlockHeader -> BlockHash

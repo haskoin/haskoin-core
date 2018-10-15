@@ -21,3 +21,4 @@ cabal.project.local~
 .HTF/
 .ghc.environment.*
 haskoin-core.cabal
+TAGS

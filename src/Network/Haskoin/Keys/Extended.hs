@@ -14,6 +14,7 @@ BIP-32 extended keys.
 -}
 module Network.Haskoin.Keys.Extended
     (
+      -- * Extended Keys
       XPubKey(..)
     , XPrvKey(..)
     , ChainCode
@@ -48,7 +49,7 @@ module Network.Haskoin.Keys.Extended
     , getXPrvKey
     , getXPubKey
 
-      -- ** Helpers
+      -- ** Helper Functions
     , prvSubKeys
     , pubSubKeys
     , hardSubKeys
@@ -77,7 +78,7 @@ module Network.Haskoin.Keys.Extended
     , listToPath
     , pathToList
 
-      -- ** Derivation Path Parser
+      -- *** Derivation Path Parser
     , XKey(..)
     , ParsedPath(..)
     , parsePath

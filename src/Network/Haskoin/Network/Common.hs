@@ -38,6 +38,7 @@ module Network.Haskoin.Network.Common
     , nodeXThin
     , commandToString
     , stringToCommand
+    , putVarInt
     ) where
 
 import           Control.Monad               (forM_, liftM2, replicateM, unless)
@@ -74,7 +75,7 @@ instance Serialize Addr where
         action             = liftM2 (,) getWord32le S.get
 
     put (Addr xs) = do
-        put $ VarInt $ fromIntegral $ length xs
+        putVarInt $ length xs
         forM_ xs $ \(a,b) -> putWord32le a >> put b
 
 -- | Data type describing signed messages that can be sent between bitcoin
@@ -111,7 +112,7 @@ instance Serialize GetData where
         repList (VarInt c) = replicateM (fromIntegral c) S.get
 
     put (GetData xs) = do
-        put $ VarInt $ fromIntegral $ length xs
+        putVarInt $ length xs
         forM_ xs put
 
 -- | 'Inv' messages are used by nodes to advertise their knowledge of new
@@ -130,7 +131,7 @@ instance Serialize Inv where
         repList (VarInt c) = replicateM (fromIntegral c) S.get
 
     put (Inv xs) = do
-        put $ VarInt $ fromIntegral $ length xs
+        putVarInt $ length xs
         forM_ xs put
 
 -- | Data type identifying the type of an inventory vector. SegWit types are
@@ -248,7 +249,7 @@ instance Serialize NotFound where
         repList (VarInt c) = replicateM (fromIntegral c) S.get
 
     put (NotFound xs) = do
-        put $ VarInt $ fromIntegral $ length xs
+        putVarInt $ length xs
         forM_ xs put
 
 -- | A 'Ping' message is sent to bitcoin peers to check if a connection is still
@@ -373,6 +374,9 @@ instance Serialize VarInt where
             putWord8 0xff
             putWord64le x
 
+putVarInt :: Integral a => a -> Put
+putVarInt = put . VarInt . fromIntegral
+
 -- | Data type for serialization of variable-length strings.
 newtype VarString = VarString { getVarString :: ByteString }
     deriving (Eq, Show, Read)
@@ -384,7 +388,7 @@ instance Serialize VarString where
         readBS (VarInt len) = getByteString (fromIntegral len)
 
     put (VarString bs) = do
-        put $ VarInt $ fromIntegral $ B.length bs
+        putVarInt $ B.length bs
         putByteString bs
 
 -- | When a bitcoin node creates an outgoing connection to another node,

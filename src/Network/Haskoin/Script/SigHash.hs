@@ -277,7 +277,7 @@ txSigHashForkId net tx out v i sh =
         | otherwise = zeros
     putScript s = do
         let encodedScript = encode s
-        put $ VarInt $ fromIntegral $ BS.length encodedScript
+        putVarInt $ BS.length encodedScript
         putByteString encodedScript
     zeros :: Hash256
     zeros = "0000000000000000000000000000000000000000000000000000000000000000"

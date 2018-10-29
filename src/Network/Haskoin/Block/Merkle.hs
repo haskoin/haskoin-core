@@ -88,10 +88,10 @@ instance Serialize MerkleBlock where
     put (MerkleBlock h ntx hashes flags) = do
         put h
         putWord32le ntx
-        put $ VarInt $ fromIntegral $ length hashes
+        putVarInt $ length hashes
         forM_ hashes put
         let ws = encodeMerkleFlags flags
-        put $ VarInt $ fromIntegral $ length ws
+        putVarInt $ length ws
         forM_ ws putWord8
 
 -- | Unpack Merkle flags into 'FlagBits' structure.

@@ -1,6 +1,6 @@
-{-# LANGUAGE DeriveAnyClass             #-}
-{-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE DeriveAnyClass    #-}
+{-# LANGUAGE DeriveGeneric     #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-|
 Module      : Network.Haskoin.Transaction.Common
 Copyright   : No rights reserved
@@ -129,9 +129,9 @@ instance Serialize Tx where
 
 putInOut :: Tx -> Put
 putInOut tx = do
-    put $ VarInt $ fromIntegral $ length (txIn tx)
+    putVarInt $ length (txIn tx)
     forM_ (txIn tx) put
-    put $ VarInt $ fromIntegral $ length (txOut tx)
+    putVarInt $ length (txOut tx)
     forM_ (txOut tx) put
 
 -- | Non-SegWit transaction serializer.
@@ -197,10 +197,10 @@ putWitnessData :: WitnessData -> Put
 putWitnessData = mapM_ putWitnessStack
   where
     putWitnessStack ws = do
-        put $ VarInt $ fromIntegral $ length ws
+        putVarInt $ length ws
         mapM_ putWitnessStackItem ws
     putWitnessStackItem bs = do
-        put $ VarInt $ fromIntegral $ B.length bs
+        putVarInt $ B.length bs
         putByteString bs
 
 instance FromJSON Tx where
@@ -229,7 +229,7 @@ instance Serialize TxIn where
 
     put (TxIn o s q) = do
         put o
-        put $ VarInt $ fromIntegral $ B.length s
+        putVarInt $ B.length s
         putByteString s
         putWord32le q
 
@@ -250,7 +250,7 @@ instance Serialize TxOut where
 
     put (TxOut o s) = do
         putWord64le o
-        put $ VarInt $ fromIntegral $ B.length s
+        putVarInt $ B.length s
         putByteString s
 
 -- | The 'OutPoint' refers to a transaction output being spent.

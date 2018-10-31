@@ -106,7 +106,7 @@ instance Serialize BloomFilter where
         readDat (VarInt len) = replicateM (fromIntegral len) getWord8
 
     put (BloomFilter dat hashFuncs tweak flags) = do
-        put $ VarInt $ fromIntegral $ S.length dat
+        putVarInt $ S.length dat
         forM_ (F.toList dat) putWord8
         putWord32le hashFuncs
         putWord32le tweak
@@ -132,7 +132,7 @@ instance Serialize FilterAdd where
         return $ FilterAdd dat
 
     put (FilterAdd bs) = do
-        put $ VarInt $ fromIntegral $ BS.length bs
+        putVarInt $ BS.length bs
         putByteString bs
 
 

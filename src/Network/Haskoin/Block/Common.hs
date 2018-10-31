@@ -73,7 +73,7 @@ instance Serialize Block where
         return $ Block header txs
     put (Block h txs) = do
         put h
-        put $ VarInt $ fromIntegral $ length txs
+        putVarInt $ length txs
         forM_ txs put
 
 -- | Block header hash. To be serialized reversed for display purposes.
@@ -200,7 +200,7 @@ instance Serialize GetBlocks where
 putGetBlockMsg :: Word32 -> BlockLocator -> BlockHash -> Put
 putGetBlockMsg v xs h = do
     putWord32le v
-    put $ VarInt $ fromIntegral $ length xs
+    putVarInt $ length xs
     forM_ xs put
     put h
 
@@ -248,7 +248,7 @@ instance Serialize Headers where
         action = liftM2 (,) get get
 
     put (Headers xs) = do
-        put $ VarInt $ fromIntegral $ length xs
+        putVarInt $ length xs
         forM_ xs $ \(a,b) -> put a >> put b
 
 -- | Decode the compact number used in the difficulty target of a block.

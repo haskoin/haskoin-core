@@ -18,6 +18,7 @@ module Network.Haskoin.Keys.Extended
     , XPrvKey(..)
     , ChainCode
     , KeyIndex
+    , Fingerprint
     , DerivationException(..)
     , makeXPrvKey
     , deriveXPubKey
@@ -141,15 +142,18 @@ type ChainCode = Hash256
 -- | Index of key as specified in BIP-32.
 type KeyIndex = Word32
 
+-- | Fingerprint of parent
+type Fingerprint = Word32
+
 -- | Data type representing an extended BIP32 private key. An extended key
 -- is a node in a tree of key derivations. It has a depth in the tree, a
 -- parent node and an index to differentiate it from other siblings.
 data XPrvKey = XPrvKey
-    { xPrvDepth  :: !Word8     -- ^ depth in the tree
-    , xPrvParent :: !Word32    -- ^ fingerprint of parent
-    , xPrvIndex  :: !KeyIndex  -- ^ derivation index
-    , xPrvChain  :: !ChainCode -- ^ chain code
-    , xPrvKey    :: !SecKey    -- ^ private key of this node
+    { xPrvDepth  :: !Word8       -- ^ depth in the tree
+    , xPrvParent :: !Fingerprint -- ^ fingerprint of parent
+    , xPrvIndex  :: !KeyIndex    -- ^ derivation index
+    , xPrvChain  :: !ChainCode   -- ^ chain code
+    , xPrvKey    :: !SecKey      -- ^ private key of this node
     } deriving (Generic, Eq, Show, Read)
 
 xPrvToJSON :: Network -> XPrvKey -> Value
@@ -158,7 +162,7 @@ xPrvToJSON net = A.String . xPrvExport net
 -- | Data type representing an extended BIP32 public key.
 data XPubKey = XPubKey
     { xPubDepth  :: !Word8     -- ^ depth in the tree
-    , xPubParent :: !Word32    -- ^ fingerprint of parent
+    , xPubParent :: !Fingerprint    -- ^ fingerprint of parent
     , xPubIndex  :: !KeyIndex  -- ^ derivation index
     , xPubChain  :: !ChainCode -- ^ chain code
     , xPubKey    :: !PubKey    -- ^ public key of this node
@@ -288,14 +292,14 @@ xPubID :: XPubKey -> Hash160
 xPubID = ripemd160 . encode . sha256 . exportPubKey True . xPubKey
 
 -- | Computes the key fingerprint of an extended private key.
-xPrvFP :: XPrvKey -> Word32
+xPrvFP :: XPrvKey -> Fingerprint
 xPrvFP =
     fromRight err . decode . B.take 4 . encode . xPrvID
   where
     err = error "Could not decode xPrvFP"
 
 -- | Computes the key fingerprint of an extended public key.
-xPubFP :: XPubKey -> Word32
+xPubFP :: XPubKey -> Fingerprint
 xPubFP =
     fromRight err . decode . B.take 4 . encode . xPubID
   where

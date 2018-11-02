@@ -46,6 +46,7 @@ library:
     - Network.Haskoin.Script
     - Network.Haskoin.Test
     - Network.Haskoin.Transaction
+    - Network.Haskoin.Transaction.Partial
     - Network.Haskoin.Util
   dependencies:
     - array

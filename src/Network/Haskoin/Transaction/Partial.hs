@@ -228,9 +228,9 @@ getInputItem 0 input@Input{nonWitnessUtxo = Nothing} InNonWitnessUtxo = do
     utxo <- getSizedBytes
     return $ input { nonWitnessUtxo = Just utxo }
 getInputItem 0 input@Input{witnessUtxo = Nothing} InWitnessUtxo = do
-    utxo <- getSizedBytes -- TODO Not working ?
+    utxo <- getSizedBytes
     return $ input { witnessUtxo = Just utxo }
-getInputItem keySize input InPartialSig = do -- TODO Need keysize?
+getInputItem keySize input InPartialSig = do
     (k, v) <- getPartialSig keySize
     return $ input { partialSigs = HashMap.insert k v (partialSigs input) }
   where
@@ -246,7 +246,7 @@ getInputItem 0 input@Input{inputRedeemScript = Nothing} InRedeemScript = do
 getInputItem 0 input@Input{inputWitnessScript = Nothing} InWitnessScript = do
     script <- getSizedBytes
     return $ input { inputWitnessScript = Just script }
-getInputItem keySize input InBIP32Derivation = do -- TODO Need keysize?
+getInputItem keySize input InBIP32Derivation = do
     (k, v) <- getHDPath keySize
     return $ input { inputHDKeypaths = HashMap.insert k v (inputHDKeypaths input) }
 getInputItem 0 input@Input{finalScriptSig = Nothing} InFinalScriptSig = do
@@ -270,7 +270,7 @@ getOutputItem 0 output@Output{outputRedeemScript = Nothing} OutRedeemScript = do
 getOutputItem 0 output@Output{outputWitnessScript = Nothing} OutWitnessScript = do
     script <- getSizedBytes
     return $ output { outputWitnessScript = Just script }
-getOutputItem keySize output OutBIP32Derivation = do -- TODO Need keysize?
+getOutputItem keySize output OutBIP32Derivation = do
     (k, v) <- getHDPath keySize
     return $ output { outputHDKeypaths = HashMap.insert k v (outputHDKeypaths output) }
 getOutputItem keySize output outputType = fail $

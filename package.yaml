@@ -75,3 +75,4 @@ tests:
       - haskoin-core
       - HUnit
       - safe
+      - unordered-containers

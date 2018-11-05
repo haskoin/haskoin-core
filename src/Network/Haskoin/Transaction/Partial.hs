@@ -10,16 +10,21 @@ module Network.Haskoin.Transaction.Partial
     , Output (..)
     , UnknownMap (..)
     , Key (..)
+    , merge
+    , mergeInput
+    , mergeOutput
     , emptyInput
     , emptyOutput
     ) where
 
+import           Control.Applicative         ((<|>))
 import           Control.Monad               (guard, replicateM, void)
 import           Data.ByteString             (ByteString)
 import qualified Data.ByteString             as B
 import           Data.Hashable               (Hashable)
 import           Data.HashMap.Strict         (HashMap)
 import qualified Data.HashMap.Strict         as HashMap
+import           Data.Maybe                  (isJust)
 import           Data.Proxy                  (Proxy)
 import           Data.Serialize              as S
 import           GHC.Generics                (Generic)
@@ -64,6 +69,40 @@ data Key = Key
     { keyType :: Word8
     , key     :: ByteString
     } deriving (Show, Eq, Generic, Hashable)
+
+merge :: PartiallySignedTransaction -> PartiallySignedTransaction -> Maybe PartiallySignedTransaction
+merge psbt1 psbt2
+    | unsignedTransaction psbt1 == unsignedTransaction psbt2
+    = Just $ psbt1
+        { globalUnknown = UnknownMap $ unknownMap (globalUnknown psbt1) <> unknownMap (globalUnknown psbt2)
+        , inputs = zipWith mergeInput (inputs psbt1) (inputs psbt2)
+        , outputs = zipWith mergeOutput (outputs psbt1) (outputs psbt2)
+        }
+merge _ _ = Nothing
+
+mergeInput :: Input -> Input -> Input
+mergeInput a b = Input
+    { nonWitnessUtxo = if isJust witUtx then Nothing else nonWitnessUtxo a <|> nonWitnessUtxo b
+    , witnessUtxo = witUtx
+    , sigHashType = sigHashType a <|> sigHashType b
+    , partialSigs = partialSigs a <> partialSigs b
+    , inputHDKeypaths = inputHDKeypaths a <> inputHDKeypaths b
+    , inputUnknown = UnknownMap $ unknownMap (inputUnknown a) <> unknownMap (inputUnknown b)
+    , inputRedeemScript = inputRedeemScript a <|> inputRedeemScript b
+    , inputWitnessScript = inputWitnessScript a <|> inputWitnessScript b
+    , finalScriptSig = finalScriptSig a <|> finalScriptSig b
+    , finalScriptWitness = finalScriptWitness a <|> finalScriptWitness b
+    }
+  where
+    witUtx = witnessUtxo a <|> witnessUtxo b
+
+mergeOutput :: Output -> Output -> Output
+mergeOutput a b = Output
+    { outputRedeemScript = outputRedeemScript a <|> outputRedeemScript b
+    , outputWitnessScript = outputWitnessScript a <|> outputWitnessScript b
+    , outputHDKeypaths = outputHDKeypaths a <> outputHDKeypaths b
+    , outputUnknown = UnknownMap $ unknownMap (outputUnknown a) <> unknownMap (outputUnknown b)
+    }
 
 emptyInput :: Input
 emptyInput = Input

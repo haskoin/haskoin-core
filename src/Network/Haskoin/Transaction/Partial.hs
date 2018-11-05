@@ -93,8 +93,8 @@ instance Serialize PartiallySignedTransaction where
         globalEnd <- getWord8
         guard $ globalEnd == 0x00
 
-        inputs <- replicateM (length $ txIn unsignedTransaction) (label "input" get)
-        outputs <- replicateM (length $ txOut unsignedTransaction) (label "output" get)
+        inputs <- replicateM (length $ txIn unsignedTransaction) get
+        outputs <- replicateM (length $ txOut unsignedTransaction) get
 
         return PartiallySignedTransaction { unsignedTransaction, globalUnknown, inputs, outputs }
 

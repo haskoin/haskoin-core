@@ -210,6 +210,9 @@ data ScriptOp
     | OP_NOP8
     | OP_NOP9
     | OP_NOP10
+      -- Bitcoin Cash Nov 2018 hard fork
+    | OP_CHECKDATASIG
+    | OP_CHECKDATASIGVERIFY
       -- Other
     | OP_PUBKEYHASH
     | OP_PUBKEY
@@ -358,6 +361,10 @@ instance Serialize ScriptOp where
             | op == 0xb7 = return OP_NOP8
             | op == 0xb8 = return OP_NOP9
             | op == 0xb9 = return OP_NOP10
+
+            -- Bitcoin Cash Nov 2018 hard fork
+            | op == 0xba = return OP_CHECKDATASIG
+            | op == 0xbb = return OP_CHECKDATASIGVERIFY
 
             -- Constants
             | op == 0xfd = return OP_PUBKEYHASH
@@ -521,6 +528,10 @@ instance Serialize ScriptOp where
         OP_NOP8              -> putWord8 0xb7
         OP_NOP9              -> putWord8 0xb8
         OP_NOP10             -> putWord8 0xb9
+
+        -- Bitcoin Cash Nov 2018 hard fork
+        OP_CHECKDATASIG      -> putWord8 0xba
+        OP_CHECKDATASIGVERIFY -> putWord8 0xbb
 
 
 -- | Check whether opcode is only data.

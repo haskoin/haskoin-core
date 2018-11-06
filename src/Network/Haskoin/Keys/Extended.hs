@@ -167,7 +167,7 @@ data XPubKey = XPubKey
     , xPubIndex  :: !KeyIndex  -- ^ derivation index
     , xPubChain  :: !ChainCode -- ^ chain code
     , xPubKey    :: !PubKey    -- ^ public key of this node
-    } deriving (Eq, Show, Read)
+    } deriving (Generic, Eq, Show, Read)
 
 
 -- | Decode an extended public key from a JSON string

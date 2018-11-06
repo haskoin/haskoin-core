@@ -79,7 +79,7 @@ merge :: PartiallySignedTransaction -> PartiallySignedTransaction -> Maybe Parti
 merge psbt1 psbt2
     | unsignedTransaction psbt1 == unsignedTransaction psbt2
     = Just $ psbt1
-        { globalUnknown = UnknownMap $ unknownMap (globalUnknown psbt1) <> unknownMap (globalUnknown psbt2)
+        { globalUnknown = globalUnknown psbt1 <> globalUnknown psbt2
         , inputs = zipWith mergeInput (inputs psbt1) (inputs psbt2)
         , outputs = zipWith mergeOutput (outputs psbt1) (outputs psbt2)
         }

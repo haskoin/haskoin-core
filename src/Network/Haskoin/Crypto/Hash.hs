@@ -145,7 +145,7 @@ sha256 = Hash256 . BSS.toShort . BA.convert . hashWith SHA256
 
 -- | Calculate RIPEMD160 hash.
 ripemd160 :: ByteArrayAccess b => b -> Hash160
-ripemd160 = Hash160 . BSS.toShort . BA.convert. hashWith RIPEMD160
+ripemd160 = Hash160 . BSS.toShort . BA.convert . hashWith RIPEMD160
 
 -- | Claculate SHA1 hash.
 sha1 :: ByteArrayAccess b => b -> Hash160

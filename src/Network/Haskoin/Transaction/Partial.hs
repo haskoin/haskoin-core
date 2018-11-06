@@ -13,6 +13,7 @@ module Network.Haskoin.Transaction.Partial
     , merge
     , mergeInput
     , mergeOutput
+    , finalTransaction
     , emptyInput
     , emptyOutput
     ) where
@@ -24,7 +25,8 @@ import qualified Data.ByteString             as B
 import           Data.Hashable               (Hashable)
 import           Data.HashMap.Strict         (HashMap)
 import qualified Data.HashMap.Strict         as HashMap
-import           Data.Maybe                  (isJust)
+import           Data.List                   (foldl')
+import           Data.Maybe                  (fromMaybe, isJust)
 import           Data.Proxy                  (Proxy)
 import           Data.Serialize              as S
 import           GHC.Generics                (Generic)
@@ -106,6 +108,17 @@ mergeOutput a b = Output
     , outputHDKeypaths = outputHDKeypaths a <> outputHDKeypaths b
     , outputUnknown = outputUnknown a <> outputUnknown b
     }
+
+finalTransaction :: PartiallySignedTransaction -> Tx
+finalTransaction psbt = setInputs . foldl' finalizeInput ([], []) $ zip (txIn tx) (inputs psbt)
+  where
+    tx = unsignedTransaction psbt
+    hasWitness = any (isJust . finalScriptWitness) (inputs psbt)
+    setInputs (ins, witData) = tx { txIn = reverse ins, txWitness = if hasWitness then reverse witData else [] }
+    finalizeInput (ins, witData) (txInput, psbtInput) = maybe finalWitness finalScript $ finalScriptSig psbtInput
+      where
+        finalScript script = (txInput { scriptInput = encode script }:ins, []:witData)
+        finalWitness = (ins, fromMaybe [] (finalScriptWitness psbtInput):witData)
 
 emptyInput :: Input
 emptyInput = Input

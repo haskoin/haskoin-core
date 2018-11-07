@@ -1,8 +1,8 @@
-{-# LANGUAGE DeriveAnyClass      #-}
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 
 module Network.Haskoin.Transaction.Partial
     ( PartiallySignedTransaction (..)
@@ -10,16 +10,23 @@ module Network.Haskoin.Transaction.Partial
     , Output (..)
     , UnknownMap (..)
     , Key (..)
+    , merge
+    , mergeInput
+    , mergeOutput
+    , finalTransaction
     , emptyInput
     , emptyOutput
     ) where
 
+import           Control.Applicative         ((<|>))
 import           Control.Monad               (guard, replicateM, void)
 import           Data.ByteString             (ByteString)
 import qualified Data.ByteString             as B
 import           Data.Hashable               (Hashable)
 import           Data.HashMap.Strict         (HashMap)
 import qualified Data.HashMap.Strict         as HashMap
+import           Data.List                   (foldl')
+import           Data.Maybe                  (fromMaybe, isJust)
 import           Data.Proxy                  (Proxy)
 import           Data.Serialize              as S
 import           GHC.Generics                (Generic)
@@ -28,7 +35,8 @@ import           Network.Haskoin.Keys        (Fingerprint, KeyIndex, PubKeyI)
 import           Network.Haskoin.Network     (VarInt (..), VarString (..),
                                               putVarInt)
 import           Network.Haskoin.Script      (Script, SigHash)
-import           Network.Haskoin.Transaction (Tx (..), TxOut, scriptInput)
+import           Network.Haskoin.Transaction (Tx (..), TxOut, WitnessStack,
+                                              scriptInput)
 
 data PartiallySignedTransaction = PartiallySignedTransaction
     { unsignedTransaction :: Tx
@@ -46,7 +54,7 @@ data Input = Input
     , inputWitnessScript :: Maybe Script
     , inputHDKeypaths    :: HashMap PubKeyI (Fingerprint, [KeyIndex])
     , finalScriptSig     :: Maybe Script
-    , finalScriptWitness :: Maybe [ByteString]
+    , finalScriptWitness :: Maybe WitnessStack
     , inputUnknown       :: UnknownMap
     } deriving (Show, Eq)
 
@@ -58,12 +66,59 @@ data Output = Output
     } deriving (Show, Eq)
 
 newtype UnknownMap = UnknownMap { unknownMap :: HashMap Key ByteString }
-    deriving (Show, Eq)
+    deriving (Show, Eq, Semigroup, Monoid)
 
 data Key = Key
     { keyType :: Word8
     , key     :: ByteString
-    } deriving (Show, Eq, Generic, Hashable)
+    } deriving (Show, Eq, Generic)
+
+instance Hashable Key
+
+merge :: PartiallySignedTransaction -> PartiallySignedTransaction -> Maybe PartiallySignedTransaction
+merge psbt1 psbt2
+    | unsignedTransaction psbt1 == unsignedTransaction psbt2
+    = Just $ psbt1
+        { globalUnknown = globalUnknown psbt1 <> globalUnknown psbt2
+        , inputs = zipWith mergeInput (inputs psbt1) (inputs psbt2)
+        , outputs = zipWith mergeOutput (outputs psbt1) (outputs psbt2)
+        }
+merge _ _ = Nothing
+
+mergeInput :: Input -> Input -> Input
+mergeInput a b = Input
+    { nonWitnessUtxo = if isJust witUtx then Nothing else nonWitnessUtxo a <|> nonWitnessUtxo b
+    , witnessUtxo = witUtx
+    , sigHashType = sigHashType a <|> sigHashType b
+    , partialSigs = partialSigs a <> partialSigs b
+    , inputHDKeypaths = inputHDKeypaths a <> inputHDKeypaths b
+    , inputUnknown = inputUnknown a <> inputUnknown b
+    , inputRedeemScript = inputRedeemScript a <|> inputRedeemScript b
+    , inputWitnessScript = inputWitnessScript a <|> inputWitnessScript b
+    , finalScriptSig = finalScriptSig a <|> finalScriptSig b
+    , finalScriptWitness = finalScriptWitness a <|> finalScriptWitness b
+    }
+  where
+    witUtx = witnessUtxo a <|> witnessUtxo b
+
+mergeOutput :: Output -> Output -> Output
+mergeOutput a b = Output
+    { outputRedeemScript = outputRedeemScript a <|> outputRedeemScript b
+    , outputWitnessScript = outputWitnessScript a <|> outputWitnessScript b
+    , outputHDKeypaths = outputHDKeypaths a <> outputHDKeypaths b
+    , outputUnknown = outputUnknown a <> outputUnknown b
+    }
+
+finalTransaction :: PartiallySignedTransaction -> Tx
+finalTransaction psbt = setInputs . foldl' finalizeInput ([], []) $ zip (txIn tx) (inputs psbt)
+  where
+    tx = unsignedTransaction psbt
+    hasWitness = any (isJust . finalScriptWitness) (inputs psbt)
+    setInputs (ins, witData) = tx { txIn = reverse ins, txWitness = if hasWitness then reverse witData else [] }
+    finalizeInput (ins, witData) (txInput, psbtInput) = maybe finalWitness finalScript $ finalScriptSig psbtInput
+      where
+        finalScript script = (txInput { scriptInput = encode script }:ins, []:witData)
+        finalWitness = (ins, fromMaybe [] (finalScriptWitness psbtInput):witData)
 
 emptyInput :: Input
 emptyInput = Input

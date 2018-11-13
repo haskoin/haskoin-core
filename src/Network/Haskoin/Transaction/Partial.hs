@@ -13,7 +13,9 @@ module Network.Haskoin.Transaction.Partial
     , merge
     , mergeInput
     , mergeOutput
+    , complete
     , finalTransaction
+    , emptyPSBT
     , emptyInput
     , emptyOutput
     ) where
@@ -31,12 +33,21 @@ import           Data.Proxy                  (Proxy)
 import           Data.Serialize              as S
 import           GHC.Generics                (Generic)
 import           GHC.Word                    (Word64, Word8)
+import           Network.Haskoin.Address     (Address (..), pubKeyAddr)
 import           Network.Haskoin.Keys        (Fingerprint, KeyIndex, PubKeyI)
 import           Network.Haskoin.Network     (VarInt (..), VarString (..),
                                               putVarInt)
-import           Network.Haskoin.Script      (Script, SigHash)
+import           Network.Haskoin.Script      (Script (..), ScriptInput (..),
+                                              ScriptOp (..), ScriptOutput (..),
+                                              SigHash, SimpleInput (..),
+                                              decodeOutput, decodeOutputBS,
+                                              encodeInput, encodeOutputBS,
+                                              isPayScriptHash, opPushData,
+                                              toP2SH, toP2WSH)
 import           Network.Haskoin.Transaction (Tx (..), TxOut, WitnessStack,
-                                              scriptInput)
+                                              outPointIndex, prevOutput,
+                                              scriptInput, scriptOutput)
+import           Network.Haskoin.Util        (eitherToMaybe)
 
 data PartiallySignedTransaction = PartiallySignedTransaction
     { unsignedTransaction :: Tx
@@ -109,6 +120,68 @@ mergeOutput a b = Output
     , outputUnknown = outputUnknown a <> outputUnknown b
     }
 
+complete :: PartiallySignedTransaction -> PartiallySignedTransaction
+complete psbt = psbt { inputs = map (completeInput . analyzeInputs) (zip [0..] $ inputs psbt) }
+  where
+    analyzeInputs (i, input) = (outputScript =<< witnessUtxo input <|> nonWitScript, input)
+      where
+        nonWitScript = getPrevOut i =<< nonWitnessUtxo input
+
+    getPrevOut i tx =
+       (txOut tx !!?) . fromIntegral . outPointIndex . prevOutput =<< txIn (unsignedTransaction psbt) !!? i
+    xs !!? i = lookup i $ zip [0..] xs
+
+    outputScript = eitherToMaybe . decodeOutputBS . scriptOutput
+
+    completeInput (Nothing, input)     = input
+    completeInput (Just script, input) = completeSig input script
+
+completeSig :: Input -> ScriptOutput -> Input
+completeSig input (PayPK k) =
+    input { finalScriptSig = eitherToMaybe . S.decode =<< HashMap.lookup k (partialSigs input) }
+completeSig input (PayPKHash h)
+    | [(k, sig)] <- HashMap.toList $ partialSigs input
+    , PubKeyAddress h == pubKeyAddr k
+    = input { finalScriptSig = Just $ Script [opPushData sig, opPushData (S.encode k)] }
+completeSig input (PayMulSig pubKeys m) | length sigs >= m = input { finalScriptSig = finalSig }
+  where
+    sigs = take m $ collectSigs pubKeys input
+    finalSig = Script . (OP_0 :) . (map opPushData sigs <>) . pure . opPushData . S.encode <$> inputRedeemScript input
+completeSig input (PayScriptHash h)
+    | Just rdmScript <- inputRedeemScript input
+    , PayScriptHash h == toP2SH rdmScript
+    , Right decodedScript <- decodeOutput rdmScript
+    , not (isPayScriptHash decodedScript)
+    = completeSig input decodedScript
+completeSig input (PayWitnessPKHash h)
+    | [(k, sig)] <- HashMap.toList $ partialSigs input
+    , PubKeyAddress h == pubKeyAddr k
+    = input { finalScriptWitness = Just [sig, S.encode k]
+            , finalScriptSig = Script . pure . opPushData . S.encode <$> inputRedeemScript input
+            }
+completeSig input (PayWitnessScriptHash h)
+    | Just witScript <- inputWitnessScript input
+    , PayWitnessScriptHash h == toP2WSH witScript
+    , Right decodedScript <- decodeOutput witScript
+    = completeWitnessSig input decodedScript
+completeSig input _ = input
+
+completeWitnessSig :: Input -> ScriptOutput -> Input
+completeWitnessSig input script@(PayMulSig pubKeys m) | length sigs >= m = input
+    { finalScriptWitness = Just finalWit
+    , finalScriptSig = finalSig
+    }
+  where
+    sigs = collectSigs pubKeys input
+    finalSig = Script . pure . opPushData . S.encode <$> inputRedeemScript input
+    finalWit = mempty : sigs <> [encodeOutputBS script]
+completeWitnessSig input _ = input
+
+collectSigs :: [PubKeyI] -> Input -> [ByteString]
+collectSigs pubKeys input = reverse $ foldl' lookupKey [] pubKeys
+  where
+    lookupKey sigs key = maybe sigs (:sigs) $ HashMap.lookup key (partialSigs input)
+
 finalTransaction :: PartiallySignedTransaction -> Tx
 finalTransaction psbt = setInputs . foldl' finalizeInput ([], []) $ zip (txIn tx) (inputs psbt)
   where
@@ -119,6 +192,14 @@ finalTransaction psbt = setInputs . foldl' finalizeInput ([], []) $ zip (txIn tx
       where
         finalScript script = (txInput { scriptInput = encode script }:ins, []:witData)
         finalWitness = (ins, fromMaybe [] (finalScriptWitness psbtInput):witData)
+
+emptyPSBT :: Tx -> PartiallySignedTransaction
+emptyPSBT tx = PartiallySignedTransaction
+    { unsignedTransaction = tx
+    , globalUnknown = mempty
+    , inputs = replicate (length (txIn tx)) emptyInput
+    , outputs = replicate (length (txOut tx)) emptyOutput
+    }
 
 emptyInput :: Input
 emptyInput = Input

@@ -5,16 +5,21 @@ module Network.Haskoin.Transaction.PartialSpec (spec) where
 import           Data.ByteString                     (ByteString)
 import           Data.Either                         (fromRight, isLeft,
                                                       isRight)
-import           Data.HashMap.Strict                 (singleton)
+import           Data.HashMap.Strict                 (fromList, singleton)
 import           Data.Maybe                          (fromJust, isJust)
 import           Data.Serialize                      as S
 import           Data.Text                           (Text)
 import           Test.Hspec
 import           Test.HUnit                          (Assertion, assertBool,
                                                       assertEqual)
+import           Test.QuickCheck
 
-import           Network.Haskoin.Crypto              (addressHash)
+import           Network.Haskoin.Address
+import           Network.Haskoin.Constants
+import           Network.Haskoin.Crypto
+import           Network.Haskoin.Keys
 import           Network.Haskoin.Script
+import           Network.Haskoin.Test
 import           Network.Haskoin.Transaction
 import           Network.Haskoin.Transaction.Partial
 import           Network.Haskoin.Util
@@ -38,6 +43,10 @@ spec = describe "partially signed bitcoin transaction unit tests" $ do
     it "decodes vector 4" vec4Test
     it "decodes vector 5" vec5Test
     it "decodes vector 6" vec6Test
+    it "signed and finalized p2pkh PSBTs verify" $ property $
+        forAll arbitraryKeyPair $ verifyNonWitnessPSBT btc . unfinalizedPkhPSBT btc
+    it "signed and finalized multisig PSBTs verify" $ property $
+        forAll arbitraryMultiSig $ verifyNonWitnessPSBT btc . unfinalizedMsPSBT btc
 
 vec2Test :: Assertion
 vec2Test = do
@@ -125,9 +134,6 @@ vec6Test = do
         (Key 0x0f (fromJust $ decodeHex "010203040506070809"))
         (fromJust $ decodeHex "0102030405060708090a0b0c0d0e0f")
 
-toP2SH :: Script -> ScriptOutput
-toP2SH = PayScriptHash . addressHash . S.encode
-
 expectedOut :: ScriptOutput
 expectedOut = fromRight (error "could not decode expected output")
             . decodeOutputBS . fromJust $ decodeHex "a9143545e6e33b832c47050f24d3eeb93c9c03948bc787"
@@ -170,12 +176,63 @@ trivialPSBTHex :: Text
 trivialPSBTHex = "70736274ff01000a0200000000000000000000"
 
 nonEmptyTransactionPSBT :: PartiallySignedTransaction
-nonEmptyTransactionPSBT = PartiallySignedTransaction
-    { unsignedTransaction = testTx1
-    , globalUnknown = UnknownMap mempty
-    , inputs = [emptyInput]
-    , outputs = [emptyOutput, emptyOutput]
-    }
+nonEmptyTransactionPSBT = emptyPSBT testTx1
+
+verifyNonWitnessPSBT :: Network -> PartiallySignedTransaction -> Bool
+verifyNonWitnessPSBT net psbt = verifyStdTx net (finalTransaction (complete psbt)) sigData
+  where
+    sigData = inputSigData =<< zip (inputs psbt) (txIn $ unsignedTransaction psbt)
+    decodeOutScript = fromRight (error "Could not parse output script") . decodeOutputBS
+    inputSigData (input, txInput) =
+        map (\(TxOut val script) -> (decodeOutScript script, val, prevOutput txInput))
+            (txOut . fromJust $ nonWitnessUtxo input)
+
+unfinalizedPkhPSBT :: Network -> (SecKeyI, PubKeyI) -> PartiallySignedTransaction
+unfinalizedPkhPSBT net (prvKey, pubKey) = (emptyPSBT currTx)
+    { inputs = [ emptyInput { nonWitnessUtxo = Just prevTx, partialSigs = singleton pubKey sig } ] }
+  where
+    currTx = unfinalizedTx (txHash prevTx)
+    prevTx = testUtxo [prevOut]
+    prevOutScript = addressToScript (pubKeyAddr pubKey)
+    prevOut = TxOut { outValue = 200000000, scriptOutput = S.encode prevOutScript }
+    h = txSigHash net currTx prevOutScript (outValue prevOut) 0 sigHashAll
+    sig = encodeTxSig $ TxSignature (signHash (secKeyData prvKey) h) sigHashAll
+
+arbitraryMultiSig :: Gen ([(SecKeyI, PubKeyI)], Int)
+arbitraryMultiSig = do
+    (m, n) <- arbitraryMSParam
+    keys <- vectorOf n arbitraryKeyPair
+    return (keys, m)
+
+unfinalizedMsPSBT :: Network -> ([(SecKeyI, PubKeyI)], Int) -> PartiallySignedTransaction
+unfinalizedMsPSBT net (keys, m) = (emptyPSBT currTx)
+    { inputs = [ emptyInput { nonWitnessUtxo = Just prevTx, partialSigs = sigs
+                            , inputRedeemScript = Just prevOutScript
+                            } ] }
+  where
+    currTx = unfinalizedTx (txHash prevTx)
+    prevTx = testUtxo [prevOut]
+    prevOutScript = encodeOutput $ PayMulSig (map snd keys) m
+    prevOut = TxOut { outValue = 200000000, scriptOutput = encodeOutputBS (toP2SH prevOutScript) }
+    h = txSigHash net currTx prevOutScript (outValue prevOut) 0 sigHashAll
+    sigs = fromList $ map sig keys
+    sig (prvKey, pubKey) = (pubKey, encodeTxSig $ TxSignature (signHash (secKeyData prvKey) h) sigHashAll)
+
+unfinalizedTx :: TxHash -> Tx
+unfinalizedTx prevHash = Tx
+        { txVersion = 2
+        , txIn = [ TxIn
+            { prevOutput = OutPoint prevHash 0
+            , scriptInput = ""
+            , txInSequence = 4294967294
+            } ]
+        , txOut =
+            [ TxOut { outValue = 99999699, scriptOutput = hexScript "76a914d0c59903c5bac2868760e90fd521a4665aa7652088ac" }
+            , TxOut { outValue = 100000000, scriptOutput = hexScript "a9143545e6e33b832c47050f24d3eeb93c9c03948bc787" }
+            ]
+        , txWitness = []
+        , txLockTime = 1257139
+        }
 
 invalidVec :: [Text]
 invalidVec =
@@ -219,8 +276,8 @@ testTx1 = Tx
         , txLockTime = 1257139
         }
 
-testUtxo1 :: Tx
-testUtxo1 = Tx
+testUtxo :: [TxOut] -> Tx
+testUtxo prevOuts = Tx
         { txVersion = 1
         , txIn =
             [ TxIn
@@ -234,10 +291,7 @@ testUtxo1 = Tx
                 , txInSequence = 4294967295
                 }
             ]
-        , txOut =
-            [ TxOut { outValue = 200000000, scriptOutput = hexScript "76a91485cff1097fd9e008bb34af709c62197b38978a4888ac" }
-            , TxOut { outValue = 190303501938, scriptOutput = hexScript "a914339725ba21efd62ac753a9bcd067d6c7a6a39d0587" }
-            ]
+        , txOut = prevOuts
         , txWitness =
             [
               [ fromJust $ decodeHex "304402202712be22e0270f394f568311dc7ca9a68970b8025fdd3b240229f07f8a5f3a240220018b38d7dcd314e734c9276bd6fb40f673325bc4baa144c800d2f2f02db2765c01"
@@ -250,13 +304,14 @@ testUtxo1 = Tx
         , txLockTime = 0
         }
 
+testUtxo1 :: Tx
+testUtxo1 = testUtxo
+    [ TxOut { outValue = 200000000, scriptOutput = hexScript "76a91485cff1097fd9e008bb34af709c62197b38978a4888ac" }
+    , TxOut { outValue = 190303501938, scriptOutput = hexScript "a914339725ba21efd62ac753a9bcd067d6c7a6a39d0587" }
+    ]
+
 validVec1 :: PartiallySignedTransaction
-validVec1 = PartiallySignedTransaction
-    { unsignedTransaction = testTx1
-    , globalUnknown = UnknownMap mempty
-    , inputs = [ emptyInput { nonWitnessUtxo = Just testUtxo1 } ]
-    , outputs = [emptyOutput, emptyOutput]
-    }
+validVec1 = (emptyPSBT testTx1) { inputs = [ emptyInput { nonWitnessUtxo = Just testUtxo1 } ] }
 
 validVec :: [Text]
 validVec = [validVec1Hex, validVec2Hex, validVec3Hex, validVec4Hex, validVec5Hex, validVec6Hex]

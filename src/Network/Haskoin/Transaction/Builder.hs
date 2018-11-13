@@ -405,7 +405,7 @@ buildInput net tx i so val rdmM sig pub = do
 -- | Merge partially-signed multisig transactions.
 mergeTxs :: Network -> [Tx] -> [(ScriptOutput, Word64, OutPoint)] -> Either String Tx
 mergeTxs net txs os
-    | null txs = error "Transaction list is empty"
+    | null txs = Left "Transaction list is empty"
     | length (nub emptyTxs) /= 1 = Left "Transactions do not match"
     | length txs == 1 = return $ head txs
     | otherwise = foldM (mergeTxInput net txs) (head emptyTxs) outs

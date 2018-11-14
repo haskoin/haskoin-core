@@ -145,7 +145,7 @@ completeSig input (PayPKHash h)
     = input { finalScriptSig = Just $ Script [opPushData sig, opPushData (S.encode k)] }
 completeSig input (PayMulSig pubKeys m) | length sigs >= m = input { finalScriptSig = finalSig }
   where
-    sigs = take m $ collectSigs pubKeys input
+    sigs = collectSigs m pubKeys input
     finalSig = Script . (OP_0 :) . (map opPushData sigs <>) . pure . opPushData . S.encode <$> inputRedeemScript input
 completeSig input (PayScriptHash h)
     | Just rdmScript <- inputRedeemScript input
@@ -172,13 +172,13 @@ completeWitnessSig input script@(PayMulSig pubKeys m) | length sigs >= m = input
     , finalScriptSig = finalSig
     }
   where
-    sigs = collectSigs pubKeys input
+    sigs = collectSigs m pubKeys input
     finalSig = Script . pure . opPushData . S.encode <$> inputRedeemScript input
     finalWit = mempty : sigs <> [encodeOutputBS script]
 completeWitnessSig input _ = input
 
-collectSigs :: [PubKeyI] -> Input -> [ByteString]
-collectSigs pubKeys input = reverse $ foldl' lookupKey [] pubKeys
+collectSigs :: Int -> [PubKeyI] -> Input -> [ByteString]
+collectSigs m pubKeys input = take m . reverse $ foldl' lookupKey [] pubKeys
   where
     lookupKey sigs key = maybe sigs (:sigs) $ HashMap.lookup key (partialSigs input)
 

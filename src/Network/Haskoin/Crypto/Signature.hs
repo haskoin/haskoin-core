@@ -67,7 +67,7 @@ getSig = do
             Just s  -> return s
             Nothing -> fail "Invalid signature"
 
--- | Serialize an ECDSA signatur for Bitcoin use.
+-- | Serialize an ECDSA signature for Bitcoin use.
 putSig :: Putter Sig
 putSig s = putByteString $ exportSig s
 

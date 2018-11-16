@@ -27,6 +27,8 @@ module Network.Haskoin.Script.Common
     , encodeOutputBS
     , decodeOutput
     , decodeOutputBS
+    , toP2SH
+    , toP2WSH
     , isPushOp
     , opPushData
     , intToScriptOp
@@ -706,6 +708,14 @@ encodeOutput s = Script $ case s of
 -- | Similar to 'encodeOutput' but encodes to a ByteString
 encodeOutputBS :: ScriptOutput -> ByteString
 encodeOutputBS = S.encode . encodeOutput
+
+-- | Encode script as pay-to-script-hash script
+toP2SH :: Script -> ScriptOutput
+toP2SH = PayScriptHash . addressHash . S.encode
+
+-- | Encode script as a pay-to-witness-script-hash script
+toP2WSH :: Script -> ScriptOutput
+toP2WSH = PayWitnessScriptHash . sha256 . S.encode
 
 -- | Match @[OP_N, PubKey1, ..., PubKeyM, OP_M, OP_CHECKMULTISIG]@
 matchPayMulSig :: Script -> Either String ScriptOutput

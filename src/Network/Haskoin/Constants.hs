@@ -105,6 +105,8 @@ data Network = Network
     , getBech32Prefix             :: !(Maybe Text)
       -- | Replace-By-Fee (BIP-125)
     , getReplaceByFee             :: !Bool
+      -- | Subsidy halving interval
+    , getHalvingInterval          :: !Word32
     } deriving (Eq, Generic)
 
 instance Serialize Network where
@@ -217,6 +219,7 @@ btc =
     , getCashAddrPrefix = Nothing
     , getBech32Prefix = Just "bc"
     , getReplaceByFee = True
+    , getHalvingInterval = 210000
     }
 
 -- | Testnet for Bitcoin SegWit network.
@@ -273,6 +276,7 @@ btcTest =
     , getCashAddrPrefix = Nothing
     , getBech32Prefix = Just "tb"
     , getReplaceByFee = True
+    , getHalvingInterval = 210000
     }
 
 -- | RegTest for Bitcoin SegWit network.
@@ -321,6 +325,7 @@ btcRegTest =
     , getCashAddrPrefix = Nothing
     , getBech32Prefix = Just "bcrt"
     , getReplaceByFee = True
+    , getHalvingInterval = 150
     }
 
 -- | Bitcoin Cash network. Symbol: BCH.
@@ -409,6 +414,7 @@ bch =
     , getCashAddrPrefix = Just "bitcoincash"
     , getBech32Prefix = Nothing
     , getReplaceByFee = False
+    , getHalvingInterval = 210000
     }
 
 -- | Testnet for Bitcoin Cash network.
@@ -472,6 +478,7 @@ bchTest =
     , getCashAddrPrefix = Just "bchtest"
     , getBech32Prefix = Nothing
     , getReplaceByFee = False
+    , getHalvingInterval = 210000
     }
 
 -- | RegTest for Bitcoin Cash network.
@@ -523,6 +530,7 @@ bchRegTest =
     , getCashAddrPrefix = Just "bchreg"
     , getBech32Prefix = Nothing
     , getReplaceByFee = False
+    , getHalvingInterval = 150
     }
 
 -- | List of all networks supported by this library.

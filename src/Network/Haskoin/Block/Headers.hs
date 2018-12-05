@@ -58,6 +58,7 @@ module Network.Haskoin.Block.Headers
     , diffInterval
     , blockLocatorNodes
     , mineBlock
+    , computeSubsidy
     , ) where
 
 import           Control.Applicative                ((<|>))
@@ -728,3 +729,12 @@ splitPoint l r = do
 -- | Generate the entire Genesis block for 'Network'.
 genesisBlock :: Network -> Block
 genesisBlock net = Block (getGenesisHeader net) [genesisTx]
+
+-- | Compute block subsidy at particular height.
+computeSubsidy :: Network -> BlockHeight -> Word64
+computeSubsidy net height =
+    let halvings = height `div` getHalvingInterval net
+        ini = 50 * 100 * 1000 * 1000
+     in if halvings >= 64
+            then 0
+            else ini `shiftR` fromIntegral halvings

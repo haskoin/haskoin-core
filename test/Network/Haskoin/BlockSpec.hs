@@ -95,6 +95,9 @@ spec = do
             property $ forAll arbitraryHeaders cerealID
         it "encodes and decodes merkle block" $
             property $ forAll arbitraryMerkleBlock cerealID
+    describe "helper functions" $ do
+        it "computes bitcoin block subsidy correctly" (testSubsidy btc)
+        it "computes regtest block subsidy correctly" (testSubsidy btcRegTest)
 
 -- 0 → → 2015 → → → → → → → 4031
 --       ↓
@@ -338,3 +341,15 @@ testID x =
 
 cerealID :: (Serialize a, Eq a) => a -> Bool
 cerealID x = S.decode (S.encode x) == Right x
+
+testSubsidy :: Network -> Assertion
+testSubsidy net = go (2 * 50 * 100 * 1000 * 1000) 0
+  where
+    go previous_subsidy halvings = do
+        let height = halvings * getHalvingInterval net
+            subsidy = computeSubsidy net height
+        if halvings >= 64
+            then subsidy `shouldBe` 0
+            else do
+                subsidy `shouldBe` (previous_subsidy `div` 2)
+                go subsidy (halvings + 1)

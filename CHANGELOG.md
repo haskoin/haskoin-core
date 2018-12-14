@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## 0.8.4
 ### Added
 - Add reward computation to block functions.
+- Add PSBT [BIP-174](https://github.com/bitcoin/bips/blob/master/bip-0174.mediawiki) types and functions
 
 ## 0.8.3
 ### Added

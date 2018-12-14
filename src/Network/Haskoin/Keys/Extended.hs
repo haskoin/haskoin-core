@@ -532,7 +532,7 @@ toHard p = case p of
     Deriv     -> Just Deriv
     _         -> Nothing
 
--- | Turn a derivatino path into a soft derivation path. Will fail if the path
+-- | Turn a derivation path into a soft derivation path. Will fail if the path
 -- has hard derivations.
 toSoft :: DerivPathI t -> Maybe SoftPath
 toSoft p = case p of

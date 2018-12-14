@@ -29,21 +29,18 @@ import           Data.HashMap.Strict         (HashMap)
 import qualified Data.HashMap.Strict         as HashMap
 import           Data.List                   (foldl')
 import           Data.Maybe                  (fromMaybe, isJust)
-import           Data.Proxy                  (Proxy)
 import           Data.Serialize              as S
 import           GHC.Generics                (Generic)
-import           GHC.Word                    (Word64, Word8)
+import           GHC.Word                    (Word32, Word8)
 import           Network.Haskoin.Address     (Address (..), pubKeyAddr)
 import           Network.Haskoin.Keys        (Fingerprint, KeyIndex, PubKeyI)
 import           Network.Haskoin.Network     (VarInt (..), VarString (..),
                                               putVarInt)
-import           Network.Haskoin.Script      (Script (..), ScriptInput (..),
-                                              ScriptOp (..), ScriptOutput (..),
-                                              SigHash, SimpleInput (..),
+import           Network.Haskoin.Script      (Script (..), ScriptOp (..),
+                                              ScriptOutput (..), SigHash,
                                               decodeOutput, decodeOutputBS,
-                                              encodeInput, encodeOutputBS,
-                                              isPayScriptHash, opPushData,
-                                              toP2SH, toP2WSH)
+                                              encodeOutputBS, isPayScriptHash,
+                                              opPushData, toP2SH, toP2WSH)
 import           Network.Haskoin.Transaction (Tx (..), TxOut, WitnessStack,
                                               outPointIndex, prevOutput,
                                               scriptInput, scriptOutput)
@@ -121,7 +118,7 @@ mergeOutput a b = Output
     }
 
 complete :: PartiallySignedTransaction -> PartiallySignedTransaction
-complete psbt = psbt { inputs = map (completeInput . analyzeInputs) (zip [0..] $ inputs psbt) }
+complete psbt = psbt { inputs = map (completeInput . analyzeInputs) (indexed $ inputs psbt) }
   where
     analyzeInputs (i, input) = (outputScript =<< witnessUtxo input <|> nonWitScript, input)
       where
@@ -129,12 +126,15 @@ complete psbt = psbt { inputs = map (completeInput . analyzeInputs) (zip [0..] $
 
     getPrevOut i tx =
        (txOut tx !!?) . fromIntegral . outPointIndex . prevOutput =<< txIn (unsignedTransaction psbt) !!? i
-    xs !!? i = lookup i $ zip [0..] xs
+    xs !!? i = lookup i $ indexed xs
 
     outputScript = eitherToMaybe . decodeOutputBS . scriptOutput
 
     completeInput (Nothing, input)     = input
     completeInput (Just script, input) = completeSig input script
+
+    indexed :: [a] -> [(Word32, a)]
+    indexed = zip [0..]
 
 completeSig :: Input -> ScriptOutput -> Input
 completeSig input (PayPK k) =
@@ -298,7 +298,7 @@ instance Serialize Input where
       where
         putPartialSig = putPubKeyMap InPartialSig . fmap VarString
         putSigHash sigHash = do
-            putVarInt 1 >> putWord8 (enumWord8 InSigHashType)
+            putKey InSigHashType
             putWord8 0x04
             putWord32le (fromIntegral sigHash)
 
@@ -322,7 +322,10 @@ getSizedBytes :: Serialize a => Get a
 getSizedBytes = getNested (fromIntegral . getVarInt <$> get) get
 
 putKeyValue :: (Enum t, Serialize v) => t -> v -> Put
-putKeyValue t v = putVarInt 1 >> putWord8 (enumWord8 t) >> putSizedBytes v
+putKeyValue t v = putKey t >> putSizedBytes v
+
+putKey :: Enum t => t -> Put
+putKey t = putVarInt (1 :: Word8) >> putWord8 (enumWord8 t)
 
 getMap :: (Bounded t, Enum t)
        => (Int -> a -> t -> Get a)
@@ -367,10 +370,10 @@ getInputItem 0 input@Input{witnessUtxo = Nothing} InWitnessUtxo = do
     utxo <- getSizedBytes
     return $ input { witnessUtxo = Just utxo }
 getInputItem keySize input InPartialSig = do
-    (k, v) <- getPartialSig keySize
+    (k, v) <- getPartialSig
     return $ input { partialSigs = HashMap.insert k v (partialSigs input) }
   where
-    getPartialSig keySize = (,) <$> isolate keySize get <*> (getVarString <$> get)
+    getPartialSig = (,) <$> isolate keySize get <*> (getVarString <$> get)
 getInputItem 0 input@Input{sigHashType = Nothing} InSigHashType = do
     VarInt size <- get
     guard $ size == 0x04

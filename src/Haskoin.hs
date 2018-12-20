@@ -21,6 +21,8 @@ module Haskoin
     , module Block
       -- * Transactions
     , module Transaction
+      -- * Partially Signed Bitcoin Transactions
+    , module Partial
       -- * Scripts
     , module Script
       -- * Cryptographic Keys
@@ -31,12 +33,13 @@ module Haskoin
     , module Util
     ) where
 
-import           Network.Haskoin.Address     as Address
-import           Network.Haskoin.Block       as Block
-import           Network.Haskoin.Constants   as Constants
-import           Network.Haskoin.Crypto      as Crypto
-import           Network.Haskoin.Keys        as Keys
-import           Network.Haskoin.Network     as Network
-import           Network.Haskoin.Script      as Script
-import           Network.Haskoin.Transaction as Transaction
-import           Network.Haskoin.Util        as Util
+import           Network.Haskoin.Address             as Address
+import           Network.Haskoin.Block               as Block
+import           Network.Haskoin.Constants           as Constants
+import           Network.Haskoin.Crypto              as Crypto
+import           Network.Haskoin.Keys                as Keys
+import           Network.Haskoin.Network             as Network
+import           Network.Haskoin.Script              as Script
+import           Network.Haskoin.Transaction         as Transaction
+import           Network.Haskoin.Transaction.Partial as Partial
+import           Network.Haskoin.Util                as Util

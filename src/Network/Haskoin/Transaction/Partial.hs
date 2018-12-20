@@ -3,7 +3,16 @@
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-|
+Module      : Network.Haskoin.Transaction.Partial
+Copyright   : No rights reserved
+License     : UNLICENSE
+Maintainer  : matt@bitnomial.com
+Stability   : experimental
+Portability : POSIX
 
+Code related to PSBT parsing and serialization.
+-}
 module Network.Haskoin.Transaction.Partial
     ( PartiallySignedTransaction (..)
     , Input (..)
@@ -46,6 +55,10 @@ import           Network.Haskoin.Transaction (Tx (..), TxOut, WitnessStack,
                                               scriptInput, scriptOutput)
 import           Network.Haskoin.Util        (eitherToMaybe)
 
+-- | PSBT data type as specified in [BIP-174](https://github.com/bitcoin/bips/blob/master/bip-0174.mediawiki). This
+-- contains an unsigned transaction, inputs and outputs, and unspecified extra data. There is one input per input in the
+-- unsigned transaction, and one output per output in the unsigned transaction. The inputs and outputs in the
+-- 'PartiallySignedTransaction' line up by index with the inputs and outputs in the unsigned transaction.
 data PartiallySignedTransaction = PartiallySignedTransaction
     { unsignedTransaction :: Tx
     , globalUnknown       :: UnknownMap
@@ -53,6 +66,7 @@ data PartiallySignedTransaction = PartiallySignedTransaction
     , outputs             :: [Output]
     } deriving (Show, Eq)
 
+-- | Inputs contain all of the data needed to sign a transaction and all of the resulting signature data after signing.
 data Input = Input
     { nonWitnessUtxo     :: Maybe Tx
     , witnessUtxo        :: Maybe TxOut
@@ -66,6 +80,7 @@ data Input = Input
     , inputUnknown       :: UnknownMap
     } deriving (Show, Eq)
 
+-- | Outputs can contain information needed to spend the output at a later date.
 data Output = Output
     { outputRedeemScript  :: Maybe Script
     , outputWitnessScript :: Maybe Script
@@ -73,9 +88,12 @@ data Output = Output
     , outputUnknown       :: UnknownMap
     } deriving (Show, Eq)
 
+-- | A map of raw PSBT keys to byte strings for extra data. The 'keyType' field cannot overlap with any of the reserved
+-- 'keyType' fields specified in the PSBT specification.
 newtype UnknownMap = UnknownMap { unknownMap :: HashMap Key ByteString }
     deriving (Show, Eq, Semigroup, Monoid)
 
+-- | Raw keys for the map type used in PSBTs.
 data Key = Key
     { keyType :: Word8
     , key     :: ByteString
@@ -83,6 +101,7 @@ data Key = Key
 
 instance Hashable Key
 
+-- | Take two 'PartiallySignedTransaction's and merge them. The 'unsignedTransaction' field in both must be the same.
 merge :: PartiallySignedTransaction -> PartiallySignedTransaction -> Maybe PartiallySignedTransaction
 merge psbt1 psbt2
     | unsignedTransaction psbt1 == unsignedTransaction psbt2
@@ -117,6 +136,7 @@ mergeOutput a b = Output
     , outputUnknown = outputUnknown a <> outputUnknown b
     }
 
+-- | Take partial signatures from all of the 'Input's and finalize the signature.
 complete :: PartiallySignedTransaction -> PartiallySignedTransaction
 complete psbt = psbt { inputs = map (completeInput . analyzeInputs) (indexed $ inputs psbt) }
   where
@@ -182,6 +202,8 @@ collectSigs m pubKeys input = take m . reverse $ foldl' lookupKey [] pubKeys
   where
     lookupKey sigs key = maybe sigs (:sigs) $ HashMap.lookup key (partialSigs input)
 
+-- | Take a finalized 'PartiallySignedTransaction' and produce the signed final transaction.  You may need to call
+-- 'complete' on the 'PartiallySignedTransaction' before producing the final transaction.
 finalTransaction :: PartiallySignedTransaction -> Tx
 finalTransaction psbt = setInputs . foldl' finalizeInput ([], []) $ zip (txIn tx) (inputs psbt)
   where
@@ -193,6 +215,7 @@ finalTransaction psbt = setInputs . foldl' finalizeInput ([], []) $ zip (txIn tx
         finalScript script = (txInput { scriptInput = encode script }:ins, []:witData)
         finalWitness = (ins, fromMaybe [] (finalScriptWitness psbtInput):witData)
 
+-- | Take an unsigned transaction and produce an empty 'PartiallySignedTransaction'
 emptyPSBT :: Tx -> PartiallySignedTransaction
 emptyPSBT tx = PartiallySignedTransaction
     { unsignedTransaction = tx

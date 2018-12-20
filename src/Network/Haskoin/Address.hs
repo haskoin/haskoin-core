@@ -35,6 +35,7 @@ module Network.Haskoin.Address
     , addressToOutput
     , payToScriptAddress
     , payToWitnessScriptAddress
+    , payToNestedScriptAddress
     , scriptToAddress
     , scriptToAddressBS
       -- * Private Key Wallet Import Format (WIF)
@@ -222,6 +223,11 @@ payToScriptAddress = p2shAddr . addressHash . encodeOutputBS
 -- SegWit networks.
 payToWitnessScriptAddress :: ScriptOutput -> Address
 payToWitnessScriptAddress = p2wshAddr . sha256 . encodeOutputBS
+
+-- | Compute a p2sh-p2wsh address, also known as a nested segwit address.
+payToNestedScriptAddress :: ScriptOutput -> Address
+payToNestedScriptAddress =
+    p2shAddr . addressHash . encodeOutputBS . toP2WSH . encodeOutput
 
 -- | Encode an output script from an address. Will fail if using a
 -- pay-to-witness address on a non-SegWit network.

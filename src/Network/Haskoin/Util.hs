@@ -41,7 +41,7 @@ module Network.Haskoin.Util
     ) where
 
 import           Control.Monad          (guard)
-import           Control.Monad.Except   (ExceptT (..))
+import           Control.Monad.Except   (ExceptT (..), liftEither)
 import           Data.Aeson.Types       (Options (..), SumEncoding (..),
                                          defaultOptions, defaultTaggedObject)
 import           Data.Bits
@@ -107,10 +107,6 @@ eitherToMaybe _         = Nothing
 -- 'Right' and 'Nothing' is mapped to 'Left'. Default 'Left' required.
 maybeToEither :: b -> Maybe a -> Either b a
 maybeToEither err = maybe (Left err) Right
-
--- | Lift a 'Either' computation into the 'ExceptT' monad.
-liftEither :: Monad m => Either b a -> ExceptT b m a
-liftEither = ExceptT . return
 
 -- | Lift a 'Maybe' computation into the 'ExceptT' monad.
 liftMaybe :: Monad m => b -> Maybe a -> ExceptT b m a

@@ -1,7 +1,4 @@
-resolver: lts-12.20
+resolver: lts-13.12
 nix:
   packages:
     - secp256k1
-extra-deps:
-  - murmur3-1.0.3
-  - secp256k1-haskell-0.1.4

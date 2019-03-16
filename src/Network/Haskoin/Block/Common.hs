@@ -121,19 +121,19 @@ hexToBlockHash hex = do
 -- 'Block'. Variations in the coinbase will result in different merkle roots in
 -- the 'BlockHeader'.
 data BlockHeader =
-    BlockHeader { blockVersion   :: !Word32      -- 16 bytes
+    BlockHeader { blockVersion   :: !Word32      --  4 bytes
                   -- | hash of the previous block (parent)
-                , prevBlock      :: !BlockHash   -- 64 bytes
+                , prevBlock      :: !BlockHash   -- 32 bytes
                   -- | root of the merkle tree of transactions
-                , merkleRoot     :: !Hash256     -- 64 bytes
+                , merkleRoot     :: !Hash256     -- 32 bytes
                   -- | unix timestamp
-                , blockTimestamp :: !Timestamp   -- 16 bytes
+                , blockTimestamp :: !Timestamp   --  4 bytes
                   -- | difficulty target
-                , blockBits      :: !Word32      -- 16 bytes
+                , blockBits      :: !Word32      --  4 bytes
                   -- | random nonce
-                , bhNonce        :: !Word32      -- 16 bytes
+                , bhNonce        :: !Word32      --  4 bytes
                 } deriving (Eq, Ord, Show, Read, Generic, Hashable)
-                                                 -- 208 bytes (above + 16 bytes)
+                                                 -- 80 bytes
 
 -- | Compute hash of 'BlockHeader'.
 headerHash :: BlockHeader -> BlockHash

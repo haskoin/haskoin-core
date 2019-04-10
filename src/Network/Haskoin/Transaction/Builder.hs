@@ -20,6 +20,7 @@ module Network.Haskoin.Transaction.Builder
     , buildInput
     , SigInput(..)
     , signTx
+    , makeSignature
     , signInput
     , verifyStdTx
     , mergeTxs
@@ -313,16 +314,22 @@ signTx net otx sigis allKeys
         keys <- sigKeys so rdmM allKeys
         foldM (\t k -> signInput net t i sigi k) tx keys
 
+-- | Produce a structured representation of a deterministic (RFC-6979) signature over an input.
+makeSignature :: Network -> Tx -> Int -> SigInput -> SecKeyI -> TxSignature
+makeSignature net tx i (SigInput so val _ sh rdmM) key =
+    TxSignature (signHash (secKeyData key) m) sh
+  where
+    m = txSigHash net tx (encodeOutput $ fromMaybe so rdmM) val i sh
+
 -- | Sign a single input in a transaction deterministically (RFC-6979).
 signInput :: Network -> Tx -> Int -> SigInput -> SecKeyI -> Either String Tx
-signInput net tx i (SigInput so val _ sh rdmM) key = do
-    let sig = TxSignature (signHash (secKeyData key) m) sh
+signInput net tx i sigIn@(SigInput so val _ sh rdmM) key = do
+    let sig = makeSignature net tx i sigIn key
     si <- buildInput net tx i so val rdmM sig $ derivePubKeyI key
     let ins = updateIndex i (txIn tx) (f si)
     return $ Tx (txVersion tx) ins (txOut tx) [] (txLockTime tx)
   where
     f si x = x {scriptInput = encodeInputBS si}
-    m = txSigHash net tx (encodeOutput $ fromMaybe so rdmM) val i sh
 
 -- | Order the 'SigInput' with respect to the transaction inputs. This allows
 -- the user to provide the 'SigInput' in any order. Users can also provide only

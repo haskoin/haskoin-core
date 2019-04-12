@@ -136,10 +136,10 @@ checkKeyCompressed = do
 
 checkMatchingAddress :: Assertion
 checkMatchingAddress = do
-    assertBool "Key 1"  $ addr1  == addrToString btc (pubKeyAddr pub1)
-    assertBool "Key 2"  $ addr2  == addrToString btc (pubKeyAddr pub2)
-    assertBool "Key 1C" $ addr1C == addrToString btc (pubKeyAddr pub1C)
-    assertBool "Key 2C" $ addr2C == addrToString btc (pubKeyAddr pub2C)
+    assertBool "Key 1"  $ Just addr1  == addrToString btc (pubKeyAddr pub1)
+    assertBool "Key 2"  $ Just addr2  == addrToString btc (pubKeyAddr pub2)
+    assertBool "Key 1C" $ Just addr1C == addrToString btc (pubKeyAddr pub1C)
+    assertBool "Key 2C" $ Just addr2C == addrToString btc (pubKeyAddr pub2C)
 
 checkSignatures :: Hash256 -> Assertion
 checkSignatures h = do

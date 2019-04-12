@@ -39,7 +39,7 @@ props net = do
     it "encodes and decodes address" $
         property $
         forAll arbitraryAddress $ \a ->
-            stringToAddr net (addrToString net a) == Just a
+            (stringToAddr net =<< addrToString net a) == Just a
     it "shows and reads address" $
         property $ forAll arbitraryAddress $ \a -> read (show a) == a
 

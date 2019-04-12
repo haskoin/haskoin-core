@@ -127,7 +127,7 @@ base58put net (ScriptAddress h) = do
 base58put _ _ = error "Cannot serialize this address as Base58"
 
 addrToJSON :: Network -> Address -> Value
-addrToJSON net = String . addrToString net
+addrToJSON net a = toJSON (addrToString net a)
 
 -- | JSON parsing for Bitcoin addresses. Works with 'Base58', 'CashAddr' and
 -- 'Bech32'.
@@ -140,29 +140,23 @@ addrFromJSON net =
 
 -- | Convert address to human-readable string. Uses 'Base58', 'Bech32', or
 -- 'CashAddr' depending on network.
-addrToString :: Network -> Address -> Text
+addrToString :: Network -> Address -> Maybe Text
 addrToString net a@PubKeyAddress {getAddrHash160 = h}
     | isNothing (getCashAddrPrefix net) =
-        encodeBase58Check $ runPut $ base58put net a
+        Just . encodeBase58Check . runPut $ base58put net a
     | otherwise =
-        fromMaybe (error "Colud not encode a CashAddr") $
         cashAddrEncode net 0 (S.encode h)
 addrToString net a@ScriptAddress {getAddrHash160 = h}
     | isNothing (getCashAddrPrefix net) =
-        encodeBase58Check $ runPut $ base58put net a
+        Just . encodeBase58Check . runPut $ base58put net a
     | otherwise =
-        fromMaybe (error "Could not encode a CashAddr") $
         cashAddrEncode net 1 (S.encode h)
-addrToString net WitnessPubKeyAddress {getAddrHash160 = h} =
-    let mt = do
-            hrp <- getBech32Prefix net
-            segwitEncode hrp 0 (B.unpack (S.encode h))
-     in fromMaybe (error "Could not encode a Bech32 address") mt
-addrToString net WitnessScriptAddress {getAddrHash256 = h} =
-    let mt = do
-            hrp <- getBech32Prefix net
-            segwitEncode hrp 0 (B.unpack (S.encode h))
-     in fromMaybe (error "Could not encode a Bech32 address") mt
+addrToString net WitnessPubKeyAddress {getAddrHash160 = h} = do
+    hrp <- getBech32Prefix net
+    segwitEncode hrp 0 (B.unpack (S.encode h))
+addrToString net WitnessScriptAddress {getAddrHash256 = h} = do
+    hrp <- getBech32Prefix net
+    segwitEncode hrp 0 (B.unpack (S.encode h))
 
 -- | Parse 'Base58', 'Bech32' or 'CashAddr' address, depending on network.
 stringToAddr :: Network -> Text -> Maybe Address

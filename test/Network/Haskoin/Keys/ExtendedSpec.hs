@@ -293,7 +293,7 @@ runXKeyVec (v, m) = do
     assertBool "xPrvID" $ encodeHex (S.encode $ xPrvID m) == head v
     assertBool "xPrvFP" $ encodeHex (S.encode $ xPrvFP m) == v !! 1
     assertBool "xPrvAddr" $
-        addrToString btc (xPubAddr $ deriveXPubKey m) == v !! 2
+        addrToString btc (xPubAddr $ deriveXPubKey m) == Just (v !! 2)
     assertBool "prvKey" $ encodeHex (getSecKey $ xPrvKey m) == v !! 3
     assertBool "xPrvWIF" $ xPrvWif btc m == v !! 4
     assertBool "pubKey" $

@@ -44,79 +44,79 @@ spec = do
     describe "cashaddr to base58 translation test vectors" $ do
         it "1BpEi6DfDAUFd7GtittLSdBeYJvcoaVggu" $ do
             let addr =
-                    addrToString bch <$>
+                    addrToString bch =<<
                     stringToAddr btc "1BpEi6DfDAUFd7GtittLSdBeYJvcoaVggu"
             addr `shouldBe`
                 Just "bitcoincash:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a"
         it "1KXrWXciRDZUpQwQmuM1DbwsKDLYAYsVLR" $ do
             let addr =
-                    addrToString bch <$>
+                    addrToString bch =<<
                     stringToAddr btc "1KXrWXciRDZUpQwQmuM1DbwsKDLYAYsVLR"
             addr `shouldBe`
                 Just "bitcoincash:qr95sy3j9xwd2ap32xkykttr4cvcu7as4y0qverfuy"
         it "16w1D5WRVKJuZUsSRzdLp9w3YGcgoxDXb" $ do
             let addr =
-                    addrToString bch <$>
+                    addrToString bch =<<
                     stringToAddr btc "16w1D5WRVKJuZUsSRzdLp9w3YGcgoxDXb"
             addr `shouldBe`
                 Just "bitcoincash:qqq3728yw0y47sqn6l2na30mcw6zm78dzqre909m2r"
         it "3CWFddi6m4ndiGyKqzYvsFYagqDLPVMTzC" $ do
             let addr =
-                    addrToString bch <$>
+                    addrToString bch =<<
                     stringToAddr btc "3CWFddi6m4ndiGyKqzYvsFYagqDLPVMTzC"
             addr `shouldBe`
                 Just "bitcoincash:ppm2qsznhks23z7629mms6s4cwef74vcwvn0h829pq"
         it "3LDsS579y7sruadqu11beEJoTjdFiFCdX4" $ do
             let addr =
-                    addrToString bch <$>
+                    addrToString bch =<<
                     stringToAddr btc "3LDsS579y7sruadqu11beEJoTjdFiFCdX4"
             addr `shouldBe`
                 Just "bitcoincash:pr95sy3j9xwd2ap32xkykttr4cvcu7as4yc93ky28e"
         it "31nwvkZwyPdgzjBJZXfDmSWsC4ZLKpYyUw" $ do
             let addr =
-                    addrToString bch <$>
+                    addrToString bch =<<
                     stringToAddr btc "31nwvkZwyPdgzjBJZXfDmSWsC4ZLKpYyUw"
             addr `shouldBe`
                 Just "bitcoincash:pqq3728yw0y47sqn6l2na30mcw6zm78dzq5ucqzc37"
     describe "base58 to cashaddr translation test vectors" $ do
         it "bitcoincash:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a" $ do
             let addr =
-                    addrToString btc <$>
+                    addrToString btc =<<
                     stringToAddr
                         bch
                         "bitcoincash:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a"
             addr `shouldBe` Just "1BpEi6DfDAUFd7GtittLSdBeYJvcoaVggu"
         it "bitcoincash:qr95sy3j9xwd2ap32xkykttr4cvcu7as4y0qverfuy" $ do
             let addr =
-                    addrToString btc <$>
+                    addrToString btc =<<
                     stringToAddr
                         bch
                         "bitcoincash:qr95sy3j9xwd2ap32xkykttr4cvcu7as4y0qverfuy"
             addr `shouldBe` Just "1KXrWXciRDZUpQwQmuM1DbwsKDLYAYsVLR"
         it "bitcoincash:qqq3728yw0y47sqn6l2na30mcw6zm78dzqre909m2r" $ do
             let addr =
-                    addrToString btc <$>
+                    addrToString btc =<<
                     stringToAddr
                         bch
                         "bitcoincash:qqq3728yw0y47sqn6l2na30mcw6zm78dzqre909m2r"
             addr `shouldBe` Just "16w1D5WRVKJuZUsSRzdLp9w3YGcgoxDXb"
         it "bitcoincash:ppm2qsznhks23z7629mms6s4cwef74vcwvn0h829pq" $ do
             let addr =
-                    addrToString btc <$>
+                    addrToString btc =<<
                     stringToAddr
                         bch
                         "bitcoincash:ppm2qsznhks23z7629mms6s4cwef74vcwvn0h829pq"
             addr `shouldBe` Just "3CWFddi6m4ndiGyKqzYvsFYagqDLPVMTzC"
         it "bitcoincash:pr95sy3j9xwd2ap32xkykttr4cvcu7as4yc93ky28e" $ do
             let addr =
-                    addrToString btc <$>
+                    addrToString btc =<<
                     stringToAddr
                         bch
                         "bitcoincash:pr95sy3j9xwd2ap32xkykttr4cvcu7as4yc93ky28e"
             addr `shouldBe` Just "3LDsS579y7sruadqu11beEJoTjdFiFCdX4"
         it "bitcoincash:pqq3728yw0y47sqn6l2na30mcw6zm78dzq5ucqzc37" $ do
             let addr =
-                    addrToString btc <$>
+                    addrToString btc =<<
                     stringToAddr
                         bch
                         "bitcoincash:pqq3728yw0y47sqn6l2na30mcw6zm78dzq5ucqzc37"

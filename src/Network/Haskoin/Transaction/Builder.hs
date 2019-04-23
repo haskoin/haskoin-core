@@ -46,14 +46,19 @@ import           Control.Arrow                      (first)
 import           Control.Monad                      (foldM, mzero, unless, when)
 import           Control.Monad.Identity             (runIdentity)
 import           Crypto.Secp256k1
-import           Data.Aeson                         (FromJSON, ToJSON, Value (Object), object, parseJSON, toJSON, (.:),
+import           Data.Aeson                         (FromJSON, ToJSON,
+                                                     Value (Object), object,
+                                                     parseJSON, toJSON, (.:),
                                                      (.:?), (.=))
 import qualified Data.ByteString                    as B
-import           Data.Conduit                       (ConduitT, Void, await, runConduit, (.|))
+import           Data.Conduit                       (ConduitT, Void, await,
+                                                     runConduit, (.|))
 import           Data.Conduit.List                  (sourceList)
 import           Data.Hashable
 import           Data.List                          (find, nub)
-import           Data.Maybe                         (catMaybes, fromJust, fromMaybe, isJust, mapMaybe, maybeToList)
+import           Data.Maybe                         (catMaybes, fromJust,
+                                                     fromMaybe, isJust,
+                                                     mapMaybe, maybeToList)
 import           Data.Serialize                     (encode)
 import           Data.String.Conversions            (cs)
 import           Data.Text                          (Text)

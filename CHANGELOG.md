@@ -6,7 +6,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## 0.9.1
 ### Added
-- Adds a function to produce a structured signature over a transaction
+- Add a function to produce a structured signature over a transaction.
+- Enable `-O2` optimisations.
 
 ## 0.9.0
 ### Changed

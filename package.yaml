@@ -64,6 +64,8 @@ library:
     - time
     - transformers
     - unordered-containers
+  ghc-options:
+    - -O2
 tests:
   spec:
     main: Spec.hs

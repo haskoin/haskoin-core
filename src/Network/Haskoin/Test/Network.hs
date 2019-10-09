@@ -9,6 +9,7 @@ Portability : POSIX
 module Network.Haskoin.Test.Network where
 
 import qualified Data.ByteString             as BS (empty, pack)
+import qualified Data.ByteString.Char8       as C8
 import           Data.Word                   (Word16, Word32)
 import           Network.Haskoin.Network
 import           Network.Haskoin.Test.Crypto
@@ -149,7 +150,8 @@ arbitraryFilterAdd = FilterAdd <$> arbitraryBS
 
 -- | Arbitrary 'MessageCommand'.
 arbitraryMessageCommand :: Gen MessageCommand
-arbitraryMessageCommand =
+arbitraryMessageCommand = do
+    ASCIIString str <- arbitrary
     elements
         [ MCVersion
         , MCVerAck
@@ -170,4 +172,5 @@ arbitraryMessageCommand =
         , MCPing
         , MCPong
         , MCAlert
+        , MCOther (C8.take 12 (C8.pack (filter (/= '\NUL') str)))
         ]

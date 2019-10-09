@@ -39,7 +39,7 @@ spec = do
         it "encodes and decodes addr" $ property $ forAll arbitraryAddr1 cerealID
         it "encodes and decodes alert" $ property $ forAll arbitraryAlert cerealID
         it "encodes and decodes reject" $
-            property $forAll arbitraryReject cerealID
+            property $ forAll arbitraryReject cerealID
         it "encodes and decodes getdata" $
             property $ forAll arbitraryGetData cerealID
         it "encodes and decodes notfound" $

@@ -332,15 +332,15 @@ reject cmd code reason =
     Reject cmd code (VarString reason) B.empty
 
 instance Serialize Reject where
-
-    get = S.get >>= \(VarString bs) -> case stringToCommand bs of
-        Just cmd -> Reject cmd <$> S.get <*> S.get <*> maybeData
-        _ -> fail $ unwords
-            ["Reason get: Invalid message command" ,cs bs]
+    get =
+        S.get >>= \(VarString bs) ->
+            Reject (stringToCommand bs) <$> S.get <*> S.get <*> maybeData
       where
-        maybeData = isEmpty >>= \done ->
-            if done then return B.empty else getByteString 32
-
+        maybeData =
+            isEmpty >>= \done ->
+                if done
+                    then return B.empty
+                    else getByteString 32
     put (Reject cmd code reason dat) = do
         put $ VarString $ commandToString cmd
         put code
@@ -481,6 +481,7 @@ data MessageCommand
     | MCMempool
     | MCReject
     | MCSendHeaders
+    | MCOther ByteString
     deriving (Eq)
 
 instance Show MessageCommand where
@@ -489,51 +490,45 @@ instance Show MessageCommand where
 instance Read MessageCommand where
     readPrec = do
         String str <- lexP
-        maybe pfail return (stringToCommand (cs str))
+        return (stringToCommand (cs str))
 
 instance Serialize MessageCommand where
-    get = go =<< getByteString 12
+    get = go <$> getByteString 12
       where
         go bs =
             let str = unpackCommand bs
-            in case stringToCommand str of
-                Just cmd -> return cmd
-                Nothing  -> fail $ cs $
-                    "get MessageCommand: Invalid command: " <> str
+             in stringToCommand str
     put mc = putByteString $ packCommand $ commandToString mc
 
 instance IsString MessageCommand where
-    fromString str =
-        fromMaybe
-            (error ("Could not recognize message command " <> str))
-            (stringToCommand (cs str))
+    fromString str = stringToCommand (cs str)
 
 -- | Read a 'MessageCommand' from its string representation.
-stringToCommand :: ByteString -> Maybe MessageCommand
+stringToCommand :: ByteString -> MessageCommand
 stringToCommand str = case str of
-    "version"     -> Just MCVersion
-    "verack"      -> Just MCVerAck
-    "addr"        -> Just MCAddr
-    "inv"         -> Just MCInv
-    "getdata"     -> Just MCGetData
-    "notfound"    -> Just MCNotFound
-    "getblocks"   -> Just MCGetBlocks
-    "getheaders"  -> Just MCGetHeaders
-    "tx"          -> Just MCTx
-    "block"       -> Just MCBlock
-    "merkleblock" -> Just MCMerkleBlock
-    "headers"     -> Just MCHeaders
-    "getaddr"     -> Just MCGetAddr
-    "filterload"  -> Just MCFilterLoad
-    "filteradd"   -> Just MCFilterAdd
-    "filterclear" -> Just MCFilterClear
-    "ping"        -> Just MCPing
-    "pong"        -> Just MCPong
-    "alert"       -> Just MCAlert
-    "mempool"     -> Just MCMempool
-    "reject"      -> Just MCReject
-    "sendheaders" -> Just MCSendHeaders
-    _             -> Nothing
+    "version"     -> MCVersion
+    "verack"      -> MCVerAck
+    "addr"        -> MCAddr
+    "inv"         -> MCInv
+    "getdata"     -> MCGetData
+    "notfound"    -> MCNotFound
+    "getblocks"   -> MCGetBlocks
+    "getheaders"  -> MCGetHeaders
+    "tx"          -> MCTx
+    "block"       -> MCBlock
+    "merkleblock" -> MCMerkleBlock
+    "headers"     -> MCHeaders
+    "getaddr"     -> MCGetAddr
+    "filterload"  -> MCFilterLoad
+    "filteradd"   -> MCFilterAdd
+    "filterclear" -> MCFilterClear
+    "ping"        -> MCPing
+    "pong"        -> MCPong
+    "alert"       -> MCAlert
+    "mempool"     -> MCMempool
+    "reject"      -> MCReject
+    "sendheaders" -> MCSendHeaders
+    _             -> MCOther str
 
 -- | Convert a 'MessageCommand' to its string representation.
 commandToString :: MessageCommand -> ByteString
@@ -560,6 +555,7 @@ commandToString mc = case mc of
     MCMempool     -> "mempool"
     MCReject      -> "reject"
     MCSendHeaders -> "sendheaders"
+    MCOther c    -> c
 
 -- | Pack a string 'MessageCommand' so that it is exactly 12-bytes long.
 packCommand :: ByteString -> ByteString

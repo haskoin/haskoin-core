@@ -18,6 +18,7 @@ module Network.Haskoin.Network.Message
     ) where
 
 import           Control.Monad                      (unless)
+import           Data.ByteString                    (ByteString)
 import qualified Data.ByteString                    as BS
 import           Data.Serialize                     (Serialize, encode, get,
                                                      put)
@@ -90,6 +91,7 @@ data Message
     | MMempool
     | MReject !Reject
     | MSendHeaders
+    | MOther !ByteString !ByteString
     deriving (Eq, Show)
 
 -- | Get 'MessageCommand' assocated with a message.
@@ -117,6 +119,7 @@ msgType MMempool         = MCMempool
 msgType (MReject _)      = MCReject
 msgType MSendHeaders     = MCSendHeaders
 msgType MGetAddr         = MCGetAddr
+msgType (MOther c _)     = MCOther c
 
 -- | Deserializer for network messages.
 getMessage :: Network -> Get Message
@@ -149,7 +152,7 @@ getMessage net = do
                  MCPong        -> MPong <$> get
                  MCAlert       -> MAlert <$> get
                  MCReject      -> MReject <$> get
-                 _             -> fail $ "get: Invalid command " ++ show cmd
+                 MCOther c     -> MOther c <$> getByteString (fromIntegral len)
         else case cmd of
                  MCGetAddr     -> return MGetAddr
                  MCVerAck      -> return MVerAck
@@ -185,6 +188,7 @@ putMessage net msg = do
                 MMempool       -> (MCMempool, BS.empty)
                 MReject m      -> (MCReject, encode m)
                 MSendHeaders   -> (MCSendHeaders, BS.empty)
+                MOther c p     -> (MCOther c, p)
         chk = checkSum32 payload
         len = fromIntegral $ BS.length payload
         header = MessageHeader (getNetworkMagic net) cmd len chk

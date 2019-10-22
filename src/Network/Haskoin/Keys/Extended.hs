@@ -310,6 +310,12 @@ xPubFP =
 xPubAddr :: XPubKey -> Address
 xPubAddr xkey = pubKeyAddr (wrapPubKey True (xPubKey xkey))
 
+xPubWitnessAddr :: XPubKey -> Address
+xPubWitnessAddr xkey = pubKeyWitnessAddr (wrapPubKey True (xPubKey xkey))
+
+xPubWitnessP2SHAddr :: XPubKey -> Address
+xPubWitnessP2SHAddr xkey = pubKeyWitnessP2SHAddr (wrapPubKey True (xPubKey xkey))
+
 -- | Exports an extended private key to the BIP32 key export format ('Base58').
 xPrvExport :: Network -> XPrvKey -> Base58
 xPrvExport net = encodeBase58Check . runPut . putXPrvKey net

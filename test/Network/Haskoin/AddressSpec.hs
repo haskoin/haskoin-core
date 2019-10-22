@@ -5,27 +5,32 @@ import           Data.Aeson
 import           Data.Aeson.Types
 import           Data.ByteString                (ByteString)
 import qualified Data.ByteString                as BS (append, empty, pack)
+import           Data.Either                    (isRight)
+import           Data.Maybe                     (isJust, fromJust)
+import qualified Data.Serialize                 as S
 import           Data.Text                      (Text)
 import           Network.Haskoin.Address
 import           Network.Haskoin.Address.Base58
 import           Network.Haskoin.Constants
+import           Network.Haskoin.Keys           (derivePubKeyI)
 import           Network.Haskoin.Test
 import           Test.Hspec
-import           Test.HUnit                     (Assertion, assertBool)
+import           Test.HUnit                     (Assertion, assertBool,
+                                                 assertEqual)
 import           Test.QuickCheck
 
 spec :: Spec
 spec = do
     let net = btc
-    describe "btc address" $
-        it "base58 encodings" $ mapM_ runVector vectors
+    describe "btc address" . it "base58 encodings" $ mapM_ runVector vectors
     describe "btc-test address" $ props btcTest
     describe "bch address" $ props bch
     describe "bch-test address" $ props bchTest
     describe "bch-regtest address" $ props bchRegTest
-    describe "json serialization" $
-        it "encodes and decodes address" $
-            forAll arbitraryAddress (testCustom (addrFromJSON net) (addrToJSON net))
+    describe "json serialization" . it "encodes and decodes address" $
+        forAll arbitraryAddress (testCustom (addrFromJSON net) (addrToJSON net))
+    describe "witness address vectors" . it "p2sh(pwpkh)" $
+        mapM_ testCompatWitness compatWitnessVectors
 
 props :: Network -> Spec
 props net = do
@@ -45,10 +50,10 @@ props net = do
 
 runVector :: (ByteString, Text, Text) -> Assertion
 runVector (bs, e, chk) = do
-    assertBool "encodeBase58" $ e == b58
-    assertBool "encodeBase58Check" $ chk == b58Chk
-    assertBool "decodeBase58" $ Just bs == decodeBase58 b58
-    assertBool "decodeBase58Check" $ Just bs == decodeBase58Check b58Chk
+    assertEqual "encodeBase58" e b58
+    assertEqual "encodeBase58Check" chk b58Chk
+    assertEqual "decodeBase58" (Just bs) (decodeBase58 b58)
+    assertEqual "decodeBase58Check" (Just bs) (decodeBase58Check b58Chk)
   where
     b58    = encodeBase58 bs
     b58Chk = encodeBase58Check bs
@@ -68,3 +73,19 @@ vectors =
 
 testCustom :: Eq a => (Value -> Parser a) -> (a -> Value) -> a -> Bool
 testCustom f g x = parseMaybe f (g x) == Just x
+
+compatWitnessVectors :: [(Network, Text, Text)]
+compatWitnessVectors =
+    [ ( btcTest
+      , "cNUnpYpMsJXYCERYBciJnsWBpcYEFjdcbq6dxj4SskGhs7uHuJ7Q"
+      , "2N6PDTueBHvXzW61B4oe5SW1D3v2Z3Vpbvw")
+    ]
+
+testCompatWitness :: (Network, Text, Text) -> Assertion
+testCompatWitness (net, seckey, addr) = do
+    let seckeyM = fromWif net seckey
+    assertBool "decode seckey" (isJust seckeyM)
+    let pubkey = derivePubKeyI (fromJust seckeyM)
+    let addrM = addrToString btcTest (pubKeyWitnessP2SHAddr pubkey)
+    assertBool "address can be encoded" (isJust addrM)
+    assertEqual "witness address matches" addr (fromJust addrM)

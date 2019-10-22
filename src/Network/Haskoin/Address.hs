@@ -24,6 +24,7 @@ module Network.Haskoin.Address
     , addrFromJSON
     , pubKeyAddr
     , pubKeyWitnessAddr
+    , pubKeyWitnessP2SHAddr
     , p2pkhAddr
     , p2wpkhAddr
     , p2shAddr
@@ -196,6 +197,12 @@ p2pkhAddr = PubKeyAddress
 -- | Obtain a P2WPKH address from a public key. Only on SegWit networks.
 pubKeyWitnessAddr :: PubKeyI -> Address
 pubKeyWitnessAddr = WitnessPubKeyAddress . addressHash . S.encode
+
+-- | Obtain a W2WPKH P2SH address. Only on SegWit networks.
+pubKeyWitnessP2SHAddr :: PubKeyI -> Address
+pubKeyWitnessP2SHAddr =
+    p2shAddr .
+    addressHash . encodeOutputBS . PayWitnessPKHash . addressHash . S.encode
 
 -- | Obtain a P2WPKH address from a 'Hash160'.
 p2wpkhAddr :: Hash160 -> Address

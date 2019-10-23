@@ -24,7 +24,7 @@ module Network.Haskoin.Address
     , addrFromJSON
     , pubKeyAddr
     , pubKeyWitnessAddr
-    , pubKeyWitnessP2SHAddr
+    , pubKeyCompatWitnessAddr
     , p2pkhAddr
     , p2wpkhAddr
     , p2shAddr
@@ -186,46 +186,48 @@ stringToAddr net bs = cash <|> segwit <|> b58
                 return $ WitnessScriptAddress h
             _ -> Nothing
 
--- | Obtain a P2PKH address from a public key.
+-- | Obtain a standard pay-to-public-key-hash address from a public key.
 pubKeyAddr :: PubKeyI -> Address
 pubKeyAddr = PubKeyAddress . addressHash . S.encode
 
--- | Obtain a P2PKH address from a 'Hash160'.
+-- | Obtain a standard pay-to-public-key-hash (P2PKH) address from a 'Hash160'.
 p2pkhAddr :: Hash160 -> Address
 p2pkhAddr = PubKeyAddress
 
--- | Obtain a P2WPKH address from a public key. Only on SegWit networks.
+-- | Obtain a SegWit pay-to-witness-public-key-hash (P2WPKH) address from a
+-- public key.
 pubKeyWitnessAddr :: PubKeyI -> Address
 pubKeyWitnessAddr = WitnessPubKeyAddress . addressHash . S.encode
 
--- | Obtain a W2WPKH P2SH address. Only on SegWit networks.
-pubKeyWitnessP2SHAddr :: PubKeyI -> Address
-pubKeyWitnessP2SHAddr =
+-- | Obtain a backwards-compatible SegWit P2SH-P2WPKH address from a public key.
+pubKeyCompatWitnessAddr :: PubKeyI -> Address
+pubKeyCompatWitnessAddr =
     p2shAddr .
     addressHash . encodeOutputBS . PayWitnessPKHash . addressHash . S.encode
 
--- | Obtain a P2WPKH address from a 'Hash160'.
+-- | Obtain a SegWit pay-to-witness-public-key-hash (P2WPKH) address from a
+-- 'Hash160'.
 p2wpkhAddr :: Hash160 -> Address
 p2wpkhAddr = WitnessPubKeyAddress
 
--- | Obtain a P2SH address from a 'Hash160'.
+-- | Obtain a standard pay-to-script-hash (P2SH) address from a 'Hash160'.
 p2shAddr :: Hash160 -> Address
 p2shAddr = ScriptAddress
 
--- | Obtain a P2WSH address from a 'Hash256'
+-- | Obtain a SegWit pay-to-witness-script-hash (P2WSH) address from a 'Hash256'
 p2wshAddr :: Hash256 -> Address
 p2wshAddr = WitnessScriptAddress
 
--- | Compute a pay-to-script-hash address for an output script.
+-- | Compute a standard pay-to-script-hash (P2SH) address for an output script.
 payToScriptAddress :: ScriptOutput -> Address
 payToScriptAddress = p2shAddr . addressHash . encodeOutputBS
 
--- | Compute a pay-to-witness-script-hash address for an output script. Only on
--- SegWit networks.
+-- | Compute a SegWit pay-to-witness-script-hash (P2WSH) address for an output
+-- script.
 payToWitnessScriptAddress :: ScriptOutput -> Address
 payToWitnessScriptAddress = p2wshAddr . sha256 . encodeOutputBS
 
--- | Compute a p2sh-p2wsh address, also known as a nested segwit address.
+-- | Compute a backwards-compatible SegWit P2SH-P2WSH address.
 payToNestedScriptAddress :: ScriptOutput -> Address
 payToNestedScriptAddress =
     p2shAddr . addressHash . encodeOutputBS . toP2WSH . encodeOutput

@@ -86,6 +86,6 @@ testCompatWitness (net, seckey, addr) = do
     let seckeyM = fromWif net seckey
     assertBool "decode seckey" (isJust seckeyM)
     let pubkey = derivePubKeyI (fromJust seckeyM)
-    let addrM = addrToString btcTest (pubKeyWitnessP2SHAddr pubkey)
+    let addrM = addrToString btcTest (pubKeyCompatWitnessAddr pubkey)
     assertBool "address can be encoded" (isJust addrM)
     assertEqual "witness address matches" addr (fromJust addrM)

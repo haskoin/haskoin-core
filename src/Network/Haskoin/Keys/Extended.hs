@@ -306,15 +306,19 @@ xPubFP =
   where
     err = error "Could not decode xPubFP"
 
--- | Computer the 'Address' of an extended public key.
+-- | Compute a standard P2PKH address for an extended public key.
 xPubAddr :: XPubKey -> Address
 xPubAddr xkey = pubKeyAddr (wrapPubKey True (xPubKey xkey))
 
+-- | Compute a SegWit P2WPKH address for an extended public key.
 xPubWitnessAddr :: XPubKey -> Address
 xPubWitnessAddr xkey = pubKeyWitnessAddr (wrapPubKey True (xPubKey xkey))
 
-xPubWitnessP2SHAddr :: XPubKey -> Address
-xPubWitnessP2SHAddr xkey = pubKeyWitnessP2SHAddr (wrapPubKey True (xPubKey xkey))
+-- | Compute a backwards-compatible SegWit P2SH-P2WPKH address for an extended
+-- public key.
+xPubCompatWitnessAddr :: XPubKey -> Address
+xPubCompatWitnessAddr xkey =
+    pubKeyCompatWitnessAddr (wrapPubKey True (xPubKey xkey))
 
 -- | Exports an extended private key to the BIP32 key export format ('Base58').
 xPrvExport :: Network -> XPrvKey -> Base58
@@ -399,21 +403,51 @@ pubSubKeys k = map (\i -> (pubSubKey k i, i)) . cycleIndex
 hardSubKeys :: XPrvKey -> KeyIndex -> [(XPrvKey, KeyIndex)]
 hardSubKeys k = map (\i -> (hardSubKey k i, i)) . cycleIndex
 
--- | Derive an address from a public key and an index. The derivation type
--- is a public, soft derivation.
+-- | Derive a standard address from an extended public key and an index.
 deriveAddr :: XPubKey -> KeyIndex -> (Address, PubKey)
 deriveAddr k i =
     (xPubAddr key, xPubKey key)
   where
     key = pubSubKey k i
 
+-- | Derive a SegWit P2WPKH address from an extended public key and an index.
+deriveWitnessAddr :: XPubKey -> KeyIndex -> (Address, PubKey)
+deriveWitnessAddr k i =
+    (xPubWitnessAddr key, xPubKey key)
+  where
+    key = pubSubKey k i
+
+-- | Derive a backwards-compatible SegWit P2SH-P2WPKH address from an extended
+-- public key and an index.
+deriveCompatWitnessAddr :: XPubKey -> KeyIndex -> (Address, PubKey)
+deriveCompatWitnessAddr k i =
+    (xPubCompatWitnessAddr key, xPubKey key)
+  where
+    key = pubSubKey k i
+
 -- | Cyclic list of all addresses derived from a public key starting from an
--- offset index. The derivation types are public, soft derivations.
+-- offset index.
 deriveAddrs :: XPubKey -> KeyIndex -> [(Address, PubKey, KeyIndex)]
 deriveAddrs k =
     map f . cycleIndex
   where
     f i = let (a, key) = deriveAddr k i in (a, key, i)
+
+-- | Cyclic list of all SegWit P2WPKH addresses derived from a public key
+-- starting from an offset index.
+deriveWitnessAddrs :: XPubKey -> KeyIndex -> [(Address, PubKey, KeyIndex)]
+deriveWitnessAddrs k =
+    map f . cycleIndex
+  where
+    f i = let (a, key) = deriveWitnessAddr k i in (a, key, i)
+
+-- | Cyclic list of all backwards-compatible SegWit P2SH-P2WPKH addresses
+-- derived from a public key starting from an offset index.
+deriveCompatWitnessAddrs :: XPubKey -> KeyIndex -> [(Address, PubKey, KeyIndex)]
+deriveCompatWitnessAddrs k =
+    map f . cycleIndex
+  where
+    f i = let (a, key) = deriveCompatWitnessAddr k i in (a, key, i)
 
 -- | Derive a multisig address from a list of public keys, the number of
 -- required signatures /m/ and a derivation index. The derivation type is a

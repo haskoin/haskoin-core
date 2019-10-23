@@ -35,6 +35,8 @@ module Network.Haskoin.Keys.Extended
     , xPubFP
     , xPrvFP
     , xPubAddr
+    , xPubWitnessAddr
+    , xPubCompatWitnessAddr
     , xPubExport
     , xPubToJSON
     , xPubFromJSON
@@ -54,7 +56,11 @@ module Network.Haskoin.Keys.Extended
     , pubSubKeys
     , hardSubKeys
     , deriveAddr
+    , deriveWitnessAddr
+    , deriveCompatWitnessAddr
     , deriveAddrs
+    , deriveWitnessAddrs
+    , deriveCompatWitnessAddrs
     , deriveMSAddr
     , deriveMSAddrs
     , cycleIndex

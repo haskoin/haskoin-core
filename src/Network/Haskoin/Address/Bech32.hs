@@ -131,7 +131,7 @@ maxBech32Length = 90
 bech32Encode :: HRP -> [Word5] -> Maybe Bech32
 bech32Encode hrp dat = do
     guard $ checkHRP hrp
-    let dat' = dat ++ bech32CreateChecksum hrp dat
+    let dat' = dat ++ bech32CreateChecksum (T.toLower hrp) dat
         rest = map (charset !) dat'
         result = T.concat [T.toLower hrp, T.pack "1", T.pack rest]
     guard $ T.length result <= maxBech32Length

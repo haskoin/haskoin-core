@@ -29,7 +29,7 @@ spec = do
         it "should be an invalid address" $
             forM_ invalidAddresses testInvalidAddress
         it "should be same for the input in different case" $
-            all (== Just "test12hrzfj") (map (flip bech32Encode []) hrpCaseVariants)
+            (all (== Just "test12hrzfj") . map (flip bech32Encode [])) hrpCaseVariants
     describe "more encoding/decoding cases" $ do
         it "length > 90" $
             assert $

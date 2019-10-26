@@ -50,6 +50,7 @@ spec = do
             Just "hrp1g9xj8m" `shouldBe`
             bech32Encode "HRP" []
 
+
 testValidChecksum :: Bech32 -> Assertion
 testValidChecksum checksum = case bech32Decode checksum of
     Nothing                      -> assertFailure (show checksum)

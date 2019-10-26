@@ -28,8 +28,8 @@ spec = do
         it "should be a valid address" $ forM_ validAddresses testValidAddress
         it "should be an invalid address" $
             forM_ invalidAddresses testInvalidAddress
-        it "should be same for the input data in different case" $
-            all (== Just "test12hrzfj") (map bech32EncodeDefault hrpCaseVariants)
+        it "should be same for the input in different case" $
+            all (== Just "test12hrzfj") (map (flip bech32Encode []) hrpCaseVariants)
     describe "more encoding/decoding cases" $ do
         it "length > 90" $
             assert $
@@ -49,9 +49,6 @@ spec = do
         it "hrp lowercased" $
             Just "hrp1g9xj8m" `shouldBe`
             bech32Encode "HRP" []
-
-bech32EncodeDefault :: HRP -> Maybe Bech32 
-bech32EncodeDefault x = bech32Encode x []
 
 testValidChecksum :: Bech32 -> Assertion
 testValidChecksum checksum = case bech32Decode checksum of

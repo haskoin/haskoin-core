@@ -144,16 +144,13 @@ invalidAddresses =
     , "bc1gmk9yu"
     ]
 
-hrpCaseVariants :: [Text]
-hrpCaseVariants = 
-    [ "TEST"
-    , "TESt"
-    , "TEsT"
-    , "TeST"
-    , "tEST"
-    , "TEst"
-    , "tESt"
-    , "teST"
-    , "TeSt"
-    , "tESt"
-    ]
+hrpCaseVariants:: [Text]
+hrpCaseVariants = map T.pack hrpTestPermutations
+
+hrpTestPermutations :: [String]
+hrpTestPermutations = do
+    a <- ['t', 'T']
+    b <- ['e', 'E']
+    c <- ['s', 'S']
+    d <- ['t', 'T']
+    return [a, b, c, d]

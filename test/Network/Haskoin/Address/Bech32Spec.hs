@@ -28,6 +28,8 @@ spec = do
         it "should be a valid address" $ forM_ validAddresses testValidAddress
         it "should be an invalid address" $
             forM_ invalidAddresses testInvalidAddress
+        it "should be same for the input in different case" $
+            all (== Just "test12hrzfj") . map (flip bech32Encode []) $ hrpCaseVariants
     describe "more encoding/decoding cases" $ do
         it "length > 90" $
             assert $
@@ -141,3 +143,14 @@ invalidAddresses =
     , "tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3pjxtptv"
     , "bc1gmk9yu"
     ]
+
+hrpCaseVariants:: [Text]
+hrpCaseVariants = map T.pack hrpTestPermutations
+
+hrpTestPermutations :: [String]
+hrpTestPermutations = do
+    a <- ['t', 'T']
+    b <- ['e', 'E']
+    c <- ['s', 'S']
+    d <- ['t', 'T']
+    return [a, b, c, d]

@@ -24,6 +24,7 @@ module Network.Haskoin.Network.Bloom
     , isBloomEmpty
     , isBloomFull
     , acceptsFilters
+    , bloomRelevantUpdate
     ) where
 
 import           Control.Monad                  (forM_, replicateM)
@@ -33,14 +34,16 @@ import qualified Data.ByteString                as BS
 import qualified Data.Foldable                  as F
 import           Data.Hash.Murmur               (murmur3)
 import qualified Data.Sequence                  as S
-import           Data.Serialize                 (Serialize, get, put)
+import           Data.Serialize                 (Serialize, get, put,encode)
 import           Data.Serialize.Get             (getByteString, getWord32le,
                                                  getWord8)
 import           Data.Serialize.Put             (putByteString, putWord32le,
                                                  putWord8)
 import           Data.Word
 import           Network.Haskoin.Network.Common
-
+import           Network.Haskoin.Script.Common
+import           Network.Haskoin.Transaction.Common
+import           Data.List                      (foldl')
 -- | 20,000 items with fp rate < 0.1% or 10,000 items and <0.0001%
 maxBloomSize :: Int
 maxBloomSize = 36000
@@ -193,8 +196,47 @@ bloomContains bfilter bs
     isSet i = S.index s (fromIntegral $ i `shiftR` 3)
           .&. (bitMask !! fromIntegral (7 .&. i)) /= 0
 
--- TODO: Write bloomRelevantUpdate
--- bloomRelevantUpdate :: BloomFilter -> Tx -> Hash256 -> Maybe BloomFilter
+-- | Checks if any of the outputs of a tx is in the current bloom filter.
+-- If it is, add the txid and vout as an outpoint (i.e. so that 
+-- a future tx that spends the output won't be missed).
+bloomRelevantUpdate :: BloomFilter       
+                    -- ^ Bloom filter
+                    -> Tx                
+                    -- ^ Tx that may (or may not) have relevant outputs
+                    -> Maybe BloomFilter 
+                    -- ^ Returns an updated bloom filter adding relevant output
+bloomRelevantUpdate bfilter tx
+    | isBloomFull bfilter || isBloomEmpty bfilter = Nothing
+    | bloomFlags bfilter == BloomUpdateNone = Nothing
+    | length matchOuts > 0 = Just $ foldl' (addRelevant) bfilter matchOuts
+    | otherwise = Nothing
+    where
+        -- TxHash if we end up inserting an outpoint
+        h = txHash tx
+        -- Decode the scriptOutpus and add vOuts in case we make them outpoints
+        decodedOutputScripts = traverse (decodeOutputBS . scriptOutput) $ txOut tx
+        err = error $ "Error Decoding output script"
+        idxOutputScripts = either (const err) (zip [0..]) decodedOutputScripts
+        -- Check if any txOuts were contained in the bloom filter
+        matchFilter = filter (\(_,op) -> bloomContains bfilter $ encodeScriptOut op)
+        matchOuts = matchFilter idxOutputScripts
+
+        addRelevant :: BloomFilter -> (Word32,ScriptOutput) -> BloomFilter
+        addRelevant bfilter (id,scriptOut) = case (bloomFlags bfilter,scriptType) of
+            -- We filtered out BloomUpdateNone so we insert any PayPk or PayMulSig
+            (_, True) -> bloomInsert bfilter outpoint
+            (BloomUpdateAll, _ ) -> bloomInsert bfilter outpoint
+            _ ->  error "Error Updating Bloom Filter with relevant outpoint"
+            where
+                outpoint = encode $ OutPoint{ outPointHash = h, outPointIndex = id}
+                scriptType = (\s -> isPayPK s ||isPayMulSig s) scriptOut
+
+        -- Encodes a scriptOutput so it can be checked agains the Bloom Filter
+        encodeScriptOut :: ScriptOutput -> ByteString
+        encodeScriptOut (PayMulSig outputMuSig _) = encode outputMuSig
+        encodeScriptOut (PayWitnessScriptHash scriptHash) = encode scriptHash
+        encodeScriptOut (DataCarrier getOutputData) = encode getOutputData
+        encodeScriptOut outputHash = (encode . getOutputHash) outputHash
 
 -- | Returns True if the filter is empty (all bytes set to 0x00)
 isBloomEmpty :: BloomFilter -> Bool

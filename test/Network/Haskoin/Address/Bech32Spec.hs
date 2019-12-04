@@ -47,8 +47,7 @@ spec = do
         it "empty HRP encode" $
             assert $ isNothing $ bech32Decode "10a06t8"
         it "hrp lowercased" $
-            Just "hrp1g9xj8m" `shouldBe`
-            bech32Encode "HRP" []
+            bech32Encode "HRP" [] `shouldBe` bech32Encode "hrp" []
 
 
 testValidChecksum :: Bech32 -> Assertion

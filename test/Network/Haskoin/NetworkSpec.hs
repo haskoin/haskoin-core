@@ -1,20 +1,20 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.NetworkSpec (spec) where
 
-import           Data.Maybe                (fromJust)
-import           Data.Serialize            as S
-import           Data.Text                 (Text)
-import           Data.Word                 (Word32)
+import           Data.Maybe                  (fromJust)
+import           Data.Serialize              as S
+import           Data.Text                   (Text)
+import           Data.Word                   (Word32)
 import           Network.Haskoin.Address
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Keys
 import           Network.Haskoin.Network
 import           Network.Haskoin.Test
+import           Network.Haskoin.Transaction
 import           Network.Haskoin.Util
-import           Network.Haskoin.Transaction.Common
 import           Test.Hspec
-import           Test.HUnit                (Assertion, assertBool,
-                                            assertEqual)
+import           Test.HUnit                  (Assertion, assertBool,
+                                              assertEqual)
 import           Test.QuickCheck
 
 spec :: Spec
@@ -121,16 +121,16 @@ relevantOutputUpdated = assertBool "Bloom filter output updated" $
         relevantOutputHash = fromJust $ decodeHex"03f47604ea2736334151081e13265b4fe38e6fa8"
         bf1 = bloomInsert bf0 relevantOutputHash
         bf2 = fromJust $ bloomRelevantUpdate bf1 relevantTx
-        spendTxInput = (encode .prevOutput) <$> txIn spendRelevantTx 
+        spendTxInput = (encode .prevOutput) <$> txIn spendRelevantTx
 
 irrelevantOutputNotUpdated :: Assertion
-irrelevantOutputNotUpdated = assertEqual "Bloom filter not updated" Nothing bf2 
+irrelevantOutputNotUpdated = assertEqual "Bloom filter not updated" Nothing bf2
     where
         bf0 = bloomCreate 10 0.000001 0 BloomUpdateAll
         relevantOutputHash = fromJust $ decodeHex"03f47604ea2736334151081e13265b4fe38e6fa8"
         bf1 = bloomInsert bf0 relevantOutputHash
         bf2 = bloomRelevantUpdate bf1 unrelatedTx
-        spendTxInput = (encode .prevOutput) <$> txIn spendRelevantTx 
+        spendTxInput = (encode .prevOutput) <$> txIn spendRelevantTx
 
 -- Random transaction (57dc904f32ad4daab7b321dd469e8791ad09df784cdd273a73985150a4f225e9)
 relevantTx :: Tx

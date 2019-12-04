@@ -76,6 +76,34 @@ instance Serialize Block where
         putVarInt $ length txs
         forM_ txs put
 
+instance ToJSON Block where
+    toJSON = String . encodeHex . encode
+
+instance FromJSON Block where
+    parseJSON =
+        withText "Block" $ \t -> do
+            bin <-
+                case decodeHex t of
+                    Nothing -> mzero
+                    Just bin -> return bin
+            case decode bin of
+                Left e -> fail e
+                Right h -> return h
+
+instance ToJSON BlockHeader where
+    toJSON = String . encodeHex . encode
+
+instance FromJSON BlockHeader where
+    parseJSON =
+        withText "BlockHeader" $ \t -> do
+            bin <-
+                case decodeHex t of
+                    Nothing -> mzero
+                    Just bin -> return bin
+            case decode bin of
+                Left e -> fail e
+                Right h -> return h
+
 -- | Block header hash. To be serialized reversed for display purposes.
 newtype BlockHash = BlockHash
     { getBlockHash :: Hash256 }

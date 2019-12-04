@@ -85,8 +85,12 @@ spec = do
     describe "block serialization" $ do
         it "encodes and decodes block" $
             property $ forAll (arbitraryBlock net) cerealID
+        it "encodes and decodes block JSON" $
+            property $ forAll (arbitraryBlock net) testID
         it "encodes and decodes block header" $
             property $ forAll arbitraryBlockHeader cerealID
+        it "encodes and decodes block header JSON" $
+            property $ forAll arbitraryBlockHeader testID
         it "encodes and decodes getblocks" $
             property $ forAll arbitraryGetBlocks cerealID
         it "encodes and decodes getheaders" $

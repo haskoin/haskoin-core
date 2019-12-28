@@ -539,6 +539,24 @@ instance Eq (DerivPathI t) where
     Deriv         == Deriv         = True
     _             == _             = False
 
+instance Ord (DerivPathI t) where
+    -- Same hardness on each side
+    (nextA :| iA) `compare` (nextB :| iB) =
+        if nextA == nextB then iA `compare` iB else nextA `compare` nextB
+    (nextA :/ iA) `compare` (nextB :/ iB) =
+        if nextA == nextB then iA `compare` iB else nextA `compare` nextB
+
+    -- Different hardness: hard paths are LT soft paths
+    (nextA :/ iA) `compare` (nextB :| iB) =
+        if nextA == nextB then LT else nextA `compare` nextB
+    (nextA :| iA) `compare` (nextB :/ iB) =
+        if nextA == nextB then GT else nextA `compare` nextB
+
+    Deriv `compare` Deriv  = EQ
+    Deriv `compare` _      = LT
+    _     `compare` Deriv  = GT
+
+
 instance Serialize DerivPath where
     get = listToPath <$> S.get
     put = put . pathToList

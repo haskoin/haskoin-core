@@ -29,6 +29,7 @@ module Network.Haskoin.Transaction.Common
     ) where
 
 import           Control.Applicative            ((<|>))
+import           Control.DeepSeq
 import           Control.Monad                  (forM_, guard, liftM2, mzero,
                                                  replicateM, (<=<))
 import           Data.Aeson                     as A
@@ -41,7 +42,7 @@ import           Data.String                    (IsString, fromString)
 import           Data.String.Conversions        (cs)
 import           Data.Text                      (Text)
 import           Data.Word                      (Word32, Word64)
-import           GHC.Generics
+import           GHC.Generics                   (Generic)
 import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Network.Common
 import           Network.Haskoin.Script.Common
@@ -50,7 +51,7 @@ import           Text.Read                      as R
 
 -- | Transaction id: hash of transaction excluding witness data.
 newtype TxHash = TxHash { getTxHash :: Hash256 }
-    deriving (Eq, Ord, Generic, Hashable, Serialize)
+    deriving (Eq, Ord, Generic, Hashable, Serialize, NFData)
 
 instance Show TxHash where
     showsPrec _ = shows . txHashToHex
@@ -109,7 +110,7 @@ data Tx = Tx
     , txWitness  :: !WitnessData
       -- | earliest mining height or time
     , txLockTime :: !Word32
-    } deriving (Show, Read, Eq, Ord, Generic, Hashable)
+    } deriving (Show, Read, Eq, Ord, Generic, Hashable, NFData)
 
 -- | Compute transaction hash.
 txHash :: Tx -> TxHash
@@ -219,7 +220,7 @@ data TxIn =
          , scriptInput  :: !ByteString
            -- | lock-time using sequence numbers (BIP-68)
          , txInSequence :: !Word32
-         } deriving (Eq, Show, Read, Ord, Generic, Hashable)
+         } deriving (Eq, Show, Read, Ord, Generic, Hashable, NFData)
 
 instance Serialize TxIn where
     get =
@@ -240,7 +241,7 @@ data TxOut =
             outValue     :: !Word64
             -- | pubkey script
           , scriptOutput :: !ByteString
-          } deriving (Eq, Show, Read, Ord, Generic, Hashable)
+          } deriving (Eq, Show, Read, Ord, Generic, Hashable, NFData)
 
 instance Serialize TxOut where
     get = do
@@ -259,7 +260,7 @@ data OutPoint = OutPoint
       outPointHash  :: !TxHash
       -- | position of output in previous transaction
     , outPointIndex :: !Word32
-    } deriving (Show, Read, Eq, Ord, Generic, Hashable)
+    } deriving (Show, Read, Eq, Ord, Generic, Hashable, NFData)
 
 instance FromJSON OutPoint where
     parseJSON = withText "OutPoint" $

@@ -30,6 +30,7 @@ module Network.Haskoin.Transaction.Partial
     ) where
 
 import           Control.Applicative         ((<|>))
+import           Control.DeepSeq
 import           Control.Monad               (guard, replicateM, void)
 import           Data.ByteString             (ByteString)
 import qualified Data.ByteString             as B
@@ -64,7 +65,9 @@ data PartiallySignedTransaction = PartiallySignedTransaction
     , globalUnknown       :: UnknownMap
     , inputs              :: [Input]
     , outputs             :: [Output]
-    } deriving (Show, Eq)
+    } deriving (Show, Eq, Generic)
+
+instance NFData PartiallySignedTransaction
 
 -- | Inputs contain all of the data needed to sign a transaction and all of the resulting signature data after signing.
 data Input = Input
@@ -78,7 +81,9 @@ data Input = Input
     , finalScriptSig     :: Maybe Script
     , finalScriptWitness :: Maybe WitnessStack
     , inputUnknown       :: UnknownMap
-    } deriving (Show, Eq)
+    } deriving (Show, Eq, Generic)
+
+instance NFData Input
 
 -- | Outputs can contain information needed to spend the output at a later date.
 data Output = Output
@@ -86,18 +91,24 @@ data Output = Output
     , outputWitnessScript :: Maybe Script
     , outputHDKeypaths    :: HashMap PubKeyI (Fingerprint, [KeyIndex])
     , outputUnknown       :: UnknownMap
-    } deriving (Show, Eq)
+    } deriving (Show, Eq, Generic)
+
+instance NFData Output
 
 -- | A map of raw PSBT keys to byte strings for extra data. The 'keyType' field cannot overlap with any of the reserved
 -- 'keyType' fields specified in the PSBT specification.
 newtype UnknownMap = UnknownMap { unknownMap :: HashMap Key ByteString }
-    deriving (Show, Eq, Semigroup, Monoid)
+    deriving (Show, Eq, Semigroup, Monoid, Generic)
+
+instance NFData UnknownMap
 
 -- | Raw keys for the map type used in PSBTs.
 data Key = Key
     { keyType :: Word8
     , key     :: ByteString
     } deriving (Show, Eq, Generic)
+
+instance NFData Key
 
 instance Hashable Key
 
@@ -377,13 +388,17 @@ data InputType
     | InBIP32Derivation
     | InFinalScriptSig
     | InFinalScriptWitness
-    deriving (Show, Eq, Enum, Bounded)
+    deriving (Show, Eq, Enum, Bounded, Generic)
+
+instance NFData InputType
 
 data OutputType
     = OutRedeemScript
     | OutWitnessScript
     | OutBIP32Derivation
-    deriving (Show, Eq, Enum, Bounded)
+    deriving (Show, Eq, Enum, Bounded, Generic)
+
+instance NFData OutputType
 
 getInputItem :: Int -> Input -> InputType -> Get Input
 getInputItem 0 input@Input{nonWitnessUtxo = Nothing} InNonWitnessUtxo = do
@@ -446,19 +461,24 @@ putHDPath :: Enum t => t -> HashMap PubKeyI (Fingerprint, [KeyIndex]) -> Put
 putHDPath t = putPubKeyMap t . fmap PSBTHDPath
 
 newtype PSBTHDPath = PSBTHDPath { unPSBTHDPath :: (Fingerprint, [KeyIndex]) }
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic)
+
+instance NFData PSBTHDPath
 
 instance Serialize PSBTHDPath where
     get = do
         VarInt valueSize <- get
         guard $ valueSize `mod` 4 == 0
         let numIndices = (fromIntegral valueSize - 4) `div` 4
-        PSBTHDPath <$> isolate (fromIntegral valueSize) ((,) <$> getWord32le <*> getKeyIndexList numIndices)
+        PSBTHDPath <$>
+            isolate
+                (fromIntegral valueSize)
+                ((,) <$> getWord32le <*> getKeyIndexList numIndices)
       where
         getKeyIndexList n = replicateM n getWord32le
-
     put (PSBTHDPath (fp, kis)) = putVarInt (B.length bs) >> putByteString bs
-      where bs = runPut $ putWord32le fp >> mapM_ putWord32le kis
+      where
+        bs = runPut $ putWord32le fp >> mapM_ putWord32le kis
 
 putPubKeyMap :: (Serialize a, Enum t) => t -> HashMap PubKeyI a -> Put
 putPubKeyMap t = void . HashMap.traverseWithKey putItem

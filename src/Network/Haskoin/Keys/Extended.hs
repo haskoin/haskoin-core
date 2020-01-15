@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveAnyClass    #-}
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs             #-}
@@ -99,6 +100,7 @@ module Network.Haskoin.Keys.Extended
     ) where
 
 import           Control.Applicative
+import           Control.DeepSeq
 import           Control.Exception              (Exception, throw)
 import           Control.Monad                  (guard, mzero, unless, (<=<))
 import           Crypto.Secp256k1
@@ -139,7 +141,7 @@ import           Text.Read.Lex
 -- | A derivation exception is thrown in the very unlikely event that a
 -- derivation is invalid.
 newtype DerivationException = DerivationException String
-    deriving (Eq, Read, Show, Typeable)
+    deriving (Eq, Read, Show, Typeable, Generic, NFData)
 
 instance Exception DerivationException
 
@@ -161,7 +163,7 @@ data XPrvKey = XPrvKey
     , xPrvIndex  :: !KeyIndex    -- ^ derivation index
     , xPrvChain  :: !ChainCode   -- ^ chain code
     , xPrvKey    :: !SecKey      -- ^ private key of this node
-    } deriving (Generic, Eq, Show, Read)
+    } deriving (Generic, Eq, Show, Read, NFData)
 
 xPrvToJSON :: Network -> XPrvKey -> Value
 xPrvToJSON net = A.String . xPrvExport net
@@ -173,7 +175,7 @@ data XPubKey = XPubKey
     , xPubIndex  :: !KeyIndex  -- ^ derivation index
     , xPubChain  :: !ChainCode -- ^ chain code
     , xPubKey    :: !PubKey    -- ^ public key of this node
-    } deriving (Generic, Eq, Show, Read)
+    } deriving (Generic, Eq, Show, Read, NFData)
 
 
 -- | Decode an extended public key from a JSON string
@@ -486,14 +488,14 @@ cycleIndex i
 
 -- | Phantom type signaling a hardened derivation path that can only be computed
 -- from private extended key.
-data HardDeriv
+data HardDeriv deriving (Generic, NFData)
 
 -- | Phantom type signaling no knowledge about derivation path: can be hardened or not.
-data AnyDeriv
+data AnyDeriv deriving (Generic, NFData)
 
 -- | Phantom type signaling derivation path including only non-hardened paths
 -- that can be computed from an extended public key.
-data SoftDeriv
+data SoftDeriv deriving (Generic, NFData)
 
 -- | Hardened derivation path. Can be computed from extended private key only.
 type HardPath = DerivPathI HardDeriv
@@ -532,6 +534,11 @@ data DerivPathI t where
     (:|)  :: HardOrAny t => !(DerivPathI t) -> !KeyIndex -> DerivPathI t
     (:/)  :: AnyOrSoft t => !(DerivPathI t) -> !KeyIndex -> DerivPathI t
     Deriv :: DerivPathI t
+
+instance NFData (DerivPathI t) where
+    rnf (a :| b) = rnf a `seq` rnf b `seq` ()
+    rnf (a :/ b) = rnf a `seq` rnf b `seq` ()
+    rnf Deriv = ()
 
 instance Eq (DerivPathI t) where
     (nextA :| iA) == (nextB :| iB) = iA == iB && nextA == nextB
@@ -730,7 +737,7 @@ instance ToJSON ParsedPath where
 data ParsedPath = ParsedPrv   { getParsedPath :: !DerivPath }
                 | ParsedPub   { getParsedPath :: !DerivPath }
                 | ParsedEmpty { getParsedPath :: !DerivPath }
-  deriving Eq
+  deriving (Eq, Generic, NFData)
 
 instance Show ParsedPath where
     showsPrec d p = showParen (d > 10) $ showString "ParsedPath " . shows f
@@ -779,7 +786,7 @@ parseBip32PathIndex segment = case reads segment of
 -- | Type for BIP32 path index element.
 data Bip32PathIndex = Bip32HardIndex KeyIndex
                     | Bip32SoftIndex KeyIndex
-  deriving Eq
+  deriving (Eq, Generic, NFData)
 
 instance Show Bip32PathIndex where
     showsPrec d (Bip32HardIndex i) = showParen (d > 10) $
@@ -821,7 +828,7 @@ data XKey
            , getXKeyNet :: !Network }
     | XPub { getXKeyPub :: !XPubKey
            , getXKeyNet :: !Network }
-    deriving (Eq, Show)
+    deriving (Eq, Show, Generic, NFData)
 
 -- | Apply a parsed path to an extended key to derive the new key defined in the
 -- path. If the path starts with /m/, a private key will be returned and if the

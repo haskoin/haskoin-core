@@ -45,6 +45,7 @@ module Network.Haskoin.Address
     ) where
 
 import           Control.Applicative
+import           Control.DeepSeq
 import           Control.Monad
 import           Data.Aeson                       as A
 import           Data.Aeson.Types
@@ -82,7 +83,7 @@ data Address
     | WitnessScriptAddress { getAddrHash256 :: !Hash256
                              -- ^ HASH256 hash of script
                             }
-    deriving (Eq, Ord, Generic, Show, Read, Serialize, Hashable)
+    deriving (Eq, Ord, Generic, Show, Read, Serialize, Hashable, NFData)
 
 -- | 'Address' pays to a public key hash.
 isPubKeyAddress :: Address -> Bool

@@ -1,4 +1,5 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveAnyClass #-}
 {-|
 Module      : Network.Haskoin.Crypto.Hash
 Copyright   : No rights reserved
@@ -29,6 +30,7 @@ module Network.Haskoin.Crypto.Hash
     , join512
     ) where
 
+import           Control.DeepSeq
 import           Crypto.Hash             (RIPEMD160 (..), SHA1 (..),
                                           SHA256 (..), SHA512 (..), hashWith)
 import           Crypto.MAC.HMAC         (HMAC, hmac)
@@ -46,25 +48,26 @@ import qualified Data.Serialize.Put      as Put
 import           Data.String             (IsString, fromString)
 import           Data.String.Conversions (cs)
 import           Data.Word               (Word32)
+import           GHC.Generics            (Generic)
 import           Network.Haskoin.Util
 import           Text.Read               as R
 
 -- | 'Word32' wrapped for type-safe 32-bit checksums.
 newtype CheckSum32 = CheckSum32
     { getCheckSum32 :: Word32
-    } deriving (Eq, Ord, Serialize, Show, Read, Hashable)
+    } deriving (Eq, Ord, Serialize, Show, Read, Hashable, Generic, NFData)
 
 -- | Type for 512-bit hashes.
 newtype Hash512 = Hash512 { getHash512 :: ShortByteString }
-    deriving (Eq, Ord, Hashable)
+    deriving (Eq, Ord, Hashable, Generic, NFData)
 
 -- | Type for 256-bit hashes.
 newtype Hash256 = Hash256 { getHash256 :: ShortByteString }
-    deriving (Eq, Ord, Hashable)
+    deriving (Eq, Ord, Hashable, Generic, NFData)
 
 -- | Type for 160-bit hashes.
 newtype Hash160 = Hash160 { getHash160 :: ShortByteString }
-    deriving (Eq, Ord, Hashable)
+    deriving (Eq, Ord, Hashable, Generic, NFData)
 
 instance Show Hash512 where
     showsPrec _ = shows . encodeHex . BSS.fromShort . getHash512

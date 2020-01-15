@@ -1,3 +1,6 @@
+{-# LANGUAGE DeriveAnyClass    #-}
+{-# LANGUAGE DeriveGeneric     #-}
+{-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-|
 Module      : Network.Haskoin.Network.Common
@@ -18,6 +21,9 @@ module Network.Haskoin.Network.Common
     , Inv(..)
     , InvVector(..)
     , InvType(..)
+    , HostAddress
+    , hostToSockAddr
+    , sockToHostAddress
     , NetworkAddress(..)
     , NotFound(..)
     , Ping(..)
@@ -41,17 +47,17 @@ module Network.Haskoin.Network.Common
     , putVarInt
     ) where
 
+import           Control.DeepSeq
 import           Control.Monad               (forM_, liftM2, replicateM, unless)
 import           Data.Bits                   (shiftL)
 import           Data.ByteString             (ByteString)
 import qualified Data.ByteString             as B
 import           Data.ByteString.Char8       as C (replicate)
-import           Data.Maybe
-import           Data.Monoid                 ((<>))
 import           Data.Serialize              as S
 import           Data.String
 import           Data.String.Conversions     (cs)
 import           Data.Word                   (Word32, Word64)
+import           GHC.Generics                (Generic)
 import           Network.Haskoin.Crypto.Hash
 import           Network.Socket              (SockAddr (..))
 import           Text.Read                   as R
@@ -65,7 +71,7 @@ newtype Addr =
     Addr { -- List of addresses of other nodes on the network with timestamps.
            addrList :: [NetworkAddressTime]
          }
-    deriving (Eq, Show)
+    deriving (Eq, Show, Generic, NFData)
 
 instance Serialize Addr where
 
@@ -87,7 +93,7 @@ data Alert =
             alertPayload   :: !VarString
           -- | ECDSA signature of the payload
           , alertSignature :: !VarString
-          } deriving (Eq, Show, Read)
+          } deriving (Eq, Show, Read, Generic, NFData)
 
 instance Serialize Alert where
     get = Alert <$> S.get <*> S.get
@@ -103,7 +109,7 @@ instance Serialize Alert where
 newtype GetData =
     GetData { -- | list of object hashes
               getDataList :: [InvVector]
-            } deriving (Eq, Show)
+            } deriving (Eq, Show, Generic, NFData)
 
 instance Serialize GetData where
 
@@ -122,7 +128,7 @@ newtype Inv =
     Inv {
         -- | inventory
           invList :: [InvVector]
-        } deriving (Eq, Show)
+        } deriving (Eq, Show, Generic, NFData)
 
 instance Serialize Inv where
 
@@ -144,7 +150,7 @@ data InvType
     | InvWitnessTx -- ^ segwit transaction
     | InvWitnessBlock -- ^ segwit block
     | InvWitnessMerkleBlock -- ^ segwit filtere block
-    deriving (Eq, Show, Read)
+    deriving (Eq, Show, Read, Generic, NFData)
 
 instance Serialize InvType where
     get = go =<< getWord32le
@@ -180,11 +186,19 @@ data InvVector =
                 invType :: !InvType
                 -- | 256-bit hash of object
               , invHash :: !Hash256
-              } deriving (Eq, Show)
+              } deriving (Eq, Show, Generic, NFData)
 
 instance Serialize InvVector where
     get = InvVector <$> S.get <*> S.get
     put (InvVector t h) = put t >> put h
+
+newtype HostAddress =
+    HostAddress ByteString
+    deriving (Eq, Show, Ord, Generic, NFData)
+
+instance Serialize HostAddress where
+    put (HostAddress bs) = putByteString bs
+    get = HostAddress <$> getByteString 18
 
 -- | Data type describing a bitcoin network address. Addresses are stored in
 -- IPv6 format. IPv4 addresses are mapped to IPv6 using IPv4 mapped IPv6
@@ -193,45 +207,53 @@ data NetworkAddress =
     NetworkAddress { -- | bitmask of services available for this address
                      naServices :: !Word64
                      -- | address and port information
-                   , naAddress  :: !SockAddr
-                   } deriving (Eq, Show)
+                   , naAddress  :: !HostAddress
+                   } deriving (Eq, Show, Generic, NFData)
+
+hostToSockAddr :: HostAddress -> SockAddr
+hostToSockAddr (HostAddress bs) =
+    case runGet getSockAddr bs of
+        Left e  -> error e
+        Right x -> x
+
+sockToHostAddress :: SockAddr -> HostAddress
+sockToHostAddress = HostAddress . runPut . putSockAddr
+
+putSockAddr :: SockAddr -> Put
+putSockAddr (SockAddrInet6 p _ (a, b, c, d) _) = do
+    putWord32be a
+    putWord32be b
+    putWord32be c
+    putWord32be d
+    putWord16be (fromIntegral p)
+
+putSockAddr (SockAddrInet p a) = do
+    putWord32be 0x00000000
+    putWord32be 0x00000000
+    putWord32be 0x0000ffff
+    putWord32host a
+    putWord16be (fromIntegral p)
+
+putSockAddr _ = error "Invalid address type"
+
+getSockAddr :: Get SockAddr
+getSockAddr = do
+    a <- getWord32be
+    b <- getWord32be
+    c <- getWord32be
+    if a == 0x00000000 && b == 0x00000000 && c == 0x0000ffff
+        then do
+            d <- getWord32host
+            p <- getWord16be
+            return $ SockAddrInet (fromIntegral p) d
+        else do
+            d <- getWord32be
+            p <- getWord16be
+            return $ SockAddrInet6 (fromIntegral p) 0 (a, b, c, d) 0
 
 instance Serialize NetworkAddress where
-
-    get = NetworkAddress <$> getWord64le
-                         <*> getAddrPort
-      where
-        getAddrPort = do
-            a <- getWord32be
-            b <- getWord32be
-            c <- getWord32be
-            if a == 0x00000000 && b == 0x00000000 && c == 0x0000ffff
-              then do
-                d <- getWord32host
-                p <- getWord16be
-                return $ SockAddrInet (fromIntegral p) d
-              else do
-                d <- getWord32be
-                p <- getWord16be
-                return $ SockAddrInet6 (fromIntegral p) 0 (a,b,c,d) 0
-
-    put (NetworkAddress s (SockAddrInet6 p _ (a,b,c,d) _)) = do
-        putWord64le s
-        putWord32be a
-        putWord32be b
-        putWord32be c
-        putWord32be d
-        putWord16be (fromIntegral p)
-
-    put (NetworkAddress s (SockAddrInet p a)) = do
-        putWord64le s
-        putWord32be 0x00000000
-        putWord32be 0x00000000
-        putWord32be 0x0000ffff
-        putWord32host a
-        putWord16be (fromIntegral p)
-
-    put _ = error "NetworkAddress can onle be IPv4 or IPv6"
+    get = NetworkAddress <$> getWord64le <*> S.get
+    put (NetworkAddress s a) = putWord64le s >> put a
 
 -- | A 'NotFound' message is returned as a response to a 'GetData' message
 -- whe one of the requested objects could not be retrieved. This could happen,
@@ -240,7 +262,7 @@ instance Serialize NetworkAddress where
 newtype NotFound =
     NotFound { -- | Inventory vectors related to this request
                notFoundList :: [InvVector]
-             } deriving (Eq, Show)
+             } deriving (Eq, Show, Generic, NFData)
 
 instance Serialize NotFound where
 
@@ -258,14 +280,14 @@ newtype Ping =
     Ping { -- | A random nonce used to identify the recipient of the ping
            -- request once a Pong response is received.
            pingNonce :: Word64
-         } deriving (Eq, Show, Read)
+         } deriving (Eq, Show, Read, Generic, NFData)
 
 -- | A Pong message is sent as a response to a ping message.
 newtype Pong =
     Pong {
            -- | nonce from corresponding 'Ping'
            pongNonce :: Word64
-         } deriving (Eq, Show, Read)
+         } deriving (Eq, Show, Read, Generic, NFData)
 
 instance Serialize Ping where
     get = Ping <$> getWord64le
@@ -286,7 +308,7 @@ data Reject =
            , rejectReason  :: !VarString
              -- | extra data such as block or tx hash
            , rejectData    :: !ByteString
-           } deriving (Eq, Show, Read)
+           } deriving (Eq, Show, Read, Generic, NFData)
 
 -- | Rejection code associated to the 'Reject' message.
 data RejectCode
@@ -298,7 +320,7 @@ data RejectCode
     | RejectDust
     | RejectInsufficientFee
     | RejectCheckpoint
-    deriving (Eq, Show, Read)
+    deriving (Eq, Show, Read, Generic, NFData)
 
 instance Serialize RejectCode where
 
@@ -350,7 +372,7 @@ instance Serialize Reject where
 -- | Data type representing a variable-length integer. The 'VarInt' type
 -- usually precedes an array or a string that can vary in length.
 newtype VarInt = VarInt { getVarInt :: Word64 }
-    deriving (Eq, Show, Read)
+    deriving (Eq, Show, Read, Generic, NFData)
 
 instance Serialize VarInt where
 
@@ -379,7 +401,7 @@ putVarInt = put . VarInt . fromIntegral
 
 -- | Data type for serialization of variable-length strings.
 newtype VarString = VarString { getVarString :: ByteString }
-    deriving (Eq, Show, Read)
+    deriving (Eq, Show, Read, Generic, NFData)
 
 instance Serialize VarString where
 
@@ -414,7 +436,7 @@ data Version =
             , startHeight :: !Word32
               -- | relay transactions flag (BIP-37)
             , relay       :: !Bool
-            } deriving (Eq, Show)
+            } deriving (Eq, Show, Generic, NFData)
 
 instance Serialize Version where
 
@@ -482,7 +504,7 @@ data MessageCommand
     | MCReject
     | MCSendHeaders
     | MCOther ByteString
-    deriving (Eq)
+    deriving (Eq, Generic, NFData)
 
 instance Show MessageCommand where
     showsPrec _ = shows . commandToString
@@ -555,7 +577,7 @@ commandToString mc = case mc of
     MCMempool     -> "mempool"
     MCReject      -> "reject"
     MCSendHeaders -> "sendheaders"
-    MCOther c    -> c
+    MCOther c     -> c
 
 -- | Pack a string 'MessageCommand' so that it is exactly 12-bytes long.
 packCommand :: ByteString -> ByteString

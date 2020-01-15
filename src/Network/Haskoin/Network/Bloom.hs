@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric  #-}
 {-|
 Module      : Network.Haskoin.Network.Bloom
 Copyright   : No rights reserved
@@ -27,23 +29,26 @@ module Network.Haskoin.Network.Bloom
     , bloomRelevantUpdate
     ) where
 
-import           Control.Monad                  (forM_, replicateM)
+import           Control.DeepSeq
+import           Control.Monad                      (forM_, replicateM)
 import           Data.Bits
-import           Data.ByteString                (ByteString)
-import qualified Data.ByteString                as BS
-import qualified Data.Foldable                  as F
-import           Data.Hash.Murmur               (murmur3)
-import qualified Data.Sequence                  as S
-import           Data.Serialize                 (Serialize, get, put,encode)
-import           Data.Serialize.Get             (getByteString, getWord32le,
-                                                 getWord8)
-import           Data.Serialize.Put             (putByteString, putWord32le,
-                                                 putWord8)
+import           Data.ByteString                    (ByteString)
+import qualified Data.ByteString                    as BS
+import qualified Data.Foldable                      as F
+import           Data.Hash.Murmur                   (murmur3)
+import           Data.List                          (foldl')
+import qualified Data.Sequence                      as S
+import           Data.Serialize                     (Serialize, encode, get,
+                                                     put)
+import           Data.Serialize.Get                 (getByteString, getWord32le,
+                                                     getWord8)
+import           Data.Serialize.Put                 (putByteString, putWord32le,
+                                                     putWord8)
 import           Data.Word
+import           GHC.Generics                       (Generic)
 import           Network.Haskoin.Network.Common
 import           Network.Haskoin.Script.Common
 import           Network.Haskoin.Transaction.Common
-import           Data.List                      (foldl')
 -- | 20,000 items with fp rate < 0.1% or 10,000 items and <0.0001%
 maxBloomSize :: Int
 maxBloomSize = 36000
@@ -67,7 +72,7 @@ data BloomFlags
     | BloomUpdateAll -- ^ auto-update on all outputs
     | BloomUpdateP2PubKeyOnly
     -- ^ auto-update on pay-to-pubkey or pay-to-multisig (default)
-    deriving (Eq, Show, Read)
+    deriving (Eq, Show, Read, Generic, NFData)
 
 instance Serialize BloomFlags where
     get = go =<< getWord8
@@ -98,7 +103,7 @@ data BloomFilter = BloomFilter
     , bloomFlags     :: !BloomFlags
     -- ^ bloom filter auto-update flags
     }
-    deriving (Eq, Show, Read)
+    deriving (Eq, Show, Read, Generic, NFData)
 
 instance Serialize BloomFilter where
 
@@ -117,7 +122,7 @@ instance Serialize BloomFilter where
 
 -- | Set a new bloom filter on the peer connection.
 newtype FilterLoad = FilterLoad { filterLoadBloomFilter :: BloomFilter }
-    deriving (Eq, Show, Read)
+    deriving (Eq, Show, Read, Generic, NFData)
 
 instance Serialize FilterLoad where
     get = FilterLoad <$> get
@@ -126,7 +131,7 @@ instance Serialize FilterLoad where
 -- | Add the given data element to the connections current filter without
 -- requiring a completely new one to be set.
 newtype FilterAdd = FilterAdd { getFilterData :: ByteString }
-    deriving (Eq, Show, Read)
+    deriving (Eq, Show, Read, Generic, NFData)
 
 instance Serialize FilterAdd where
     get = do
@@ -197,13 +202,13 @@ bloomContains bfilter bs
           .&. (bitMask !! fromIntegral (7 .&. i)) /= 0
 
 -- | Checks if any of the outputs of a tx is in the current bloom filter.
--- If it is, add the txid and vout as an outpoint (i.e. so that 
+-- If it is, add the txid and vout as an outpoint (i.e. so that
 -- a future tx that spends the output won't be missed).
-bloomRelevantUpdate :: BloomFilter       
+bloomRelevantUpdate :: BloomFilter
                     -- ^ Bloom filter
-                    -> Tx                
+                    -> Tx
                     -- ^ Tx that may (or may not) have relevant outputs
-                    -> Maybe BloomFilter 
+                    -> Maybe BloomFilter
                     -- ^ Returns an updated bloom filter adding relevant output
 bloomRelevantUpdate bfilter tx
     | isBloomFull bfilter || isBloomEmpty bfilter = Nothing

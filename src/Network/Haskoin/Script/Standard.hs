@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveAnyClass    #-}
+{-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-|
 Module      : Network.Haskoin.Script.Standard
@@ -27,11 +29,13 @@ module Network.Haskoin.Script.Standard
     ) where
 
 import           Control.Applicative            ((<|>))
+import           Control.DeepSeq
 import           Control.Monad                  (guard, (<=<))
 import           Data.ByteString                (ByteString)
 import           Data.Function                  (on)
 import           Data.List                      (sortBy)
 import           Data.Serialize                 (decode, encode)
+import           GHC.Generics                   (Generic)
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Keys.Common
 import           Network.Haskoin.Script.Common
@@ -58,7 +62,7 @@ data SimpleInput
     | SpendMulSig { getInputMulSigKeys :: ![TxSignature]
                       -- ^ list of signatures
                    }
-    deriving (Eq, Show)
+    deriving (Eq, Show, Generic, NFData)
 
 -- | Returns true if the input script is spending from a pay-to-public-key
 -- output.
@@ -88,17 +92,17 @@ type RedeemScript = ScriptOutput
 
 -- | Standard input script high-level representation.
 data ScriptInput
-    = RegularInput    {
-        getRegularInput     :: SimpleInput
+    = RegularInput
+          { getRegularInput :: !SimpleInput
             -- ^ get wrapped simple input
-        }
-    | ScriptHashInput {
-            getScriptHashInput  :: SimpleInput
-                -- ^ get simple input associated with redeem script
-            , getScriptHashRedeem :: RedeemScript
-                -- ^ redeem script
-            }
-    deriving (Eq, Show)
+          }
+    | ScriptHashInput
+          { getScriptHashInput :: !SimpleInput
+            -- ^ get simple input associated with redeem script
+          , getScriptHashRedeem :: !RedeemScript
+            -- ^ redeem script
+          }
+    deriving (Eq, Show, Generic, NFData)
 
 -- | Heuristic to decode an input script into one of the standard types.
 decodeSimpleInput :: Network -> Script -> Either String SimpleInput

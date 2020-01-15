@@ -31,7 +31,7 @@ arbitraryNetworkAddress = do
     s <- arbitrary
     a <- arbitrary
     p <- arbitrary
-    NetworkAddress s <$> oneof
+    d <- oneof
         [ do
             b <- arbitrary
             c <- arbitrary
@@ -39,6 +39,8 @@ arbitraryNetworkAddress = do
             return $ SockAddrInet6 (fromIntegral p) 0 (a,b,c,d) 0
         , return $ SockAddrInet (fromIntegral (p :: Word16)) a
         ]
+    let n = sockToHostAddress d
+    return $ NetworkAddress s n
 
 -- | Arbitrary 'NetworkAddressTime'.
 arbitraryNetworkAddressTime :: Gen (Word32, NetworkAddress)

@@ -28,6 +28,7 @@ module Network.Haskoin.Block.Common
     , encodeCompact
     ) where
 
+import           Control.DeepSeq
 import           Control.Monad                      (forM_, liftM2, mzero,
                                                      replicateM)
 import           Data.Aeson                         (FromJSON, ToJSON,
@@ -46,7 +47,7 @@ import           Data.String                        (IsString, fromString)
 import           Data.String.Conversions            (cs)
 import           Data.Text                          (Text)
 import           Data.Word                          (Word32)
-import           GHC.Generics
+import           GHC.Generics                       (Generic)
 import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Network.Common
 import           Network.Haskoin.Transaction.Common
@@ -63,7 +64,7 @@ type Timestamp = Word32
 data Block =
     Block { blockHeader :: !BlockHeader
           , blockTxns   :: ![Tx]
-          } deriving (Eq, Show, Read, Generic, Hashable)
+          } deriving (Eq, Show, Read, Generic, Hashable, NFData)
 
 instance Serialize Block where
     get = do
@@ -84,10 +85,10 @@ instance FromJSON Block where
         withText "Block" $ \t -> do
             bin <-
                 case decodeHex t of
-                    Nothing -> mzero
+                    Nothing  -> mzero
                     Just bin -> return bin
             case decode bin of
-                Left e -> fail e
+                Left e  -> fail e
                 Right h -> return h
 
 instance ToJSON BlockHeader where
@@ -98,16 +99,16 @@ instance FromJSON BlockHeader where
         withText "BlockHeader" $ \t -> do
             bin <-
                 case decodeHex t of
-                    Nothing -> mzero
+                    Nothing  -> mzero
                     Just bin -> return bin
             case decode bin of
-                Left e -> fail e
+                Left e  -> fail e
                 Right h -> return h
 
 -- | Block header hash. To be serialized reversed for display purposes.
 newtype BlockHash = BlockHash
     { getBlockHash :: Hash256 }
-    deriving (Eq, Ord, Generic, Hashable, Serialize)
+    deriving (Eq, Ord, Generic, Hashable, Serialize, NFData)
 
 instance Show BlockHash where
     showsPrec _ = shows . blockHashToHex
@@ -160,7 +161,7 @@ data BlockHeader =
                 , blockBits      :: !Word32      --  4 bytes
                   -- | random nonce
                 , bhNonce        :: !Word32      --  4 bytes
-                } deriving (Eq, Ord, Show, Read, Generic, Hashable)
+                } deriving (Eq, Ord, Show, Read, Generic, Hashable, NFData)
                                                  -- 80 bytes
 
 -- | Compute hash of 'BlockHeader'.
@@ -213,7 +214,7 @@ data GetBlocks =
               , getBlocksLocator  :: !BlockLocator
                 -- | hash of the last desired block
               , getBlocksHashStop :: !BlockHash
-              } deriving (Eq, Show)
+              } deriving (Eq, Show, Generic, NFData)
 
 instance Serialize GetBlocks where
 
@@ -245,7 +246,7 @@ data GetHeaders =
                , getHeadersBL       :: !BlockLocator
                  -- | hash of the last desired block header
                , getHeadersHashStop :: !BlockHash
-               } deriving (Eq, Show)
+               } deriving (Eq, Show, Generic, NFData)
 
 instance Serialize GetHeaders where
 
@@ -266,7 +267,7 @@ newtype Headers =
     Headers { -- | list of block headers with transaction count
               headersList :: [BlockHeaderCount]
             }
-    deriving (Eq, Show)
+    deriving (Eq, Show, Generic, NFData)
 
 instance Serialize Headers where
 

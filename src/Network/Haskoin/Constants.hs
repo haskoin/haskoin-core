@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveAnyClass    #-}
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-|
@@ -24,6 +25,7 @@ module Network.Haskoin.Constants
     , netByIdent
     ) where
 
+import           Control.DeepSeq
 import           Data.ByteString              (ByteString)
 import           Data.List
 import           Data.Maybe
@@ -107,7 +109,7 @@ data Network = Network
     , getReplaceByFee             :: !Bool
       -- | Subsidy halving interval
     , getHalvingInterval          :: !Word32
-    } deriving (Eq, Generic)
+    } deriving (Eq, Generic, NFData)
 
 instance Serialize Network where
     put net =

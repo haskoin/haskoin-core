@@ -62,6 +62,7 @@ module Network.Haskoin.Block.Headers
     , ) where
 
 import           Control.Applicative                ((<|>))
+import           Control.DeepSeq
 import           Control.Monad                      (guard, unless, when)
 import           Control.Monad.Except               (ExceptT (..), runExceptT,
                                                      throwError)
@@ -85,7 +86,7 @@ import           Data.Serialize.Get                 as S
 import           Data.Serialize.Put                 as S
 import           Data.Typeable                      (Typeable)
 import           Data.Word                          (Word32, Word64)
-import           GHC.Generics
+import           GHC.Generics                       (Generic)
 import           Network.Haskoin.Block.Common
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto
@@ -118,7 +119,7 @@ data BlockNode
     | GenesisNode { nodeHeader :: !BlockHeader
                   , nodeHeight :: !BlockHeight
                   , nodeWork   :: !BlockWork }
-    deriving (Show, Read, Generic, Hashable)
+    deriving (Show, Read, Generic, Hashable, NFData)
 
 instance Serialize BlockNode where
     get = do
@@ -148,7 +149,7 @@ instance Ord BlockNode where
 data HeaderMemory = HeaderMemory
     { memoryHeaderMap  :: !BlockMap
     , memoryBestHeader :: !BlockNode
-    } deriving (Eq, Typeable, Show, Read, Generic, Hashable)
+    } deriving (Eq, Typeable, Show, Read, Generic, Hashable, NFData)
 
 -- | Typeclass for block header chain storage monad.
 class Monad m => BlockHeaders m where

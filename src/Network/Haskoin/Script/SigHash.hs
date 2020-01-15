@@ -35,6 +35,7 @@ module Network.Haskoin.Script.SigHash
 , decodeTxSig
 ) where
 
+import           Control.DeepSeq
 import           Control.Monad
 import           Crypto.Secp256k1
 import qualified Data.Aeson                         as J
@@ -47,7 +48,7 @@ import           Data.Scientific
 import           Data.Serialize
 import           Data.Serialize.Put                 (runPut)
 import           Data.Word
-import           GHC.Generics
+import           GHC.Generics                       (Generic)
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Crypto.Signature
@@ -69,6 +70,8 @@ data SigHashFlag
     | SIGHASH_ANYONECANPAY
       -- ^ new inputs can be added
     deriving (Eq, Ord, Show, Read, Generic)
+
+instance NFData SigHashFlag
 
 instance Hashable SigHashFlag
 
@@ -100,15 +103,16 @@ newtype SigHash =
     SigHash Word32
     deriving ( Eq
              , Ord
-             , Enum
              , Bits
+             , Enum
+             , Integral
              , Num
              , Real
-             , Integral
              , Show
              , Read
              , Generic
              , Hashable
+             , NFData
              )
 
 instance J.FromJSON SigHash where
@@ -183,7 +187,7 @@ sigHashAddNetworkId net =
 
 -- | Get fork id from 'SigHash'.
 sigHashGetForkId :: SigHash -> Word32
-sigHashGetForkId = fromIntegral . (`shiftR` 8)
+sigHashGetForkId (SigHash n) = fromIntegral $ n `shiftR` 8
 
 -- | Computes the hash that will be used for signing a transaction.
 txSigHash :: Network
@@ -290,12 +294,15 @@ data TxSignature
                   , txSignatureSigHash :: !SigHash
                   }
     | TxSignatureEmpty
-    deriving (Eq, Show)
+    deriving (Eq, Show, Generic)
+
+instance NFData TxSignature
 
 -- | Serialize a 'TxSignature'.
 encodeTxSig :: TxSignature -> ByteString
 encodeTxSig TxSignatureEmpty = error "Can not encode an empty signature"
-encodeTxSig (TxSignature sig sh) = runPut $ putSig sig >> putWord8 (fromIntegral sh)
+encodeTxSig (TxSignature sig (SigHash n)) =
+    runPut $ putSig sig >> putWord8 (fromIntegral n)
 
 -- | Deserialize a 'TxSignature'.
 decodeTxSig :: Network -> ByteString -> Either String TxSignature

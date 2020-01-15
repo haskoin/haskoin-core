@@ -43,6 +43,7 @@ module Network.Haskoin.Transaction.Builder
     ) where
 
 import           Control.Arrow                      (first)
+import           Control.DeepSeq
 import           Control.Monad                      (foldM, mzero, unless, when)
 import           Control.Monad.Identity             (runIdentity)
 import           Crypto.Secp256k1
@@ -277,7 +278,7 @@ data SigInput = SigInput
     , sigInputOP     :: !OutPoint     -- ^ outpoint to spend
     , sigInputSH     :: !SigHash      -- ^ signature type
     , sigInputRedeem :: !(Maybe RedeemScript) -- ^ redeem script
-    } deriving (Eq, Show, Read, Generic, Hashable)
+    } deriving (Eq, Show, Read, Generic, Hashable, NFData)
 
 instance ToJSON SigInput where
     toJSON (SigInput so val op sh rdm) = object $

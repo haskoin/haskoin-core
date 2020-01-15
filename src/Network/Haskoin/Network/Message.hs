@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric  #-}
 {-|
 Module      : Network.Haskoin.Network.Message
 Copyright   : No rights reserved
@@ -18,6 +20,7 @@ module Network.Haskoin.Network.Message
     ) where
 
 import           Control.Monad                      (unless)
+import           Control.DeepSeq
 import           Data.ByteString                    (ByteString)
 import qualified Data.ByteString                    as BS
 import           Data.Serialize                     (Serialize, encode, get,
@@ -28,6 +31,7 @@ import           Data.Serialize.Get                 (Get, getByteString,
 import           Data.Serialize.Put                 (Putter, putByteString,
                                                      putWord32be, putWord32le)
 import           Data.Word                          (Word32)
+import           GHC.Generics                       (Generic)
 import           Network.Haskoin.Block.Common
 import           Network.Haskoin.Block.Merkle
 import           Network.Haskoin.Constants
@@ -47,7 +51,7 @@ data MessageHeader = MessageHeader
     , headPayloadSize :: !Word32
       -- | checksum of payload
     , headChecksum    :: !CheckSum32
-    } deriving (Eq, Show)
+    } deriving (Eq, Show, Generic, NFData)
 
 instance Serialize MessageHeader where
 
@@ -92,7 +96,7 @@ data Message
     | MReject !Reject
     | MSendHeaders
     | MOther !ByteString !ByteString
-    deriving (Eq, Show)
+    deriving (Eq, Show, Generic, NFData)
 
 -- | Get 'MessageCommand' assocated with a message.
 msgType :: Message -> MessageCommand
@@ -153,13 +157,16 @@ getMessage net = do
                  MCAlert       -> MAlert <$> get
                  MCReject      -> MReject <$> get
                  MCOther c     -> MOther c <$> getByteString (fromIntegral len)
+                 _             -> fail $ "get: command " ++ show cmd ++
+                                         " should not carry a payload"
         else case cmd of
                  MCGetAddr     -> return MGetAddr
                  MCVerAck      -> return MVerAck
                  MCFilterClear -> return MFilterClear
                  MCMempool     -> return MMempool
                  MCSendHeaders -> return MSendHeaders
-                 _             -> fail $ "get: Invalid command " ++ show cmd
+                 _             -> fail $ "get: command " ++ show cmd ++
+                                         " is expected to carry a payload"
 
 -- | Serializer for network messages.
 putMessage :: Network -> Putter Message

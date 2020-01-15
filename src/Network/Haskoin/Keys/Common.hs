@@ -32,6 +32,7 @@ module Network.Haskoin.Keys.Common
     ) where
 
 import           Control.Applicative         ((<|>))
+import           Control.DeepSeq
 import           Control.Monad               (guard, mzero, (<=<))
 import           Crypto.Secp256k1
 import           Data.Aeson                  (FromJSON, ToJSON, Value (String),
@@ -54,7 +55,7 @@ import           Network.Haskoin.Util
 data PubKeyI = PubKeyI
     { pubKeyPoint      :: !PubKey
     , pubKeyCompressed :: !Bool
-    } deriving (Generic, Eq, Show, Read, Hashable)
+    } deriving (Generic, Eq, Show, Read, Hashable, NFData)
 
 instance IsString PubKeyI where
     fromString str =
@@ -103,7 +104,7 @@ tweakPubKey p h = tweakAddPubKey p =<< tweak (encode h)
 data SecKeyI = SecKeyI
     { secKeyData       :: !SecKey
     , secKeyCompressed :: !Bool
-    } deriving (Eq, Show, Read)
+    } deriving (Eq, Show, Read, Generic, NFData)
 
 -- | Wrap private key with corresponding public key compression flag.
 wrapSecKey :: Bool -> SecKey -> SecKeyI

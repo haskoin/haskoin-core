@@ -33,6 +33,7 @@ module Network.Haskoin.Block.Merkle
     , boolsToWord8
     ) where
 
+import           Control.DeepSeq
 import           Control.Monad                      (forM_, replicateM, when)
 import           Data.Bits
 import qualified Data.ByteString                    as BS
@@ -72,7 +73,7 @@ data MerkleBlock =
                 , mHashes         :: !PartialMerkleTree
                 -- | bits to rebuild partial merkle tree
                 , mFlags          :: !FlagBits
-                } deriving (Eq, Show, Read, Generic, Hashable)
+                } deriving (Eq, Show, Read, Generic, Hashable, NFData)
 
 instance Serialize MerkleBlock where
 

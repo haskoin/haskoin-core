@@ -2,6 +2,7 @@
 
 module Network.Haskoin.Transaction.PartialSpec (spec) where
 
+import           Control.Monad.Fail                  (MonadFail)
 import           Data.ByteString                     (ByteString)
 import           Data.Either                         (fromRight, isLeft,
                                                       isRight)
@@ -145,7 +146,7 @@ witnessScriptPubKey = fromRight (error "could not decode witness utxo")
 decodeHexPSBT :: Text -> Either String PartiallySignedTransaction
 decodeHexPSBT = S.decode . fromJust . decodeHex
 
-decodeHexPSBTM :: Monad m => String -> Text -> m PartiallySignedTransaction
+decodeHexPSBTM :: (Monad m, MonadFail m) => String -> Text -> m PartiallySignedTransaction
 decodeHexPSBTM errMsg = either (fail . (errMsg <>) . (": " <>)) return . decodeHexPSBT
 
 hexScript :: Text -> ByteString

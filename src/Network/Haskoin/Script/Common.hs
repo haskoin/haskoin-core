@@ -35,6 +35,7 @@ module Network.Haskoin.Script.Common
     , scriptOpToInt
     ) where
 
+import           Control.DeepSeq
 import           Control.Monad
 import           Data.Aeson                  as A
 import           Data.ByteString             (ByteString)
@@ -65,7 +66,7 @@ newtype Script =
              -- | script operators defining this script
              scriptOps :: [ScriptOp]
            }
-    deriving (Eq, Show, Read, Generic, Hashable)
+    deriving (Eq, Show, Read, Generic, Hashable, NFData)
 
 instance Serialize Script where
     get =
@@ -90,7 +91,7 @@ data PushDataType
     | OPDATA2
       -- | next four bytes contains the number of bytes to be pushed
     | OPDATA4
-    deriving (Show, Read, Eq, Generic, Hashable)
+    deriving (Show, Read, Eq, Generic, Hashable, NFData)
 
 -- | Data type representing an operator allowed inside a 'Script'.
 data ScriptOp
@@ -219,7 +220,7 @@ data ScriptOp
     | OP_PUBKEYHASH
     | OP_PUBKEY
     | OP_INVALIDOPCODE !Word8
-    deriving (Show, Read, Eq, Generic, Hashable)
+    deriving (Show, Read, Eq, Generic, Hashable, NFData)
 
 instance Serialize ScriptOp where
     get = go =<< (fromIntegral <$> getWord8)
@@ -380,22 +381,22 @@ instance Serialize ScriptOp where
             let len = B.length payload
             case optype of
                 OPCODE -> do
-                    unless (len <= 0x4b) $ fail
-                        "OP_PUSHDATA OPCODE: Payload size too big"
+                    unless (len <= 0x4b) $
+                        error "OP_PUSHDATA OPCODE: Payload size too big"
                     putWord8 $ fromIntegral len
                 OPDATA1 -> do
-                    unless (len <= 0xff) $ fail
-                        "OP_PUSHDATA OPDATA1: Payload size too big"
+                    unless (len <= 0xff) $
+                        error "OP_PUSHDATA OPDATA1: Payload size too big"
                     putWord8 0x4c
                     putWord8 $ fromIntegral len
                 OPDATA2 -> do
-                    unless (len <= 0xffff) $ fail
-                        "OP_PUSHDATA OPDATA2: Payload size too big"
+                    unless (len <= 0xffff) $
+                        error "OP_PUSHDATA OPDATA2: Payload size too big"
                     putWord8 0x4d
                     putWord16le $ fromIntegral len
                 OPDATA4 -> do
-                    unless (len <= 0x7fffffff) $ fail
-                        "OP_PUSHDATA OPDATA4: Payload size too big"
+                    unless (len <= 0x7fffffff) $
+                        error "OP_PUSHDATA OPDATA4: Payload size too big"
                     putWord8 0x4e
                     putWord32le $ fromIntegral len
             putByteString payload
@@ -608,7 +609,7 @@ data ScriptOutput
     | PayWitnessScriptHash { getScriptHash :: !Hash256 }
       -- | provably unspendable data carrier
     | DataCarrier { getOutputData :: !ByteString }
-    deriving (Eq, Show, Read, Generic, Hashable)
+    deriving (Eq, Show, Read, Generic, Hashable, NFData)
 
 instance FromJSON ScriptOutput where
     parseJSON = withText "scriptoutput" $ \t -> either fail return $

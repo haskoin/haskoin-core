@@ -97,7 +97,7 @@ data ScriptInput
             -- ^ get wrapped simple input
           }
     | ScriptHashInput
-          { getScriptHashInput :: !SimpleInput
+          { getScriptHashInput  :: !SimpleInput
             -- ^ get simple input associated with redeem script
           , getScriptHashRedeem :: !RedeemScript
             -- ^ redeem script

@@ -192,7 +192,7 @@ sigHashGetForkId (SigHash n) = fromIntegral $ n `shiftR` 8
 -- | Computes the hash that will be used for signing a transaction.
 txSigHash :: Network
           -> Tx      -- ^ transaction to sign
-          -> Script  -- ^ csript from output being spent
+          -> Script  -- ^ script from output being spent
           -> Word64  -- ^ value of output being spent
           -> Int     -- ^ index of input being signed
           -> SigHash -- ^ what to sign
@@ -306,6 +306,7 @@ encodeTxSig (TxSignature sig (SigHash n)) =
 
 -- | Deserialize a 'TxSignature'.
 decodeTxSig :: Network -> ByteString -> Either String TxSignature
+decodeTxSig _   bs | BS.null bs = Left "Empty signature candidate"
 decodeTxSig net bs =
     case decodeStrictSig $ BS.init bs of
         Just sig -> do

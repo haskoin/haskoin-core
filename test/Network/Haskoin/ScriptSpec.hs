@@ -126,21 +126,19 @@ scriptSpec net =
                         "DERSIG" `isInfixOf` flags ||
                         "STRICTENC" `isInfixOf` flags ||
                         "NULLDUMMY" `isInfixOf` flags
-                    scriptSig = parseScript siStr
-                    scriptPubKey = parseScript soStr
-                    decodedOutput =
-                        fromRight (error $ "Could not decode output: " <> soStr) $
-                        decodeOutputBS scriptPubKey
-                    ver =
+                    scriptSig     = parseScript siStr
+                    scriptPubKey  = parseScript soStr
+                    decodedOutput = decodeOutputBS scriptPubKey
+                    ver = either (const False) $ \so ->
                         verifyStdInput
                             net
                             (spendTx scriptPubKey 0 scriptSig)
                             0
-                            decodedOutput
+                            so
                             (val * 100000000)
                 case res of
-                    "OK" -> assertBool desc ver
-                    _    -> assertBool desc (not ver)
+                    "OK" -> assertBool desc $ ver decodedOutput
+                    _    -> assertBool desc (not $ ver decodedOutput)
 
 forkIdScriptSpec :: Network -> Spec
 forkIdScriptSpec net =

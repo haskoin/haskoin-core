@@ -1,5 +1,3 @@
-{-# LANGUAGE DeriveAnyClass    #-}
-{-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-|
@@ -20,8 +18,10 @@ module Network.Haskoin.Transaction.Builder
     , buildInput
     , SigInput(..)
     , signTx
+    , signNestedWitnessTx
     , makeSignature
     , signInput
+    , signNestedInput
     , verifyStdTx
     , mergeTxs
     , sigKeys
@@ -42,36 +42,41 @@ module Network.Haskoin.Transaction.Builder
     , guessMSSize
     ) where
 
-import           Control.Arrow                      (first)
-import           Control.DeepSeq
-import           Control.Monad                      (foldM, mzero, unless, when)
-import           Control.Monad.Identity             (runIdentity)
+import           Control.Applicative                      ((<|>))
+import           Control.Arrow                            (first)
+import           Control.Monad                            (foldM, unless)
+import           Control.Monad.Identity                   (runIdentity)
 import           Crypto.Secp256k1
-import           Data.Aeson                         (FromJSON, ToJSON,
-                                                     Value (Object), object,
-                                                     parseJSON, toJSON, (.:),
-                                                     (.:?), (.=))
-import qualified Data.ByteString                    as B
-import           Data.Conduit                       (ConduitT, Void, await,
-                                                     runConduit, (.|))
-import           Data.Conduit.List                  (sourceList)
-import           Data.Hashable
-import           Data.List                          (find, nub)
-import           Data.Maybe                         (catMaybes, fromJust,
-                                                     fromMaybe, isJust,
-                                                     mapMaybe, maybeToList)
-import           Data.Serialize                     (encode)
-import           Data.String.Conversions            (cs)
-import           Data.Text                          (Text)
-import           Data.Word                          (Word64)
-import           GHC.Generics
+import qualified Data.ByteString                          as B
+import           Data.Conduit                             (ConduitT, Void,
+                                                           await, runConduit,
+                                                           (.|))
+import           Data.Conduit.List                        (sourceList)
+import           Data.Either                              (fromRight)
+import           Data.List                                (nub)
+import           Data.Maybe                               (catMaybes, fromJust,
+                                                           isJust)
+import           Data.Serialize                           (decode, encode)
+import           Data.String.Conversions                  (cs)
+import           Data.Text                                (Text)
+import           Data.Word                                (Word64)
 import           Network.Haskoin.Address
 import           Network.Haskoin.Constants
+import           Network.Haskoin.Crypto.Hash              (Hash256, addressHash)
 import           Network.Haskoin.Crypto.Signature
 import           Network.Haskoin.Keys.Common
 import           Network.Haskoin.Network.Common
 import           Network.Haskoin.Script
+import           Network.Haskoin.Transaction.Builder.Sign (SigInput (..),
+                                                           buildInput,
+                                                           makeSigHash,
+                                                           makeSignature,
+                                                           sigKeys)
+import qualified Network.Haskoin.Transaction.Builder.Sign as S
 import           Network.Haskoin.Transaction.Common
+import           Network.Haskoin.Transaction.Segwit       (decodeWitnessInput,
+                                                           isSegwit,
+                                                           viewWitnessProgram)
 import           Network.Haskoin.Util
 
 -- | Any type can be used as a Coin if it can provide a value in Satoshi.
@@ -268,149 +273,59 @@ buildTx xs ys =
         | otherwise =
             Left $ "buildTx: Invalid amount " ++ show v
 
--- | Data type used to specify the signing parameters of a transaction input.
--- To sign an input, the previous output script, outpoint and sighash are
--- required. When signing a pay to script hash output, an additional redeem
--- script is required.
-data SigInput = SigInput
-    { sigInputScript :: !ScriptOutput -- ^ output script to spend
-    , sigInputValue  :: !Word64       -- ^ output script value
-    , sigInputOP     :: !OutPoint     -- ^ outpoint to spend
-    , sigInputSH     :: !SigHash      -- ^ signature type
-    , sigInputRedeem :: !(Maybe RedeemScript) -- ^ redeem script
-    } deriving (Eq, Show, Read, Generic, Hashable, NFData)
-
-instance ToJSON SigInput where
-    toJSON (SigInput so val op sh rdm) = object $
-        [ "pkscript" .= so
-        , "value"    .= val
-        , "outpoint" .= op
-        , "sighash"  .= sh
-        ] ++ [ "redeem" .= r | r <- maybeToList rdm ]
-
-instance FromJSON SigInput where
-    parseJSON (Object o) = do
-        so  <- o .: "pkscript"
-        val <- o .: "value"
-        op  <- o .: "outpoint"
-        sh  <- o .: "sighash"
-        rdm <- o .:? "redeem"
-        return $ SigInput so val op sh rdm
-    parseJSON _ = mzero
-
--- | Sign a transaction by providing the 'SigInput' signing parametres and a
+-- | Sign a transaction by providing the 'SigInput' signing parameters and a
 -- list of private keys. The signature is computed deterministically as defined
 -- in RFC-6979.
+--
+-- Example: P2SH-P2WKH
+--
+-- > sigIn = SigInput (PayWitnessPKHash h) 100000 op sigHashAll Nothing
+-- > signedTx = signTx btc unsignedTx [sigIn] [key]
+--
+-- Example: P2SH-P2WSH multisig
+--
+-- > sigIn = SigInput (PayWitnessScriptHash h) 100000 op sigHashAll (Just $ PayMulSig [p1,p2,p3] 2)
+-- > signedTx = signTx btc unsignedTx [sigIn] [k1,k3]
 signTx :: Network
        -> Tx               -- ^ transaction to sign
        -> [SigInput]       -- ^ signing parameters
-       -> [SecKey]        -- ^ private keys to sign with
+       -> [SecKey]         -- ^ private keys to sign with
        -> Either String Tx -- ^ signed transaction
-signTx net otx sigis allKeys
-    | null ti   = Left "signTx: Transaction has no inputs"
-    | otherwise = foldM go otx $ findSigInput sigis ti
-  where
-    ti = txIn otx
-    go tx (sigi@(SigInput so _ _ _ rdmM), i) = do
-        keys <- sigKeys so rdmM allKeys
-        foldM (\t k -> signInput net t i sigi k) tx keys
+signTx net tx si = S.signTx net tx $ notNested <$> si
+  where notNested s = (s, False)
 
--- | Produce a structured representation of a deterministic (RFC-6979) signature over an input.
-makeSignature :: Network -> Tx -> Int -> SigInput -> SecKeyI -> TxSignature
-makeSignature net tx i (SigInput so val _ sh rdmM) key =
-    TxSignature (signHash (secKeyData key) m) sh
+-- | This function differs from 'signTx' by assuming all segwit inputs are
+-- P2SH-nested.  Use the same signing parameters for segwit inputs as in 'signTx'.
+signNestedWitnessTx :: Network
+                    -> Tx               -- ^ transaction to sign
+                    -> [SigInput]       -- ^ signing parameters
+                    -> [SecKey]         -- ^ private keys to sign with
+                    -> Either String Tx -- ^ signed transaction
+signNestedWitnessTx net tx si = S.signTx net tx $ nested <$> si
   where
-    m = txSigHash net tx (encodeOutput $ fromMaybe so rdmM) val i sh
+    -- NOTE: the nesting flag is ignored for non-segwit inputs
+    nested s = (s, True)
+
 
 -- | Sign a single input in a transaction deterministically (RFC-6979).
 signInput :: Network -> Tx -> Int -> SigInput -> SecKeyI -> Either String Tx
-signInput net tx i sigIn@(SigInput so val _ sh rdmM) key = do
-    let sig = makeSignature net tx i sigIn key
-    si <- buildInput net tx i so val rdmM sig $ derivePubKeyI key
-    let ins = updateIndex i (txIn tx) (f si)
-    return $ Tx (txVersion tx) ins (txOut tx) [] (txLockTime tx)
-  where
-    f si x = x {scriptInput = encodeInputBS si}
+signInput net tx i si = S.signInput net tx i (si, False)
+
+-- | Like 'signInput' but treat segwit inputs as nested
+signNestedInput :: Network -> Tx -> Int -> SigInput -> SecKeyI -> Either String Tx
+signNestedInput net tx i si = S.signInput net tx i (si, True)
 
 -- | Order the 'SigInput' with respect to the transaction inputs. This allows
 -- the user to provide the 'SigInput' in any order. Users can also provide only
 -- a partial set of 'SigInput' entries.
 findSigInput :: [SigInput] -> [TxIn] -> [(SigInput, Int)]
-findSigInput si ti =
-    mapMaybe g $ zip (matchTemplate si ti f) [0..]
-  where
-    f s txin = sigInputOP s == prevOutput txin
-    g (Just s, i)  = Just (s,i)
-    g (Nothing, _) = Nothing
-
--- | Find from the list of provided private keys which one is required to sign
--- the 'ScriptOutput'.
-sigKeys ::
-       ScriptOutput
-    -> Maybe RedeemScript
-    -> [SecKey]
-    -> Either String [SecKeyI]
-sigKeys so rdmM keys =
-    case (so, rdmM) of
-        (PayPK p, Nothing) ->
-            return . map fst . maybeToList $ find ((== p) . snd) zipKeys
-        (PayPKHash h, Nothing) ->
-            return . map fst . maybeToList $
-            find ((== h) . getAddrHash160 . pubKeyAddr . snd) zipKeys
-        (PayMulSig ps r, Nothing) ->
-            return $ map fst $ take r $ filter ((`elem` ps) . snd) zipKeys
-        (PayScriptHash _, Just rdm) -> sigKeys rdm Nothing keys
-        _ -> Left "sigKeys: Could not decode output script"
-  where
-    zipKeys =
-        [ (prv, pub)
-        | k <- keys
-        , t <- [True, False]
-        , let prv = wrapSecKey t k
-        , let pub = derivePubKeyI prv
-        ]
-
--- | Construct an input for a transaction given a signature, public key and data
--- about the previous output.
-buildInput ::
-       Network
-    -> Tx                 -- ^ transaction where input will be added
-    -> Int                -- ^ input index where signature will go
-    -> ScriptOutput       -- ^ output script being spent
-    -> Word64             -- ^ amount of previous output
-    -> Maybe RedeemScript -- ^ redeem script if pay-to-script-hash
-    -> TxSignature
-    -> PubKeyI
-    -> Either String ScriptInput
-buildInput net tx i so val rdmM sig pub = do
-    when (i >= length (txIn tx)) $ Left "buildInput: Invalid input index"
-    case (so, rdmM) of
-        (PayPK _, Nothing) -> return $ RegularInput $ SpendPK sig
-        (PayPKHash _, Nothing) -> return $ RegularInput $ SpendPKHash sig pub
-        (PayMulSig msPubs r, Nothing) -> do
-            let mSigs = take r $ catMaybes $ matchTemplate allSigs msPubs f
-            return $ RegularInput $ SpendMulSig mSigs
-        (PayScriptHash _, Just rdm) -> do
-            inp <- buildInput net tx i rdm val Nothing sig pub
-            return $ ScriptHashInput (getRegularInput inp) rdm
-        _ -> Left "buildInput: Invalid output/redeem script combination"
-  where
-    scp = scriptInput $ txIn tx !! i
-    allSigs =
-        nub $
-        sig :
-        case decodeInputBS net scp of
-            Right (ScriptHashInput (SpendMulSig xs) _) -> xs
-            Right (RegularInput (SpendMulSig xs))      -> xs
-            _                                          -> []
-    out = encodeOutput so
-    f (TxSignature x sh) p =
-        verifyHashSig (txSigHash net tx out val i sh) x (pubKeyPoint p)
-    f TxSignatureEmpty _ = False
+findSigInput = S.findInputIndex sigInputOP
 
 {- Merge multisig transactions -}
 
--- | Merge partially-signed multisig transactions.
+-- | Merge partially-signed multisig transactions.  This function does not
+-- support segwit and P2SH-segwit inputs.  Use PSBTs to merge transactions with
+-- segwit inputs.
 mergeTxs :: Network -> [Tx] -> [(ScriptOutput, Word64, OutPoint)] -> Either String Tx
 mergeTxs net txs os
     | null txs = Left "Transaction list is empty"
@@ -426,7 +341,8 @@ mergeTxs net txs os
     clearInput tx (_, i) =
         Tx (txVersion tx) (ins (txIn tx) i) (txOut tx) [] (txLockTime tx)
 
--- | Merge input from partially-signed multisig transactions.
+-- | Merge input from partially-signed multisig transactions.  This function
+-- does not support segwit and P2SH-segwit inputs.
 mergeTxInput ::
        Network
     -> [Tx]
@@ -484,43 +400,56 @@ verifyStdTx net tx xs =
 
 -- | Verify if a transaction input is valid and standard.
 verifyStdInput :: Network -> Tx -> Int -> ScriptOutput -> Word64 -> Bool
-verifyStdInput net tx i = go (scriptInput $ txIn tx !! i)
+verifyStdInput net tx i so0 val
+    | isSegwit so0 = fromRight False $ (inp == mempty &&) . verifySegwitInput so0 <$> wp so0
+    | otherwise    = fromRight False
+                   $ verifyLegacyInput so0 <$> decodeInputBS net inp
+                 <|> (nestedScriptOutput >>= \so -> verifyNestedInput so0 so <$> wp so)
   where
-    dec = decodeInputBS net
-    go inp so val =
-        case dec inp of
-            Right (RegularInput (SpendPK (TxSignature sig sh))) ->
-                case so of
-                    PayPK pub ->
-                        verifyHashSig
-                            (txSigHash net tx out val i sh)
-                            sig
-                            (pubKeyPoint pub)
-                    _ -> False
-            Right (RegularInput (SpendPKHash (TxSignature sig sh) pub)) ->
-                case so of
-                    PayPKHash h ->
-                        pubKeyAddr pub == p2pkhAddr h &&
-                        verifyHashSig
-                            (txSigHash net tx out val i sh)
-                            sig
-                            (pubKeyPoint pub)
-                    _ -> False
-            Right (RegularInput (SpendMulSig sigs)) ->
-                case so of
-                    PayMulSig pubs r ->
-                        countMulSig net tx out val i (map pubKeyPoint pubs) sigs ==
-                        r
-                    _ -> False
-            Right (ScriptHashInput si rdm) ->
-                case so of
-                    PayScriptHash h ->
-                        payToScriptAddress rdm == p2shAddr h &&
-                        go (encodeInputBS $ RegularInput si) rdm val
-                    _ -> False
-            _ -> False
-      where
-        out = encodeOutput so
+    verifyLegacyInput so si = case (so, si) of
+        (PayPK pub, RegularInput (SpendPK (TxSignature sig sh))) ->
+            verifyHashSig (theTxSigHash so sh Nothing) sig (pubKeyPoint pub)
+        (PayPKHash h, RegularInput (SpendPKHash (TxSignature sig sh) pub)) ->
+            pubKeyAddr pub == p2pkhAddr h &&
+            verifyHashSig (theTxSigHash so sh Nothing) sig (pubKeyPoint pub)
+        (PayMulSig pubs r, RegularInput (SpendMulSig sigs)) ->
+            countMulSig net tx out val i (pubKeyPoint <$> pubs) sigs == r
+        (PayScriptHash h, ScriptHashInput si' rdm) ->
+            payToScriptAddress rdm == p2shAddr h && verifyLegacyInput rdm (RegularInput si')
+        _ -> False
+      where out = encodeOutput so
+
+    verifySegwitInput so (rdm, si) = case (so, rdm, si) of
+        (PayWitnessPKHash h, Nothing, SpendPKHash (TxSignature sig sh) pub) ->
+            pubKeyWitnessAddr pub == p2wpkhAddr h &&
+            verifyHashSig (theTxSigHash so sh Nothing) sig (pubKeyPoint pub)
+        (PayWitnessScriptHash h, Just rdm@(PayPK pub), SpendPK (TxSignature sig sh)) ->
+            payToWitnessScriptAddress rdm == p2wshAddr h &&
+            verifyHashSig (theTxSigHash so sh $ Just rdm) sig (pubKeyPoint pub)
+        (PayWitnessScriptHash h, Just rdm@(PayPKHash kh), SpendPKHash (TxSignature sig sh) pub) ->
+            payToWitnessScriptAddress rdm == p2wshAddr h &&
+            addressHash (encode pub) == kh &&
+            verifyHashSig (theTxSigHash so sh $ Just rdm) sig (pubKeyPoint pub)
+        (PayWitnessScriptHash h, Just rdm@(PayMulSig pubs r), SpendMulSig sigs) ->
+            payToWitnessScriptAddress rdm == p2wshAddr h &&
+            countMulSig' (\sh -> theTxSigHash so sh $ Just rdm) (pubKeyPoint <$> pubs) sigs == r
+        _ -> False
+      where out = encodeOutput so
+
+    verifyNestedInput so so' x = case so of
+        PayScriptHash h -> payToScriptAddress so' == p2shAddr h && verifySegwitInput so' x
+        _               -> False
+
+    inp             = scriptInput $ txIn tx !! i
+    theTxSigHash so = makeSigHash net tx i so val
+
+    ws | length (txWitness tx) > i = txWitness tx !! i
+       | otherwise                 = []
+    wp so = decodeWitnessInput net =<< viewWitnessProgram net so ws
+
+    nestedScriptOutput = scriptOps <$> decode inp >>= \case
+        [OP_PUSHDATA bs _] -> decodeOutputBS bs
+        _                  -> Left "nestedScriptOutput: not a nested output"
 
 -- | Count the number of valid signatures for a multi-signature transaction.
 countMulSig ::
@@ -532,11 +461,14 @@ countMulSig ::
     -> [PubKey]
     -> [TxSignature]
     -> Int
-countMulSig _ _ _ _ _ [] _  = 0
-countMulSig _ _ _ _ _ _  [] = 0
-countMulSig net tx out val i (_:pubs) (TxSignatureEmpty:rest) =
-    countMulSig net tx out val i pubs rest
-countMulSig net tx out val i (pub:pubs) sigs@(TxSignature sig sh:rest)
-    | verifyHashSig (txSigHash net tx out val i sh) sig pub =
-        1 + countMulSig net tx out val i pubs rest
-    | otherwise = countMulSig net tx out val i pubs sigs
+countMulSig net tx out val i = countMulSig' h
+  where
+    h = txSigHash net tx out val i
+
+countMulSig' :: (SigHash -> Hash256) -> [PubKey] -> [TxSignature] -> Int
+countMulSig' h [] _ = 0
+countMulSig' h _ [] = 0
+countMulSig' h (_:pubs) (TxSignatureEmpty:sigs) = countMulSig' h pubs sigs
+countMulSig' h (pub:pubs) sigs@(TxSignature sig sh : sigs')
+    | verifyHashSig (h sh) sig pub = 1 + countMulSig' h pubs sigs'
+    | otherwise                    = countMulSig' h pubs sigs

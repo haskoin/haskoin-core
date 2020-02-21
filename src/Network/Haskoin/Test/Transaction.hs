@@ -7,6 +7,7 @@ Stability   : experimental
 Portability : POSIX
 -}
 module Network.Haskoin.Test.Transaction where
+
 import           Control.Monad
 import qualified Data.ByteString             as BS
 import           Data.Either                 (fromRight)
@@ -79,7 +80,7 @@ arbitraryWLTx net wit = do
                            then 2
                            else 0
                      , 5 -- avoid witness case
-                      )
+                     )
     inps <- vectorOf ni (arbitraryTxIn net)
     outs <- vectorOf no (arbitraryTxOut net)
     let uniqueInps = nubBy (\a b -> prevOutput a == prevOutput b) inps
@@ -132,10 +133,12 @@ arbitraryAddrOnlyTxOut net = do
 arbitrarySigInput :: Network -> Gen (SigInput, [SecKeyI])
 arbitrarySigInput net =
     oneof
-        [ arbitraryPKSigInput net >>= \(si, k) -> return (si, [k])
-        , arbitraryPKHashSigInput  net >>= \(si, k) -> return (si, [k])
+        [ wrapKey <$> arbitraryPKSigInput net
+        , wrapKey <$> arbitraryPKHashSigInput net
         , arbitraryMSSigInput net
         , arbitrarySHSigInput net
+        , wrapKey <$> arbitraryWPKHSigInput net
+        , arbitraryWSHSigInput net
         ]
 
 -- | Arbitrary 'SigInput' with a 'ScriptOutput' of type 'PayPK'.
@@ -179,14 +182,29 @@ arbitraryMSSigInput net = do
 arbitrarySHSigInput :: Network -> Gen (SigInput, [SecKeyI])
 arbitrarySHSigInput net = do
     (SigInput rdm val op sh _, ks) <- oneof
-        [ f <$> arbitraryPKSigInput net
-        , f <$> arbitraryPKHashSigInput net
+        [ wrapKey <$> arbitraryPKSigInput net
+        , wrapKey <$> arbitraryPKHashSigInput net
         , arbitraryMSSigInput net
         ]
     let out = PayScriptHash $ getAddrHash160 $ payToScriptAddress rdm
     return (SigInput out val op sh $ Just rdm, ks)
-  where
-    f (si, k) = (si, [k])
+
+arbitraryWPKHSigInput :: Network -> Gen (SigInput, SecKeyI)
+arbitraryWPKHSigInput net = do
+    (k, p) <- arbitraryKeyPair
+    (val, op, sh) <- arbitraryInputStuff net
+    let out = PayWitnessPKHash . getAddrHash160 $ pubKeyAddr p
+    return (SigInput out val op sh Nothing, k)
+
+arbitraryWSHSigInput :: Network -> Gen (SigInput, [SecKeyI])
+arbitraryWSHSigInput net = do
+    (SigInput rdm val op sh _, ks) <- oneof
+        [ wrapKey <$> arbitraryPKSigInput net
+        , wrapKey <$> arbitraryPKHashSigInput net
+        , arbitraryMSSigInput net
+        ]
+    let out = PayWitnessScriptHash . getAddrHash256 $ payToWitnessScriptAddress rdm
+    return (SigInput out val op sh $ Just rdm, ks)
 
 -- | Arbitrary 'Tx' (empty 'TxIn'), 'SigInputs' and private keys that can be
 -- passed to 'signTx' or 'detSignTx' to fully sign the 'Tx'.
@@ -232,7 +250,7 @@ arbitraryPartialTxs net = do
     singleSig so val rdmM tx op prv = do
         sh <- arbitraryValidSigHash net
         let sigi = SigInput so val op sh rdmM
-        return . fromRight (error "Colud not decode transaction") $
+        return . fromRight (error "Could not decode transaction") $
             signTx net tx [sigi] [prv]
     arbitraryData = do
         (m, n) <- arbitraryMSParam
@@ -252,3 +270,6 @@ arbitraryPartialTxs net = do
               , m
               , n)
             ]
+
+wrapKey :: (SigInput, SecKeyI) -> (SigInput, [SecKeyI])
+wrapKey (s, k) = (s, [k])

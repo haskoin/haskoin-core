@@ -168,7 +168,7 @@ addressHash =
 
 -- | Computes a 32 bit checksum.
 checkSum32 :: ByteArrayAccess b => b -> CheckSum32
-checkSum32 = fromRight (error "Colud not decode bytes as CheckSum32")
+checkSum32 = fromRight (error "Could not decode bytes as CheckSum32")
              . decode
              . BS.take 4
              . BA.convert

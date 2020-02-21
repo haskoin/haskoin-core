@@ -1,7 +1,5 @@
-resolver: lts-14.20
+resolver: lts-15.0
 nix:
   packages:
     - secp256k1
     - pkg-config
-extra-deps:
-  - secp256k1-haskell-0.1.8

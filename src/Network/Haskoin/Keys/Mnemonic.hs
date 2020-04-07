@@ -3,7 +3,7 @@
 Module      : Network.Haskoin.Keys.Mnemonic
 Copyright   : No rights reserved
 License     : UNLICENSE
-Maintainer  : xenog@protonmail.com
+Maintainer  : jprupp@protonmail.ch
 Stability   : experimental
 Portability : POSIX
 

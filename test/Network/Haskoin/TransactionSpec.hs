@@ -2,7 +2,6 @@
 
 module Network.Haskoin.TransactionSpec (spec) where
 
-import           Control.Monad                      (foldM, (>=>))
 import           Data.Aeson                         as A
 import qualified Data.ByteString                    as B
 import           Data.Either
@@ -15,7 +14,6 @@ import           Data.Text                          (Text)
 import           Data.Word                          (Word32, Word64)
 import           Network.Haskoin.Address
 import           Network.Haskoin.Constants
-import           Network.Haskoin.Crypto             (SecKey)
 import           Network.Haskoin.Keys
 import           Network.Haskoin.Script
 import           Network.Haskoin.Test
@@ -24,8 +22,7 @@ import           Network.Haskoin.Transaction.Segwit (isSegwit)
 import           Network.Haskoin.Util
 import           Safe                               (readMay)
 import           Test.Hspec
-import           Test.HUnit                         (Assertion, assertBool,
-                                                     assertEqual)
+import           Test.HUnit                         (Assertion, assertBool)
 import           Test.QuickCheck
 
 spec :: Spec
@@ -37,10 +34,15 @@ spec = do
         it "build pkhash transaction (generated from bitcoind)" $
             mapM_ runPKHashVec pkHashVec
         it "encode satoshi core script pubkey" tEncodeSatoshiCoreScriptPubKey
-        it "agrees with BIP143 p2wpkh example" testBip143p2wpkh
-        it "agrees with BIP143 p2sh-p2wpkh example" testBip143p2shp2wpkh
-        it "builds a p2wsh multisig transaction" testP2WSHMulsig
-        it "agrees with BIP143 p2sh-p2wsh multisig example" testBip143p2shp2wpkhMulsig
+        --
+        -- These tests depend on signatures matching exactly those in the spec.
+        -- Fedora includes a version of libsecp256k1 that computes signatures
+        -- using a slighlty different deterministic nonce algorithm.
+        --
+        -- it "agrees with BIP143 p2wpkh example" testBip143p2wpkh
+        -- it "agrees with BIP143 p2sh-p2wpkh example" testBip143p2shp2wpkh
+        -- it "builds a p2wsh multisig transaction" testP2WSHMulsig
+        -- it "agrees with BIP143 p2sh-p2wsh multisig example" testBip143p2shp2wpkhMulsig
     describe "btc transaction" $ do
         it "decode and encode txid" $
             property $
@@ -172,99 +174,104 @@ encodeSatoshiCoreScriptPubKey =
             Just i  -> encodeHex . S.encode . intToScriptOp $ i
             Nothing -> error $ "encodeSatoshiCoreScriptPubKey: " ++ s
 
--- Reproduce the P2WPKH example from BIP 143
-testBip143p2wpkh :: Assertion
-testBip143p2wpkh = assertEqual "BIP143 p2wpkh" (Right exampleSignedTx) generatedSignedTx
-  where
-    exampleSignedTx = "01000000000102fff7f7881a8099afa6940d42d1e7f6362bec38171ea3edf433541db4e4ad969f00000000494830450221008b9d1dc26ba6a9cb62127b02742fa9d754cd3bebf337f7a55d114c8e5cdd30be022040529b194ba3f9281a99f2b1c0a19c0489bc22ede944ccf4ecbab4cc618ef3ed01eeffffffef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a0100000000ffffffff02202cb206000000001976a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac9093510d000000001976a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac000247304402203609e17b84f6a7d30c80bfa610b5b4542f32a8a0d5447a12fb1366d7f01cc44a0220573a954c4518331561406f90300e8f3358f51928d43c212a8caed02de67eebee0121025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee635711000000"
+--
+-- Following tests depend on specific secp256k1 deterministic nonce computation.
+-- Fedora distributes the Bitcoin ABC fork of this library, which computes nonces differently.
+--
 
-    unsignedTx = "0100000002fff7f7881a8099afa6940d42d1e7f6362bec38171ea3edf433541db4e4ad969f0000000000eeffffffef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a0100000000ffffffff02202cb206000000001976a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac9093510d000000001976a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac11000000"
+-- -- Reproduce the P2WPKH example from BIP 143
+-- testBip143p2wpkh :: Assertion
+-- testBip143p2wpkh = assertEqual "BIP143 p2wpkh" (Right exampleSignedTx) generatedSignedTx
+--   where
+--     exampleSignedTx = "01000000000102fff7f7881a8099afa6940d42d1e7f6362bec38171ea3edf433541db4e4ad969f00000000494830450221008b9d1dc26ba6a9cb62127b02742fa9d754cd3bebf337f7a55d114c8e5cdd30be022040529b194ba3f9281a99f2b1c0a19c0489bc22ede944ccf4ecbab4cc618ef3ed01eeffffffef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a0100000000ffffffff02202cb206000000001976a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac9093510d000000001976a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac000247304402203609e17b84f6a7d30c80bfa610b5b4542f32a8a0d5447a12fb1366d7f01cc44a0220573a954c4518331561406f90300e8f3358f51928d43c212a8caed02de67eebee0121025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee635711000000"
 
-    Just key0 = secHexKey "bbc27228ddcb9209d7fd6f36b02f7dfa6252af40bb2f1cbc7a557da8027ff866"
-    pubKey0   = toPubKey key0
+--     unsignedTx = "0100000002fff7f7881a8099afa6940d42d1e7f6362bec38171ea3edf433541db4e4ad969f0000000000eeffffffef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a0100000000ffffffff02202cb206000000001976a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac9093510d000000001976a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac11000000"
 
-    Just key1 = secHexKey "619c335025c7f4012e556c2a58b2506e30b8511b53ade95ea316fd8c3286feb9"
+--     Just key0 = secHexKey "bbc27228ddcb9209d7fd6f36b02f7dfa6252af40bb2f1cbc7a557da8027ff866"
+--     pubKey0   = toPubKey key0
 
-    [op0, op1] = prevOutput <$> txIn unsignedTx
+--     Just key1 = secHexKey "619c335025c7f4012e556c2a58b2506e30b8511b53ade95ea316fd8c3286feb9"
 
-    sigIn0 = SigInput (PayPK pubKey0) 625000000 op0 sigHashAll Nothing
+--     [op0, op1] = prevOutput <$> txIn unsignedTx
 
-    WitnessPubKeyAddress h = pubKeyWitnessAddr $ toPubKey key1
-    sigIn1                 = SigInput (PayWitnessPKHash h) 600000000 op1 sigHashAll Nothing
+--     sigIn0 = SigInput (PayPK pubKey0) 625000000 op0 sigHashAll Nothing
 
-    generatedSignedTx = signTx btc unsignedTx [sigIn0, sigIn1] [key0, key1]
+--     WitnessPubKeyAddress h = pubKeyWitnessAddr $ toPubKey key1
+--     sigIn1                 = SigInput (PayWitnessPKHash h) 600000000 op1 sigHashAll Nothing
 
--- Reproduce the P2SH-P2WPKH example from BIP 143
-testBip143p2shp2wpkh :: Assertion
-testBip143p2shp2wpkh = assertEqual "BIP143 p2sh-p2wpkh" (Right exampleSignedTx) generatedSignedTx
-  where
-    exampleSignedTx = "01000000000101db6b1b20aa0fd7b23880be2ecbd4a98130974cf4748fb66092ac4d3ceb1a5477010000001716001479091972186c449eb1ded22b78e40d009bdf0089feffffff02b8b4eb0b000000001976a914a457b684d7f0d539a46a45bbc043f35b59d0d96388ac0008af2f000000001976a914fd270b1ee6abcaea97fea7ad0402e8bd8ad6d77c88ac02473044022047ac8e878352d3ebbde1c94ce3a10d057c24175747116f8288e5d794d12d482f0220217f36a485cae903c713331d877c1f64677e3622ad4010726870540656fe9dcb012103ad1d8e89212f0b92c74d23bb710c00662ad1470198ac48c43f7d6f93a2a2687392040000"
+--     generatedSignedTx = signTx btc unsignedTx [sigIn0, sigIn1] [key0, key1]
 
-    unsignedTx = "0100000001db6b1b20aa0fd7b23880be2ecbd4a98130974cf4748fb66092ac4d3ceb1a54770100000000feffffff02b8b4eb0b000000001976a914a457b684d7f0d539a46a45bbc043f35b59d0d96388ac0008af2f000000001976a914fd270b1ee6abcaea97fea7ad0402e8bd8ad6d77c88ac92040000"
+-- -- Reproduce the P2SH-P2WPKH example from BIP 143
+-- testBip143p2shp2wpkh :: Assertion
+-- testBip143p2shp2wpkh = assertEqual "BIP143 p2sh-p2wpkh" (Right exampleSignedTx) generatedSignedTx
+--   where
+--     exampleSignedTx = "01000000000101db6b1b20aa0fd7b23880be2ecbd4a98130974cf4748fb66092ac4d3ceb1a5477010000001716001479091972186c449eb1ded22b78e40d009bdf0089feffffff02b8b4eb0b000000001976a914a457b684d7f0d539a46a45bbc043f35b59d0d96388ac0008af2f000000001976a914fd270b1ee6abcaea97fea7ad0402e8bd8ad6d77c88ac02473044022047ac8e878352d3ebbde1c94ce3a10d057c24175747116f8288e5d794d12d482f0220217f36a485cae903c713331d877c1f64677e3622ad4010726870540656fe9dcb012103ad1d8e89212f0b92c74d23bb710c00662ad1470198ac48c43f7d6f93a2a2687392040000"
 
-    Just key0 = secHexKey "eb696a065ef48a2192da5b28b694f87544b30fae8327c4510137a922f32c6dcf"
+--     unsignedTx = "0100000001db6b1b20aa0fd7b23880be2ecbd4a98130974cf4748fb66092ac4d3ceb1a54770100000000feffffff02b8b4eb0b000000001976a914a457b684d7f0d539a46a45bbc043f35b59d0d96388ac0008af2f000000001976a914fd270b1ee6abcaea97fea7ad0402e8bd8ad6d77c88ac92040000"
 
-    op0                    = prevOutput . head $ txIn unsignedTx
-    WitnessPubKeyAddress h = pubKeyWitnessAddr $ toPubKey key0
-    sigIn0                 = SigInput (PayWitnessPKHash h) 1000000000 op0 sigHashAll Nothing
+--     Just key0 = secHexKey "eb696a065ef48a2192da5b28b694f87544b30fae8327c4510137a922f32c6dcf"
 
-    generatedSignedTx = signNestedWitnessTx btc unsignedTx [sigIn0] [key0]
+--     op0                    = prevOutput . head $ txIn unsignedTx
+--     WitnessPubKeyAddress h = pubKeyWitnessAddr $ toPubKey key0
+--     sigIn0                 = SigInput (PayWitnessPKHash h) 1000000000 op0 sigHashAll Nothing
 
--- P2WSH multisig example (tested against bitcoin-core 0.19.0.1)
-testP2WSHMulsig :: Assertion
-testP2WSHMulsig = assertEqual "p2wsh multisig" (Right exampleSignedTx) generatedSignedTx
-  where
-    exampleSignedTx = "01000000000101d2e34df5d7ee565208eddd231548916b9b0e99f4f5071f896134a448c5fb07bf0100000000ffffffff01f0b9f505000000001976a9143d5a352cab583b12fbcb26d1269b4a2c951a33ad88ac0400483045022100fad4fedd2bb4c439c64637eb8e9150d9020a7212808b8dc0578d5ff5b4ad65fe0220714640f261b37eb3106310bf853f4b706e51436fb6b64c2ab00768814eb55b9801473044022100baff4e4ceea4022b9725a2e6f6d77997a554f858165b91ac8c16c9833008bee9021f5f70ebc3f8580dc0a5e96451e3697bdf1f1f5883944f0f33ab0cfb272354040169522102ba46d3bb8db74c77c6cf082db57fc0548058fcdea811549e186526e3d10caf6721038ac8aef2dd9cea5e7d66e2f6e23f177a6c21f69ea311fa0c85d81badb6b37ceb2103d96d2bfbbc040faaf93491d69e2bfe9695e2d8e007a7f26db96c2ee42db15dc953ae00000000"
+--     generatedSignedTx = signNestedWitnessTx btc unsignedTx [sigIn0] [key0]
 
-    unsignedTx = "0100000001d2e34df5d7ee565208eddd231548916b9b0e99f4f5071f896134a448c5fb07bf0100000000ffffffff01f0b9f505000000001976a9143d5a352cab583b12fbcb26d1269b4a2c951a33ad88ac00000000"
+-- -- P2WSH multisig example (tested against bitcoin-core 0.19.0.1)
+-- testP2WSHMulsig :: Assertion
+-- testP2WSHMulsig = assertEqual "p2wsh multisig" (Right exampleSignedTx) generatedSignedTx
+--   where
+--     exampleSignedTx = "01000000000101d2e34df5d7ee565208eddd231548916b9b0e99f4f5071f896134a448c5fb07bf0100000000ffffffff01f0b9f505000000001976a9143d5a352cab583b12fbcb26d1269b4a2c951a33ad88ac0400483045022100fad4fedd2bb4c439c64637eb8e9150d9020a7212808b8dc0578d5ff5b4ad65fe0220714640f261b37eb3106310bf853f4b706e51436fb6b64c2ab00768814eb55b9801473044022100baff4e4ceea4022b9725a2e6f6d77997a554f858165b91ac8c16c9833008bee9021f5f70ebc3f8580dc0a5e96451e3697bdf1f1f5883944f0f33ab0cfb272354040169522102ba46d3bb8db74c77c6cf082db57fc0548058fcdea811549e186526e3d10caf6721038ac8aef2dd9cea5e7d66e2f6e23f177a6c21f69ea311fa0c85d81badb6b37ceb2103d96d2bfbbc040faaf93491d69e2bfe9695e2d8e007a7f26db96c2ee42db15dc953ae00000000"
 
-    op0 = head $ prevOutput <$> txIn unsignedTx
+--     unsignedTx = "0100000001d2e34df5d7ee565208eddd231548916b9b0e99f4f5071f896134a448c5fb07bf0100000000ffffffff01f0b9f505000000001976a9143d5a352cab583b12fbcb26d1269b4a2c951a33ad88ac00000000"
 
-    Just keys = traverse secHexKey [ "3030303030303030303030303030303030303030303030303030303030303031"
-                                   , "3030303030303030303030303030303030303030303030303030303030303032"
-                                   , "3030303030303030303030303030303030303030303030303030303030303033"
-                                   ]
+--     op0 = head $ prevOutput <$> txIn unsignedTx
 
-    rdm               = PayMulSig (toPubKey <$> keys) 2
-    sigIn             = SigInput (toP2WSH $ encodeOutput rdm) 100000000 op0 sigHashAll (Just rdm)
-    generatedSignedTx = signTx btc unsignedTx [sigIn] (take 2 keys)
+--     Just keys = traverse secHexKey [ "3030303030303030303030303030303030303030303030303030303030303031"
+--                                    , "3030303030303030303030303030303030303030303030303030303030303032"
+--                                    , "3030303030303030303030303030303030303030303030303030303030303033"
+--                                    ]
 
--- Reproduce the P2SH-P2WSH multisig example from BIP 143
-testBip143p2shp2wpkhMulsig :: Assertion
-testBip143p2shp2wpkhMulsig =
-    assertEqual "BIP143 p2sh-p2wsh multisig" (Right exampleSignedTx) generatedSignedTx
-  where
-    exampleSignedTx = "0100000000010136641869ca081e70f394c6948e8af409e18b619df2ed74aa106c1ca29787b96e0100000023220020a16b5755f7f6f96dbd65f5f0d6ab9418b89af4b1f14a1bb8a09062c35f0dcb54ffffffff0200e9a435000000001976a914389ffce9cd9ae88dcc0631e88a821ffdbe9bfe2688acc0832f05000000001976a9147480a33f950689af511e6e84c138dbbd3c3ee41588ac080047304402206ac44d672dac41f9b00e28f4df20c52eeb087207e8d758d76d92c6fab3b73e2b0220367750dbbe19290069cba53d096f44530e4f98acaa594810388cf7409a1870ce01473044022068c7946a43232757cbdf9176f009a928e1cd9a1a8c212f15c1e11ac9f2925d9002205b75f937ff2f9f3c1246e547e54f62e027f64eefa2695578cc6432cdabce271502473044022059ebf56d98010a932cf8ecfec54c48e6139ed6adb0728c09cbe1e4fa0915302e022007cd986c8fa870ff5d2b3a89139c9fe7e499259875357e20fcbb15571c76795403483045022100fbefd94bd0a488d50b79102b5dad4ab6ced30c4069f1eaa69a4b5a763414067e02203156c6a5c9cf88f91265f5a942e96213afae16d83321c8b31bb342142a14d16381483045022100a5263ea0553ba89221984bd7f0b13613db16e7a70c549a86de0cc0444141a407022005c360ef0ae5a5d4f9f2f87a56c1546cc8268cab08c73501d6b3be2e1e1a8a08824730440220525406a1482936d5a21888260dc165497a90a15669636d8edca6b9fe490d309c022032af0c646a34a44d1f4576bf6a4a74b67940f8faa84c7df9abe12a01a11e2b4783cf56210307b8ae49ac90a048e9b53357a2354b3334e9c8bee813ecb98e99a7e07e8c3ba32103b28f0c28bfab54554ae8c658ac5c3e0ce6e79ad336331f78c428dd43eea8449b21034b8113d703413d57761b8b9781957b8c0ac1dfe69f492580ca4195f50376ba4a21033400f6afecb833092a9a21cfdf1ed1376e58c5d1f47de74683123987e967a8f42103a6d48b1131e94ba04d9737d61acdaa1322008af9602b3b14862c07a1789aac162102d8b661b0b3302ee2f162b09e07a55ad5dfbe673a9f01d9f0c19617681024306b56ae00000000"
+--     rdm               = PayMulSig (toPubKey <$> keys) 2
+--     sigIn             = SigInput (toP2WSH $ encodeOutput rdm) 100000000 op0 sigHashAll (Just rdm)
+--     generatedSignedTx = signTx btc unsignedTx [sigIn] (take 2 keys)
 
-    unsignedTx = "010000000136641869ca081e70f394c6948e8af409e18b619df2ed74aa106c1ca29787b96e0100000000ffffffff0200e9a435000000001976a914389ffce9cd9ae88dcc0631e88a821ffdbe9bfe2688acc0832f05000000001976a9147480a33f950689af511e6e84c138dbbd3c3ee41588ac00000000"
+-- -- Reproduce the P2SH-P2WSH multisig example from BIP 143
+-- testBip143p2shp2wpkhMulsig :: Assertion
+-- testBip143p2shp2wpkhMulsig =
+--     assertEqual "BIP143 p2sh-p2wsh multisig" (Right exampleSignedTx) generatedSignedTx
+--   where
+--     exampleSignedTx = "0100000000010136641869ca081e70f394c6948e8af409e18b619df2ed74aa106c1ca29787b96e0100000023220020a16b5755f7f6f96dbd65f5f0d6ab9418b89af4b1f14a1bb8a09062c35f0dcb54ffffffff0200e9a435000000001976a914389ffce9cd9ae88dcc0631e88a821ffdbe9bfe2688acc0832f05000000001976a9147480a33f950689af511e6e84c138dbbd3c3ee41588ac080047304402206ac44d672dac41f9b00e28f4df20c52eeb087207e8d758d76d92c6fab3b73e2b0220367750dbbe19290069cba53d096f44530e4f98acaa594810388cf7409a1870ce01473044022068c7946a43232757cbdf9176f009a928e1cd9a1a8c212f15c1e11ac9f2925d9002205b75f937ff2f9f3c1246e547e54f62e027f64eefa2695578cc6432cdabce271502473044022059ebf56d98010a932cf8ecfec54c48e6139ed6adb0728c09cbe1e4fa0915302e022007cd986c8fa870ff5d2b3a89139c9fe7e499259875357e20fcbb15571c76795403483045022100fbefd94bd0a488d50b79102b5dad4ab6ced30c4069f1eaa69a4b5a763414067e02203156c6a5c9cf88f91265f5a942e96213afae16d83321c8b31bb342142a14d16381483045022100a5263ea0553ba89221984bd7f0b13613db16e7a70c549a86de0cc0444141a407022005c360ef0ae5a5d4f9f2f87a56c1546cc8268cab08c73501d6b3be2e1e1a8a08824730440220525406a1482936d5a21888260dc165497a90a15669636d8edca6b9fe490d309c022032af0c646a34a44d1f4576bf6a4a74b67940f8faa84c7df9abe12a01a11e2b4783cf56210307b8ae49ac90a048e9b53357a2354b3334e9c8bee813ecb98e99a7e07e8c3ba32103b28f0c28bfab54554ae8c658ac5c3e0ce6e79ad336331f78c428dd43eea8449b21034b8113d703413d57761b8b9781957b8c0ac1dfe69f492580ca4195f50376ba4a21033400f6afecb833092a9a21cfdf1ed1376e58c5d1f47de74683123987e967a8f42103a6d48b1131e94ba04d9737d61acdaa1322008af9602b3b14862c07a1789aac162102d8b661b0b3302ee2f162b09e07a55ad5dfbe673a9f01d9f0c19617681024306b56ae00000000"
 
-    op0 = head $ prevOutput <$> txIn unsignedTx
+--     unsignedTx = "010000000136641869ca081e70f394c6948e8af409e18b619df2ed74aa106c1ca29787b96e0100000000ffffffff0200e9a435000000001976a914389ffce9cd9ae88dcc0631e88a821ffdbe9bfe2688acc0832f05000000001976a9147480a33f950689af511e6e84c138dbbd3c3ee41588ac00000000"
 
-    rawKeys = [ "730fff80e1413068a05b57d6a58261f07551163369787f349438ea38ca80fac6"
-              , "11fa3d25a17cbc22b29c44a484ba552b5a53149d106d3d853e22fdd05a2d8bb3"
-              , "77bf4141a87d55bdd7f3cd0bdccf6e9e642935fec45f2f30047be7b799120661"
-              , "14af36970f5025ea3e8b5542c0f8ebe7763e674838d08808896b63c3351ffe49"
-              , "fe9a95c19eef81dde2b95c1284ef39be497d128e2aa46916fb02d552485e0323"
-              , "428a7aee9f0c2af0cd19af3cf1c78149951ea528726989b2e83e4778d2c3f890"
-              ]
+--     op0 = head $ prevOutput <$> txIn unsignedTx
 
-    Just keys@[key0, key1, key2, key3, key4, key5] = traverse secHexKey rawKeys
+--     rawKeys = [ "730fff80e1413068a05b57d6a58261f07551163369787f349438ea38ca80fac6"
+--               , "11fa3d25a17cbc22b29c44a484ba552b5a53149d106d3d853e22fdd05a2d8bb3"
+--               , "77bf4141a87d55bdd7f3cd0bdccf6e9e642935fec45f2f30047be7b799120661"
+--               , "14af36970f5025ea3e8b5542c0f8ebe7763e674838d08808896b63c3351ffe49"
+--               , "fe9a95c19eef81dde2b95c1284ef39be497d128e2aa46916fb02d552485e0323"
+--               , "428a7aee9f0c2af0cd19af3cf1c78149951ea528726989b2e83e4778d2c3f890"
+--               ]
 
-    rdm      = PayMulSig (toPubKey <$> keys) 6
-    sigIn sh = SigInput (toP2WSH $ encodeOutput rdm) 987654321 op0 sh (Just rdm)
+--     Just keys@[key0, key1, key2, key3, key4, key5] = traverse secHexKey rawKeys
 
-    sigHashesA = [sigHashAll, sigHashNone, sigHashSingle]
-    sigHashesB = setAnyoneCanPayFlag <$> sigHashesA
-    sigIns     = sigIn <$> (sigHashesA <> sigHashesB)
+--     rdm      = PayMulSig (toPubKey <$> keys) 6
+--     sigIn sh = SigInput (toP2WSH $ encodeOutput rdm) 987654321 op0 sh (Just rdm)
 
-    generatedSignedTx      = foldM addSig unsignedTx $ zip sigIns keys
-    addSig tx (sigIn, key) = signNestedWitnessTx btc tx [sigIn] [key]
+--     sigHashesA = [sigHashAll, sigHashNone, sigHashSingle]
+--     sigHashesB = setAnyoneCanPayFlag <$> sigHashesA
+--     sigIns     = sigIn <$> (sigHashesA <> sigHashesB)
 
-secHexKey :: Text -> Maybe SecKey
-secHexKey = decodeHex >=> secKey
+--     generatedSignedTx      = foldM addSig unsignedTx $ zip sigIns keys
+--     addSig tx (sigIn, key) = signNestedWitnessTx btc tx [sigIn] [key]
 
-toPubKey :: SecKey -> PubKeyI
-toPubKey = derivePubKeyI . wrapSecKey True
+-- secHexKey :: Text -> Maybe SecKey
+-- secHexKey = decodeHex >=> secKey
+
+-- toPubKey :: SecKey -> PubKeyI
+-- toPubKey = derivePubKeyI . wrapSecKey True
 
 {- Building Transactions -}
 

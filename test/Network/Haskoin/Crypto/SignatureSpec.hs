@@ -1,38 +1,36 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Crypto.SignatureSpec (spec) where
 
-import           Data.Bits                 (testBit)
-import           Data.ByteString           (ByteString)
-import qualified Data.ByteString           as BS (index, length)
-import           Data.Maybe
-import           Data.Serialize            as S
-import           Data.Text                 (Text)
-import           Network.Haskoin.Constants
-import           Network.Haskoin.Crypto
-import           Network.Haskoin.Keys
-import           Network.Haskoin.Test
-import           Network.Haskoin.Util
-import           Test.Hspec
-import           Test.HUnit                (Assertion, assertBool)
-import           Test.QuickCheck
+import           Data.Bits              (testBit)
+import           Data.ByteString        (ByteString)
+import qualified Data.ByteString        as BS (index, length)
+import           Data.Serialize         as S
+import           Data.Text              (Text)
+import           Network.Haskoin.Crypto (SecKey, Sig, decodeStrictSig,
+                                         derivePubKey, exportSig,
+                                         importCompactSig, isCanonicalHalfOrder,
+                                         sha256, signHash, verifyHashSig)
+import           Network.Haskoin.Test   (arbitrarySignature)
+import           Network.Haskoin.Util   (decodeHex, eitherToMaybe, lst3)
+import           Test.Hspec             (Spec, describe, it)
+import           Test.Hspec.QuickCheck  (prop)
+import           Test.HUnit             (Assertion, assertBool)
+import           Test.QuickCheck        (forAll)
 
 spec :: Spec
 spec = do
     describe "signatures" $ do
-        it "verify signature" $
-            property $
+        prop "verify signature" $
             forAll arbitrarySignature $ \(msg, key, sig) ->
                 verifyHashSig msg sig (derivePubKey key)
-        it "s component less than half order" $
-            property $ forAll arbitrarySignature $ isCanonicalHalfOrder . lst3
-        it "encoded signature is canonical" $
-            property $ forAll arbitrarySignature $ testIsCanonical . lst3
-        it "encode signature and decode strictly" $
-            property $
+        prop "s component less than half order" $
+            forAll arbitrarySignature $ isCanonicalHalfOrder . lst3
+        prop "encoded signature is canonical" $
+            forAll arbitrarySignature $ testIsCanonical . lst3
+        prop "encode signature and decode strictly" $
             forAll arbitrarySignature $
             (\s -> decodeStrictSig (exportSig s) == Just s) . lst3
-        it "encodes and decodes signature" $
-            property $
+        prop "encodes and decodes signature" $
             forAll arbitrarySignature $
             (\s -> decodeStrictSig (exportSig s) == Just s) . lst3
     describe "trezor rfc6979 test vectors" $ do
@@ -49,15 +47,18 @@ spec = do
         it "rfc6979 test vector 11" (testSigning $ detVec !! 10)
         it "rfc6979 test vector 12" (testSigning $ detVec !! 11)
 
+-- No longer validating that generated signature is exactly equal to provided
+-- one. Fedora includes libsecp256k1 from Bitcoin ABC that computes
+-- deterministic signatures using a slightly different nonce generation
+-- algorithm.
 testSigning :: (SecKey, ByteString, Text) -> Assertion
 testSigning (prv, msg, str) = do
-    assertBool "RFC 6979 Vector" $ res == fromJust (decodeHex str)
-    assertBool "valid sig" $ verifyHashSig msg' g (derivePubKey prv)
+    assertBool "my sig valid" $ verifyHashSig msg' g (derivePubKey prv)
+    assertBool "valid sig" $ verifyHashSig msg' g' (derivePubKey prv)
   where
+    Just g' = importCompactSig =<< eitherToMaybe . decode =<< decodeHex str
     g = signHash prv msg'
     msg' = sha256 msg
-    compact = exportCompactSig g
-    res = encode compact
 
 
 {- ECDSA Canonical -}

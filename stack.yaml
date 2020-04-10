@@ -3,3 +3,5 @@ nix:
   packages:
     - secp256k1
     - pkg-config
+extra-deps:
+  - secp256k1-haskell-0.2.1

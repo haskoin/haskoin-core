@@ -10,9 +10,13 @@ ECDSA private and public keys, extended keys (BIP-32) and mnemonic sentences
 (BIP-39).
 -}
 module Network.Haskoin.Keys
-    ( module X
+    ( module Network.Haskoin.Keys.Common
+    -- * Extended Keys
+    , module Network.Haskoin.Keys.Extended
+    -- * Mnemonic
+    , module Network.Haskoin.Keys.Mnemonic
     ) where
 
-import           Network.Haskoin.Keys.Common   as X
-import           Network.Haskoin.Keys.Extended as X
-import           Network.Haskoin.Keys.Mnemonic as X
+import           Network.Haskoin.Keys.Common
+import           Network.Haskoin.Keys.Extended
+import           Network.Haskoin.Keys.Mnemonic

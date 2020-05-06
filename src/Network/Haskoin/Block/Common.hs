@@ -31,12 +31,14 @@ module Network.Haskoin.Block.Common
 import           Control.DeepSeq
 import           Control.Monad                      (forM_, liftM2, mzero,
                                                      replicateM)
-import           Data.Aeson                         (FromJSON, ToJSON,
-                                                     Value (String), parseJSON,
-                                                     toJSON, withText)
+import           Data.Aeson                         (FromJSON (..), ToJSON (..),
+                                                     Value (String), toJSON,
+                                                     withText)
+import           Data.Aeson.Encoding                (unsafeToEncoding)
 import           Data.Bits                          (shiftL, shiftR, (.&.),
                                                      (.|.))
 import qualified Data.ByteString                    as B
+import           Data.ByteString.Builder            (char7)
 import           Data.Hashable                      (Hashable)
 import           Data.Maybe                         (fromMaybe)
 import           Data.Serialize                     (Serialize, decode, encode,
@@ -79,6 +81,8 @@ instance Serialize Block where
 
 instance ToJSON Block where
     toJSON = String . encodeHex . encode
+    toEncoding s =
+        unsafeToEncoding $ char7 '"' <> hexBuilder (encode s) <> char7 '"'
 
 instance FromJSON Block where
     parseJSON =
@@ -93,6 +97,8 @@ instance FromJSON Block where
 
 instance ToJSON BlockHeader where
     toJSON = String . encodeHex . encode
+    toEncoding s =
+        unsafeToEncoding $ char7 '"' <> hexBuilder (encode s) <> char7 '"'
 
 instance FromJSON BlockHeader where
     parseJSON =
@@ -129,6 +135,9 @@ instance FromJSON BlockHash where
 
 instance ToJSON BlockHash where
     toJSON = String . blockHashToHex
+    toEncoding s =
+        unsafeToEncoding $
+        char7 '"' <> hexBuilder (B.reverse (encode s)) <> char7 '"'
 
 -- | Block hashes are reversed with respect to the in-memory byte order in a
 -- block hash when displayed.

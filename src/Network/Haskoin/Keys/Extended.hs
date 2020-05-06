@@ -40,9 +40,11 @@ module Network.Haskoin.Keys.Extended
     , xPubCompatWitnessAddr
     , xPubExport
     , xPubToJSON
+    , xPubToEncoding
     , xPubFromJSON
     , xPrvExport
     , xPrvToJSON
+    , xPrvToEncoding
     , xPrvFromJSON
     , xPubImport
     , xPrvImport
@@ -104,9 +106,10 @@ import           Control.DeepSeq
 import           Control.Exception              (Exception, throw)
 import           Control.Monad                  (guard, mzero, unless, (<=<))
 import           Crypto.Secp256k1
-import           Data.Aeson                     as A (FromJSON, ToJSON,
+import           Data.Aeson                     as A (FromJSON, ToJSON (..),
                                                       Value (String), parseJSON,
                                                       toJSON, withText)
+import           Data.Aeson.Encoding            (Encoding, text)
 import           Data.Aeson.Types               (Parser)
 import           Data.Bits                      (clearBit, setBit, testBit)
 import           Data.ByteString                (ByteString)
@@ -115,7 +118,6 @@ import           Data.Either                    (fromRight)
 import           Data.List                      (foldl')
 import           Data.List.Split                (splitOn)
 import           Data.Maybe                     (fromMaybe)
-import           Data.Monoid                    ((<>))
 import           Data.Serialize                 as S (Serialize, decode, encode,
                                                       get, put)
 import           Data.Serialize.Get             (Get, getWord32be, getWord8,
@@ -128,7 +130,6 @@ import           Data.Typeable                  (Typeable)
 import           Data.Word                      (Word32, Word8)
 import           GHC.Generics                   (Generic)
 import           Network.Haskoin.Address
-import           Network.Haskoin.Address.Base58
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Keys.Common
@@ -168,6 +169,9 @@ data XPrvKey = XPrvKey
 xPrvToJSON :: Network -> XPrvKey -> Value
 xPrvToJSON net = A.String . xPrvExport net
 
+xPrvToEncoding :: Network -> XPrvKey -> Encoding
+xPrvToEncoding net = text . xPrvExport net
+
 -- | Data type representing an extended BIP32 public key.
 data XPubKey = XPubKey
     { xPubDepth  :: !Word8     -- ^ depth in the tree
@@ -189,6 +193,9 @@ xPubFromJSON net =
 -- | Get JSON 'Value' from 'XPubKey'.
 xPubToJSON :: Network -> XPubKey -> Value
 xPubToJSON net = A.String . xPubExport net
+
+xPubToEncoding :: Network -> XPubKey -> Encoding
+xPubToEncoding net = text . xPubExport net
 
 -- | Decode an extended private key from a JSON string
 xPrvFromJSON :: Network -> Value -> Parser XPrvKey
@@ -538,7 +545,7 @@ data DerivPathI t where
 instance NFData (DerivPathI t) where
     rnf (a :| b) = rnf a `seq` rnf b `seq` ()
     rnf (a :/ b) = rnf a `seq` rnf b `seq` ()
-    rnf Deriv = ()
+    rnf Deriv    = ()
 
 instance Eq (DerivPathI t) where
     (nextA :| iA) == (nextB :| iB) = iA == iB && nextA == nextB
@@ -554,9 +561,9 @@ instance Ord (DerivPathI t) where
         if nextA == nextB then iA `compare` iB else nextA `compare` nextB
 
     -- Different hardness: hard paths are LT soft paths
-    (nextA :/ iA) `compare` (nextB :| iB) =
+    (nextA :/ _iA) `compare` (nextB :| _iB) =
         if nextA == nextB then LT else nextA `compare` nextB
-    (nextA :| iA) `compare` (nextB :/ iB) =
+    (nextA :| _iA) `compare` (nextB :/ _iB) =
         if nextA == nextB then GT else nextA `compare` nextB
 
     Deriv `compare` Deriv  = EQ

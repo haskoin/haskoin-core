@@ -35,10 +35,13 @@ import           Control.Applicative         ((<|>))
 import           Control.DeepSeq
 import           Control.Monad               (guard, mzero, (<=<))
 import           Crypto.Secp256k1
-import           Data.Aeson                  (FromJSON, ToJSON, Value (String),
-                                              parseJSON, toJSON, withText)
+import           Data.Aeson                  (FromJSON, ToJSON (..),
+                                              Value (String), parseJSON,
+                                              withText)
+import           Data.Aeson.Encoding         (unsafeToEncoding)
 import           Data.ByteString             (ByteString)
 import qualified Data.ByteString             as BS
+import           Data.ByteString.Builder     (char7)
 import           Data.Hashable
 import           Data.Maybe                  (fromMaybe)
 import           Data.Serialize              (Serialize, decode, encode, get,
@@ -65,6 +68,7 @@ instance IsString PubKeyI where
 
 instance ToJSON PubKeyI where
     toJSON = String . encodeHex . encode
+    toEncoding s = unsafeToEncoding $ char7 '"' <> hexBuilder (encode s) <> char7 '"'
 
 instance FromJSON PubKeyI where
     parseJSON = withText "PubKeyI" $

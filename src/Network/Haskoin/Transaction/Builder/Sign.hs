@@ -25,10 +25,10 @@ module Network.Haskoin.Transaction.Builder.Sign
 
 import           Control.DeepSeq                    (NFData)
 import           Control.Monad                      (foldM, mzero, when)
-import           Data.Aeson                         (FromJSON, ToJSON,
+import           Data.Aeson                         (FromJSON, ToJSON (..),
                                                      Value (Object), object,
-                                                     parseJSON, toJSON, (.:),
-                                                     (.:?), (.=))
+                                                     parseJSON, (.:), (.:?),
+                                                     (.=), pairs)
 import           Data.Either                        (rights)
 import           Data.Hashable                      (Hashable)
 import           Data.List                          (find, nub)
@@ -81,6 +81,13 @@ instance ToJSON SigInput where
         , "outpoint" .= op
         , "sighash"  .= sh
         ] ++ [ "redeem" .= r | r <- maybeToList rdm ]
+    toEncoding (SigInput so val op sh rdm) = pairs $
+        "pkscript" .= so
+        <> "value"    .= val
+        <> "outpoint" .= op
+        <> "sighash"  .= sh
+        <> (case rdm of Nothing -> mempty
+                        Just r  -> "redeem" .= r)
 
 instance FromJSON SigInput where
     parseJSON (Object o) = do
@@ -118,7 +125,7 @@ signInput ::
     -> (SigInput, Bool) -- ^ boolean flag: nest input
     -> SecKeyI
     -> Either String Tx
-signInput net tx i (sigIn@(SigInput so val _ sh rdmM), nest) key = do
+signInput net tx i (sigIn@(SigInput so val _ _ rdmM), nest) key = do
     let sig = makeSignature net tx i sigIn key
     si <- buildInput net tx i so val rdmM sig $ derivePubKeyI key
     w  <- updatedWitnessData tx i so si
@@ -127,12 +134,12 @@ signInput net tx i (sigIn@(SigInput so val _ sh rdmM), nest) key = do
               }
   where
     f si x = x {scriptInput = encodeInputBS si}
-    g so x = x {scriptInput = S.encode . opPushData $ encodeOutputBS so}
+    g so' x = x {scriptInput = S.encode . opPushData $ encodeOutputBS so'}
     txis = txIn tx
-    nextTxIn so si
-        | isSegwit so && nest = updateIndex i txis (g so)
-        | isSegwit so         = txIn tx
-        | otherwise           = updateIndex i txis (f si)
+    nextTxIn so' si
+        | isSegwit so' && nest = updateIndex i txis (g so')
+        | isSegwit so'         = txIn tx
+        | otherwise            = updateIndex i txis (f si)
 
 -- | Add the witness data of the transaction given segwit parameters for an input.
 --
@@ -246,7 +253,8 @@ parseExistingSigs net tx so i = insSigs <> witSigs
 
 -- | Produce a structured representation of a deterministic (RFC-6979) signature over an input.
 makeSignature :: Network -> Tx -> Int -> SigInput -> SecKeyI -> TxSignature
-makeSignature net tx i (SigInput so val _ sh rdmM) key = TxSignature (signHash (secKeyData key) m) sh
+makeSignature net tx i (SigInput so val _ sh rdmM) key =
+    TxSignature (signHash (secKeyData key) m) sh
   where
     m = makeSigHash net tx i so val sh rdmM
 
@@ -265,7 +273,7 @@ makeSigHash ::
 makeSigHash net tx i so val sh rdmM = h net tx (encodeOutput so') val i sh
   where
     so' = case so of
-        PayWitnessPKHash h -> PayPKHash h
-        _                  -> fromMaybe so rdmM
+        PayWitnessPKHash h' -> PayPKHash h'
+        _                   -> fromMaybe so rdmM
     h | isSegwit so = txSigHashForkId
       | otherwise   = txSigHash

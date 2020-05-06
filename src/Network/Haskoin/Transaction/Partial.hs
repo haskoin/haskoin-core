@@ -29,37 +29,45 @@ module Network.Haskoin.Transaction.Partial
     , emptyOutput
     ) where
 
-import           Control.Applicative         ((<|>))
+import           Control.Applicative                ((<|>))
 import           Control.DeepSeq
-import           Control.Monad               (guard, replicateM, void)
-import           Data.ByteString             (ByteString)
-import qualified Data.ByteString             as B
-import           Data.Hashable               (Hashable)
-import           Data.HashMap.Strict         (HashMap)
-import qualified Data.HashMap.Strict         as HashMap
-import           Data.List                   (foldl')
-import           Data.Maybe                  (fromMaybe, isJust)
-import           Data.Serialize              as S
-import           GHC.Generics                (Generic)
-import           GHC.Word                    (Word32, Word8)
-import           Network.Haskoin.Address     (Address (..), pubKeyAddr)
-import           Network.Haskoin.Keys        (Fingerprint, KeyIndex, PubKeyI)
-import           Network.Haskoin.Network     (VarInt (..), VarString (..),
-                                              putVarInt)
-import           Network.Haskoin.Script      (Script (..), ScriptOp (..),
-                                              ScriptOutput (..), SigHash,
-                                              decodeOutput, decodeOutputBS,
-                                              encodeOutputBS, isPayScriptHash,
-                                              opPushData, toP2SH, toP2WSH)
-import           Network.Haskoin.Transaction (Tx (..), TxOut, WitnessStack,
-                                              outPointIndex, prevOutput,
-                                              scriptInput, scriptOutput)
-import           Network.Haskoin.Util        (eitherToMaybe)
+import           Control.Monad                      (guard, replicateM, void)
+import           Data.ByteString                    (ByteString)
+import qualified Data.ByteString                    as B
+import           Data.Hashable                      (Hashable)
+import           Data.HashMap.Strict                (HashMap)
+import qualified Data.HashMap.Strict                as HashMap
+import           Data.List                          (foldl')
+import           Data.Maybe                         (fromMaybe, isJust)
+import           Data.Serialize                     as S
+import           GHC.Generics                       (Generic)
+import           GHC.Word                           (Word32, Word8)
+import           Network.Haskoin.Address            (Address (..), pubKeyAddr)
+import           Network.Haskoin.Keys               (Fingerprint, KeyIndex,
+                                                     PubKeyI)
+import           Network.Haskoin.Network            (VarInt (..),
+                                                     VarString (..), putVarInt)
+import           Network.Haskoin.Script             (Script (..), ScriptOp (..),
+                                                     ScriptOutput (..), SigHash,
+                                                     decodeOutput,
+                                                     decodeOutputBS,
+                                                     encodeOutputBS,
+                                                     isPayScriptHash,
+                                                     opPushData, toP2SH,
+                                                     toP2WSH)
+import           Network.Haskoin.Transaction.Common (Tx (..), TxOut,
+                                                     WitnessStack,
+                                                     outPointIndex, prevOutput,
+                                                     scriptInput, scriptOutput)
+import           Network.Haskoin.Util               (eitherToMaybe)
 
--- | PSBT data type as specified in [BIP-174](https://github.com/bitcoin/bips/blob/master/bip-0174.mediawiki). This
--- contains an unsigned transaction, inputs and outputs, and unspecified extra data. There is one input per input in the
--- unsigned transaction, and one output per output in the unsigned transaction. The inputs and outputs in the
--- 'PartiallySignedTransaction' line up by index with the inputs and outputs in the unsigned transaction.
+-- | PSBT data type as specified in
+-- [BIP-174](https://github.com/bitcoin/bips/blob/master/bip-0174.mediawiki).
+-- This contains an unsigned transaction, inputs and outputs, and unspecified
+-- extra data. There is one input per input in the unsigned transaction, and one
+-- output per output in the unsigned transaction. The inputs and outputs in the
+-- 'PartiallySignedTransaction' line up by index with the inputs and outputs in
+-- the unsigned transaction.
 data PartiallySignedTransaction = PartiallySignedTransaction
     { unsignedTransaction :: Tx
     , globalUnknown       :: UnknownMap
@@ -69,7 +77,8 @@ data PartiallySignedTransaction = PartiallySignedTransaction
 
 instance NFData PartiallySignedTransaction
 
--- | Inputs contain all of the data needed to sign a transaction and all of the resulting signature data after signing.
+-- | Inputs contain all of the data needed to sign a transaction and all of the
+-- resulting signature data after signing.
 data Input = Input
     { nonWitnessUtxo     :: Maybe Tx
     , witnessUtxo        :: Maybe TxOut

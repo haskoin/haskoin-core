@@ -11,31 +11,9 @@ Most functions relating to blocks are exported by this module.
 module Network.Haskoin.Block
     ( module Network.Haskoin.Block.Common
       -- * Block Header Chain
-    , BlockWork
-    , BlockHeaders(..)
-    , BlockNode(..)
-    , HeaderMemory(..)
-    , BlockMap
-    , getAncestor
-    , isGenesis
-    , initialChain
-    , genesisMap
-    , genesisNode
-    , genesisBlock
-    , connectBlocks
-    , connectBlock
-    , parentBlock
-    , splitPoint
-    , blockLocator
+    , module Network.Haskoin.Block.Headers
       -- * Merkle Blocks
-    , MerkleBlock(..)
-    , MerkleRoot
-    , FlagBits
-    , PartialMerkleTree
-    , buildMerkleRoot
-    , buildPartialMerkle
-    , merkleBlockTxs
-    , testMerkleRoot
+    , module Network.Haskoin.Block.Merkle
     ) where
 
 import           Network.Haskoin.Block.Headers

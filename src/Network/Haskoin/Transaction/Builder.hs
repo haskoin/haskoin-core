@@ -69,7 +69,6 @@ import           Network.Haskoin.Network.Common
 import           Network.Haskoin.Script
 import           Network.Haskoin.Transaction.Builder.Sign (SigInput (..),
                                                            buildInput,
-                                                           makeSigHash,
                                                            makeSignature,
                                                            sigKeys)
 import qualified Network.Haskoin.Transaction.Builder.Sign as S
@@ -423,25 +422,24 @@ verifyStdInput net tx i so0 val
         (PayWitnessPKHash h, Nothing, SpendPKHash (TxSignature sig sh) pub) ->
             pubKeyWitnessAddr pub == p2wpkhAddr h &&
             verifyHashSig (theTxSigHash so sh Nothing) sig (pubKeyPoint pub)
-        (PayWitnessScriptHash h, Just rdm@(PayPK pub), SpendPK (TxSignature sig sh)) ->
-            payToWitnessScriptAddress rdm == p2wshAddr h &&
-            verifyHashSig (theTxSigHash so sh $ Just rdm) sig (pubKeyPoint pub)
-        (PayWitnessScriptHash h, Just rdm@(PayPKHash kh), SpendPKHash (TxSignature sig sh) pub) ->
-            payToWitnessScriptAddress rdm == p2wshAddr h &&
+        (PayWitnessScriptHash h, Just rdm'@(PayPK pub), SpendPK (TxSignature sig sh)) ->
+            payToWitnessScriptAddress rdm' == p2wshAddr h &&
+            verifyHashSig (theTxSigHash so sh $ Just rdm') sig (pubKeyPoint pub)
+        (PayWitnessScriptHash h, Just rdm'@(PayPKHash kh), SpendPKHash (TxSignature sig sh) pub) ->
+            payToWitnessScriptAddress rdm' == p2wshAddr h &&
             addressHash (encode pub) == kh &&
-            verifyHashSig (theTxSigHash so sh $ Just rdm) sig (pubKeyPoint pub)
-        (PayWitnessScriptHash h, Just rdm@(PayMulSig pubs r), SpendMulSig sigs) ->
-            payToWitnessScriptAddress rdm == p2wshAddr h &&
-            countMulSig' (\sh -> theTxSigHash so sh $ Just rdm) (pubKeyPoint <$> pubs) sigs == r
+            verifyHashSig (theTxSigHash so sh $ Just rdm') sig (pubKeyPoint pub)
+        (PayWitnessScriptHash h, Just rdm'@(PayMulSig pubs r), SpendMulSig sigs) ->
+            payToWitnessScriptAddress rdm' == p2wshAddr h &&
+            countMulSig' (\sh -> theTxSigHash so sh $ Just rdm') (pubKeyPoint <$> pubs) sigs == r
         _ -> False
-      where out = encodeOutput so
 
     verifyNestedInput so so' x = case so of
         PayScriptHash h -> payToScriptAddress so' == p2shAddr h && verifySegwitInput so' x
         _               -> False
 
     inp             = scriptInput $ txIn tx !! i
-    theTxSigHash so = makeSigHash net tx i so val
+    theTxSigHash so = S.makeSigHash net tx i so val
 
     ws | length (txWitness tx) > i = txWitness tx !! i
        | otherwise                 = []
@@ -466,8 +464,8 @@ countMulSig net tx out val i = countMulSig' h
     h = txSigHash net tx out val i
 
 countMulSig' :: (SigHash -> Hash256) -> [PubKey] -> [TxSignature] -> Int
-countMulSig' h [] _ = 0
-countMulSig' h _ [] = 0
+countMulSig' _ [] _ = 0
+countMulSig' _ _ [] = 0
 countMulSig' h (_:pubs) (TxSignatureEmpty:sigs) = countMulSig' h pubs sigs
 countMulSig' h (pub:pubs) sigs@(TxSignature sig sh : sigs')
     | verifyHashSig (h sh) sig pub = 1 + countMulSig' h pubs sigs'

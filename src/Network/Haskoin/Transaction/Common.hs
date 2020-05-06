@@ -33,10 +33,12 @@ import           Control.DeepSeq
 import           Control.Monad                  (forM_, guard, liftM2, mzero,
                                                  replicateM, (<=<))
 import           Data.Aeson                     as A
+import           Data.Aeson.Encoding            (unsafeToEncoding)
 import           Data.ByteString                (ByteString)
 import qualified Data.ByteString                as B
+import           Data.ByteString.Builder        (char7)
 import           Data.Hashable                  (Hashable)
-import           Data.Maybe                     (fromMaybe, maybe)
+import           Data.Maybe                     (fromMaybe)
 import           Data.Serialize                 as S
 import           Data.String                    (IsString, fromString)
 import           Data.String.Conversions        (cs)
@@ -72,6 +74,9 @@ instance FromJSON TxHash where
 
 instance ToJSON TxHash where
     toJSON = A.String . txHashToHex
+    toEncoding (TxHash h) =
+        unsafeToEncoding $
+        char7 '"' <> hexBuilder (B.reverse (S.encode h)) <> char7 '"'
 
 -- | Transaction hash excluding signatures.
 nosigTxHash :: Tx -> TxHash
@@ -210,6 +215,8 @@ instance FromJSON Tx where
 
 instance ToJSON Tx where
     toJSON = A.String . encodeHex . S.encode
+    toEncoding tx =
+        unsafeToEncoding $ char7 '"' <> hexBuilder (S.encode tx) <> char7 '"'
 
 -- | Data type representing a transaction input.
 data TxIn =
@@ -268,6 +275,8 @@ instance FromJSON OutPoint where
 
 instance ToJSON OutPoint where
     toJSON = A.String . encodeHex . S.encode
+    toEncoding op =
+        unsafeToEncoding $ char7 '"' <> hexBuilder (S.encode op) <> char7 '"'
 
 instance Serialize OutPoint where
     get = do

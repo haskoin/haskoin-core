@@ -46,7 +46,6 @@ import           Data.Hashable
 import           Data.Maybe
 import           Data.Scientific
 import           Data.Serialize
-import           Data.Serialize.Put                 (runPut)
 import           Data.Word
 import           GHC.Generics                       (Generic)
 import           Network.Haskoin.Constants
@@ -122,6 +121,7 @@ instance J.FromJSON SigHash where
 
 instance J.ToJSON SigHash where
     toJSON = J.Number . fromIntegral
+    toEncoding (SigHash n) = J.toEncoding n
 
 -- | SIGHASH_NONE as a byte.
 sigHashNone :: SigHash

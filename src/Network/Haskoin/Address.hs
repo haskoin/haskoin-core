@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveAnyClass    #-}
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-|
 Module      : Network.Haskoin.Address
@@ -21,6 +22,7 @@ module Network.Haskoin.Address
     , addrToString
     , stringToAddr
     , addrToJSON
+    , addrToEncoding
     , addrFromJSON
     , pubKeyAddr
     , pubKeyWitnessAddr
@@ -42,12 +44,19 @@ module Network.Haskoin.Address
       -- * Private Key Wallet Import Format (WIF)
     , fromWif
     , toWif
+      -- * Base58
+    , module Network.Haskoin.Address.Base58
+      -- * Bech32
+    , module Network.Haskoin.Address.Bech32
+      -- * CashAddr
+    , module Network.Haskoin.Address.CashAddr
     ) where
 
 import           Control.Applicative
 import           Control.DeepSeq
 import           Control.Monad
 import           Data.Aeson                       as A
+import           Data.Aeson.Encoding              as A
 import           Data.Aeson.Types
 import           Data.ByteString                  (ByteString)
 import qualified Data.ByteString                  as B
@@ -130,6 +139,12 @@ base58put _ _ = error "Cannot serialize this address as Base58"
 
 addrToJSON :: Network -> Address -> Value
 addrToJSON net a = toJSON (addrToString net a)
+
+addrToEncoding :: Network -> Address -> Encoding
+addrToEncoding net a =
+    case addrToString net a of
+        Nothing  -> null_
+        Just txt -> text txt
 
 -- | JSON parsing for Bitcoin addresses. Works with 'Base58', 'CashAddr' and
 -- 'Bech32'.

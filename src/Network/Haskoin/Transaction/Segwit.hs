@@ -105,11 +105,11 @@ decodeWitnessInput net = \case
     P2WSH (WitnessProgramSH st scr) -> do
         so <- decodeOutput scr
         fmap (Just so, ) $ case (so, st) of
-            (PayPK k, [sigBS]) ->
+            (PayPK _, [sigBS]) ->
                 SpendPK <$> decodeTxSig net sigBS
-            (PayPKHash h, [sigBS, keyBS]) ->
+            (PayPKHash _, [sigBS, keyBS]) ->
                 SpendPKHash <$> decodeTxSig net sigBS <*> S.decode keyBS
-            (PayMulSig ps r, "" : sigsBS) ->
+            (PayMulSig _ _, "" : sigsBS) ->
                 SpendMulSig <$> traverse (decodeTxSig net) sigsBS
             _ -> Left "decodeWitnessInput: Non-standard script output"
     EmptyWitnessProgram -> Left "decodeWitnessInput: Empty witness program"

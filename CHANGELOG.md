@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## 0.13.0
+### Changed
+- Consolidate all modules in Haskoin module.
+
+### Removed
+- Deprecate Network.Haskoin namespace.
+- Hide QuickCheck generators in test suite.
+
+## 0.12.0
+### Added
+- Support for signing segwit transactions.
+
 ## 0.11.0
 ### Added
 - High-level representation of segwit v0 data and auxilliary functions.

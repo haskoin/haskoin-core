@@ -38,14 +38,11 @@ module Network.Haskoin.Script.Common
 import           Control.DeepSeq
 import           Control.Monad
 import           Data.Aeson                  as A
+import           Data.Aeson.Encoding         (text)
 import           Data.ByteString             (ByteString)
 import qualified Data.ByteString             as B
 import           Data.Hashable
 import           Data.Serialize              as S
-import           Data.Serialize.Get          (getByteString, getWord16le,
-                                              getWord32le, getWord8, isEmpty)
-import           Data.Serialize.Put          (putByteString, putWord16le,
-                                              putWord32le, putWord8)
 import           Data.Word                   (Word8)
 import           GHC.Generics                (Generic)
 import           Network.Haskoin.Crypto.Hash
@@ -618,6 +615,7 @@ instance FromJSON ScriptOutput where
 
 instance ToJSON ScriptOutput where
     toJSON = String . encodeHex . encodeOutputBS
+    toEncoding = text . encodeHex . encodeOutputBS
 
 -- | Is script a pay-to-public-key output?
 isPayPK :: ScriptOutput -> Bool

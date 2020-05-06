@@ -14,6 +14,7 @@ module Network.Haskoin.Util
       -- * ByteString Helpers
       bsToInteger
     , integerToBS
+    , hexBuilder
     , encodeHex
     , decodeHex
     , getBits
@@ -40,19 +41,21 @@ module Network.Haskoin.Util
 
     ) where
 
-import           Control.Monad          (guard)
-import           Control.Monad.Except   (ExceptT (..), liftEither)
-import           Data.Aeson.Types       (Options (..), SumEncoding (..),
-                                         defaultOptions, defaultTaggedObject)
+import           Control.Monad           (guard)
+import           Control.Monad.Except    (ExceptT (..), liftEither)
+import           Data.Aeson.Types        (Options (..), SumEncoding (..),
+                                          defaultOptions, defaultTaggedObject)
 import           Data.Bits
-import           Data.ByteString        (ByteString)
-import qualified Data.ByteString        as BS
-import qualified Data.ByteString.Base16 as B16
-import           Data.Char              (toLower)
+import           Data.ByteString         (ByteString)
+import qualified Data.ByteString         as BS
+import qualified Data.ByteString.Base16  as B16
+import           Data.ByteString.Builder
+import qualified Data.ByteString.Lazy    as BL
+import           Data.Char               (toLower)
 import           Data.List
-import           Data.Text              (Text)
-import qualified Data.Text.Encoding     as E
-import           Data.Word              (Word8)
+import           Data.Text               (Text)
+import qualified Data.Text.Encoding      as E
+import           Data.Word               (Word8)
 
 -- ByteString helpers
 
@@ -72,9 +75,12 @@ integerToBS i
     f 0 = Nothing
     f x = Just (fromInteger x :: Word8, x `shiftR` 8)
 
+hexBuilder :: ByteString -> Builder
+hexBuilder = byteStringHex
+
 -- | Encode as string of human-readable hex characters.
 encodeHex :: ByteString -> Text
-encodeHex = E.decodeUtf8 . B16.encode
+encodeHex = E.decodeUtf8 . BL.toStrict . toLazyByteString . byteStringHex
 
 -- | Decode string of human-readable hex characters.
 decodeHex :: Text -> Maybe ByteString

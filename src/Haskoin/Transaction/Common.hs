@@ -12,7 +12,8 @@ Portability : POSIX
 Code related to transactions parsing and serialization.
 -}
 module Haskoin.Transaction.Common
-    ( Tx(..)
+    ( -- * Transactions
+      Tx(..)
     , TxIn(..)
     , TxOut(..)
     , OutPoint(..)

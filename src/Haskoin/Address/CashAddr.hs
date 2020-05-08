@@ -10,7 +10,8 @@ Portability : POSIX
 Support for Bitcoin Cash (BCH) CashAddr format.
 -}
 module Haskoin.Address.CashAddr
-    ( CashPrefix
+    ( -- * CashAddr
+      CashPrefix
     , CashVersion
     , CashAddr
     , Cash32

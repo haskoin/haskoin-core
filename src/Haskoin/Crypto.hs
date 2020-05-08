@@ -9,11 +9,8 @@ Portability : POSIX
 Hashing functions and ECDSA signatures.
 -}
 module Haskoin.Crypto
-    ( -- * Hashes
-      module Hash
-      -- * Signatures
+    ( module Hash
     , module Signature
-      -- * Secp256k1 (re-exported)
     , module Secp256k1
     ) where
 

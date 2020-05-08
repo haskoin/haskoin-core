@@ -14,7 +14,8 @@ Portability : POSIX
 Base58, CashAddr, Bech32 address and WIF private key serialization support.
 -}
 module Haskoin.Address
-    ( Address(..)
+    ( -- * Addresses
+      Address(..)
     , isPubKeyAddress
     , isScriptAddress
     , isWitnessPubKeyAddress
@@ -41,14 +42,11 @@ module Haskoin.Address
     , payToNestedScriptAddress
     , scriptToAddress
     , scriptToAddressBS
-      -- * Private Key Wallet Import Format (WIF)
+      -- ** Private Key Wallet Import Format (WIF)
     , fromWif
     , toWif
-      -- * Base58
     , module Haskoin.Address.Base58
-      -- * Bech32
     , module Haskoin.Address.Bech32
-      -- * CashAddr
     , module Haskoin.Address.CashAddr
     ) where
 

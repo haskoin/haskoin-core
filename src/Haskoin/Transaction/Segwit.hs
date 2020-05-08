@@ -15,7 +15,8 @@ and [BIP 143](https://github.com/bitcoin/bips/blob/master/bip-0143.mediawiki) fo
 details.
 -}
 module Haskoin.Transaction.Segwit
-    ( WitnessProgram (..)
+    ( -- * Segwit
+      WitnessProgram (..)
     , WitnessProgramPKH (..)
     , WitnessProgramSH (..)
     , isSegwit

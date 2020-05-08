@@ -11,7 +11,8 @@ Support for legacy 'Base58' addresses. Superseded by Bech32 for Bitcoin SegWit
 (BTC) and CashAddr for Bitcoin Cash (BCH).
 -}
 module Haskoin.Address.Base58
-    ( Base58
+    ( -- * Base58
+      Base58
     , encodeBase58
     , decodeBase58
     , encodeBase58Check

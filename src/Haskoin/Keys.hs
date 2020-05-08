@@ -11,9 +11,7 @@ ECDSA private and public keys, extended keys (BIP-32) and mnemonic sentences
 -}
 module Haskoin.Keys
     ( module Haskoin.Keys.Common
-    -- * Extended Keys
     , module Haskoin.Keys.Extended
-    -- * Mnemonic
     , module Haskoin.Keys.Mnemonic
     ) where
 

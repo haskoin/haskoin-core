@@ -12,28 +12,29 @@ Portability : POSIX
 Transaction signatures and related functions.
 -}
 module Haskoin.Script.SigHash
-( SigHash
-, SigHashFlag(..)
-, sigHashAll
-, sigHashNone
-, sigHashSingle
-, hasAnyoneCanPayFlag
-, hasForkIdFlag
-, setAnyoneCanPayFlag
-, setForkIdFlag
-, isSigHashAll
-, isSigHashNone
-, isSigHashSingle
-, isSigHashUnknown
-, sigHashAddForkId
-, sigHashGetForkId
-, sigHashAddNetworkId
-, txSigHash
-, txSigHashForkId
-, TxSignature(..)
-, encodeTxSig
-, decodeTxSig
-) where
+    ( -- * Script Signatures
+      SigHash
+    , SigHashFlag(..)
+    , sigHashAll
+    , sigHashNone
+    , sigHashSingle
+    , hasAnyoneCanPayFlag
+    , hasForkIdFlag
+    , setAnyoneCanPayFlag
+    , setForkIdFlag
+    , isSigHashAll
+    , isSigHashNone
+    , isSigHashSingle
+    , isSigHashUnknown
+    , sigHashAddForkId
+    , sigHashGetForkId
+    , sigHashAddNetworkId
+    , txSigHash
+    , txSigHashForkId
+    , TxSignature(..)
+    , encodeTxSig
+    , decodeTxSig
+    ) where
 
 import           Control.DeepSeq
 import           Control.Monad

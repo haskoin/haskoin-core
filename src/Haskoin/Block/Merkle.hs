@@ -11,14 +11,14 @@ Portability : POSIX
 Function to deal with Merkle trees inside blocks.
 -}
 module Haskoin.Block.Merkle
-    ( MerkleBlock(..)
+    ( -- * Merkle Blocks
+      MerkleBlock(..)
     , MerkleRoot
     , FlagBits
     , PartialMerkleTree
     , buildMerkleRoot
     , merkleBlockTxs
     , testMerkleRoot
-    -- * Helper functions
     , buildPartialMerkle
     , decodeMerkleFlags
     , encodeMerkleFlags

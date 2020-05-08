@@ -12,7 +12,8 @@ Portability : POSIX
 Common script-related functions and data types.
 -}
 module Haskoin.Script.Common
-    ( ScriptOp(..)
+    ( -- * Scripts
+      ScriptOp(..)
     , Script(..)
     , PushDataType(..)
     , ScriptOutput(..)

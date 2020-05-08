@@ -14,7 +14,8 @@ Portability : POSIX
 Code related to PSBT parsing and serialization.
 -}
 module Haskoin.Transaction.Partial
-    ( PartiallySignedTransaction (..)
+    ( -- * Partially-Signed Transactions
+      PartiallySignedTransaction (..)
     , Input (..)
     , Output (..)
     , UnknownMap (..)

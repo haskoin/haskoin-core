@@ -13,7 +13,8 @@ Standard scripts like pay-to-public-key, pay-to-public-key-hash,
 pay-to-script-hash, pay-to-multisig and corresponding SegWit variants.
 -}
 module Haskoin.Script.Standard
-    ( ScriptInput(..)
+    ( -- * Standard Scripts
+      ScriptInput(..)
     , SimpleInput(..)
     , RedeemScript
     , encodeInput

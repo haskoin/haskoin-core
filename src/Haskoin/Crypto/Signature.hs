@@ -11,7 +11,8 @@ ECDSA signatures using secp256k1 curve. Uses functions from upstream secp256k1
 library.
 -}
 module Haskoin.Crypto.Signature
-    ( putSig
+    ( -- * Signatures
+      putSig
     , getSig
     , signHash
     , verifyHashSig
@@ -27,7 +28,6 @@ import qualified Data.ByteString       as BS
 import           Data.ByteString.Short (toShort)
 import           Data.Maybe            (fromMaybe)
 import           Data.Serialize        as S
-import           Data.Serialize.Put    (Putter, putByteString)
 import           Haskoin.Crypto.Hash
 import           Numeric               (showHex)
 

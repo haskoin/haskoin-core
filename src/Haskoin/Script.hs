@@ -11,9 +11,11 @@ transaction scripts. Data types are provided for building and
 deconstructing all of the standard input and output script types.
 -}
 module Haskoin.Script
-    ( module X
+    ( module Common
+    , module Standard
+    , module SigHash
     ) where
 
-import           Haskoin.Script.Common   as X
-import           Haskoin.Script.SigHash  as X
-import           Haskoin.Script.Standard as X
+import           Haskoin.Script.Common   as Common
+import           Haskoin.Script.SigHash  as SigHash
+import           Haskoin.Script.Standard as Standard

@@ -34,7 +34,6 @@ module Haskoin.Network.Common
     , VarString(..)
     , Version(..)
     , MessageCommand(..)
-      -- ** Useful Functions
     , reject
     , nodeNone
     , nodeNetwork

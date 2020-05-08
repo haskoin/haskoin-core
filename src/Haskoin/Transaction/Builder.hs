@@ -12,7 +12,7 @@ Code to simplify transaction creation, signing, fee calculation and coin
 selection.
 -}
 module Haskoin.Transaction.Builder
-    ( -- * Transaction Creation & Signing
+    ( -- * Transaction Builder
       buildAddrTx
     , buildTx
     , buildInput

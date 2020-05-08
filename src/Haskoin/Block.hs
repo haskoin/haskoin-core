@@ -10,9 +10,7 @@ Most functions relating to blocks are exported by this module.
 -}
 module Haskoin.Block
     ( module Haskoin.Block.Common
-      -- * Block Header Chain
     , module Haskoin.Block.Headers
-      -- * Merkle Blocks
     , module Haskoin.Block.Merkle
     ) where
 

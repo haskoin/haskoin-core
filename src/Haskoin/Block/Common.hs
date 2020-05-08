@@ -11,7 +11,8 @@ Portability : POSIX
 Common data types and functions to handle blocks from the block chain.
 -}
 module Haskoin.Block.Common
-    ( Block(..)
+    ( -- * Blocks
+      Block(..)
     , BlockHeight
     , Timestamp
     , BlockHeader(..)

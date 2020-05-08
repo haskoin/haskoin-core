@@ -11,7 +11,8 @@ Support for Bitcoin SegWit (BTC) Bech32 addresses. This module is a modified
 version of Marko Bencun's reference implementation.
 -}
 module Haskoin.Address.Bech32
-    ( HRP
+    ( -- * Bech32
+      HRP
     , Bech32
     , Data
     , bech32Encode

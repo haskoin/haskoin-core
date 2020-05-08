@@ -10,11 +10,8 @@ Transactions and related code.
 -}
 module Haskoin.Transaction
     ( module Common
-    -- * Builder
     , module Builder
-    -- * Segwit
     , module Segwit
-    -- * Partial
     , module Partial
     ) where
 

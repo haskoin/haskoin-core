@@ -15,14 +15,15 @@ Portability : POSIX
 Block chain header synchronization and proof-of-work consensus functions.
 -}
 module Haskoin.Block.Headers
-    ( BlockNode(..)
+    ( -- * Block Headers
+      BlockNode(..)
     , BlockHeaders(..)
     , BlockWork
     , genesisNode
     , genesisBlock
     , isGenesis
     , chooseBest
-      -- * Header Chain Storage Functions
+      -- ** Header Store
     , parentBlock
     , getParents
     , getAncestor
@@ -30,14 +31,14 @@ module Haskoin.Block.Headers
     , connectBlocks
     , connectBlock
     , blockLocator
-      -- * In-Memory Header Chain Store
+      -- ** Header Memory Store
     , HeaderMemory(..)
     , ShortBlockHash
     , BlockMap
     , shortBlockHash
     , initialChain
     , genesisMap
-      -- * Helper Functions
+      -- ** Helper Functions
     , appendBlocks
     , validBlock
     , validCP

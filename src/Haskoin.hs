@@ -33,13 +33,13 @@ module Haskoin
     , module Util
     ) where
 
-import           Network.Haskoin.Address             as Address
-import           Network.Haskoin.Block               as Block
-import           Network.Haskoin.Constants           as Constants
-import           Network.Haskoin.Crypto              as Crypto
-import           Network.Haskoin.Keys                as Keys
-import           Network.Haskoin.Network             as Network
-import           Network.Haskoin.Script              as Script
-import           Network.Haskoin.Transaction         as Transaction
-import           Network.Haskoin.Transaction.Partial as Partial
-import           Network.Haskoin.Util                as Util
+import           Haskoin.Address             as Address
+import           Haskoin.Block               as Block
+import           Haskoin.Constants           as Constants
+import           Haskoin.Crypto              as Crypto
+import           Haskoin.Keys                as Keys
+import           Haskoin.Network             as Network
+import           Haskoin.Script              as Script
+import           Haskoin.Transaction         as Transaction
+import           Haskoin.Transaction.Partial as Partial
+import           Haskoin.Util                as Util

@@ -1,0 +1,200 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.33.0.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: ee5ff7456453fe4afdfd49adb164df9da4ea7368e9f8a04d4d4315b2d29a14ab
+
+name:           haskoin-core
+version:        0.13.4
+synopsis:       Bitcoin & Bitcoin Cash library for Haskell
+description:    Haskoin Core is a complete Bitcoin and Bitcoin Cash library of functions and data types for Haskell developers.
+category:       Bitcoin, Finance, Network
+homepage:       http://github.com/haskoin/haskoin#readme
+bug-reports:    http://github.com/haskoin/haskoin/issues
+author:         Philippe Laprade,
+                Jean-Pierre Rupp,
+                Matthew Wraith
+maintainer:     jprupp@protonmail.ch
+license:        PublicDomain
+license-file:   UNLICENSE
+build-type:     Simple
+extra-source-files:
+    data/forkid_script_tests.json
+    data/forkid_sighash.json
+    data/script_tests.json
+    data/sig_nonstrict.json
+    data/sig_strict.json
+    data/sighash.json
+    README.md
+    CHANGELOG.md
+
+source-repository head
+  type: git
+  location: git://github.com/haskoin/haskoin.git
+
+library
+  exposed-modules:
+      Haskoin
+      Haskoin.Address
+      Haskoin.Block
+      Haskoin.Constants
+      Haskoin.Crypto
+      Haskoin.Keys
+      Haskoin.Network
+      Haskoin.Script
+      Haskoin.Transaction
+      Haskoin.Util
+  other-modules:
+      Haskoin.Address.Base58
+      Haskoin.Address.Bech32
+      Haskoin.Address.CashAddr
+      Haskoin.Block.Common
+      Haskoin.Block.Headers
+      Haskoin.Block.Merkle
+      Haskoin.Crypto.Hash
+      Haskoin.Crypto.Signature
+      Haskoin.Keys.Common
+      Haskoin.Keys.Extended
+      Haskoin.Keys.Mnemonic
+      Haskoin.Network.Bloom
+      Haskoin.Network.Common
+      Haskoin.Network.Message
+      Haskoin.Script.Common
+      Haskoin.Script.SigHash
+      Haskoin.Script.Standard
+      Haskoin.Transaction.Builder
+      Haskoin.Transaction.Builder.Sign
+      Haskoin.Transaction.Common
+      Haskoin.Transaction.Partial
+      Haskoin.Transaction.Segwit
+      Paths_haskoin_core
+  hs-source-dirs:
+      src
+  build-depends:
+      aeson >=1.4.6.0
+    , array >=0.5.4.0
+    , base >=4.9 && <5
+    , base16-bytestring >=0.1.1.6
+    , bytestring >=0.10.10.0
+    , cereal >=0.5.8.1
+    , conduit >=1.3.1.2
+    , containers >=0.6.2.1
+    , cryptonite >=0.26
+    , deepseq >=1.4.4.0
+    , entropy >=0.4.1.5
+    , hashable >=1.3.0.0
+    , memory >=0.15.0
+    , mtl >=2.2.2
+    , murmur3 >=1.0.3
+    , network >=3.1.1.1
+    , safe >=0.3.18
+    , scientific >=0.3.6.2
+    , secp256k1-haskell >=0.2.1
+    , split >=0.2.3.3
+    , string-conversions >=0.4.0.1
+    , text >=1.2.4.0
+    , time >=1.9.3
+    , transformers >=0.5.6.2
+    , unordered-containers >=0.2.10.0
+    , vector >=0.12.1.2
+  default-language: Haskell2010
+
+test-suite spec
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      Haskoin.Address.Bech32Spec
+      Haskoin.Address.CashAddrSpec
+      Haskoin.AddressSpec
+      Haskoin.BlockSpec
+      Haskoin.Crypto.HashSpec
+      Haskoin.Crypto.SignatureSpec
+      Haskoin.CryptoSpec
+      Haskoin.Keys.ExtendedSpec
+      Haskoin.Keys.MnemonicSpec
+      Haskoin.KeysSpec
+      Haskoin.NetworkSpec
+      Haskoin.ScriptSpec
+      Haskoin.Test
+      Haskoin.Test.Address
+      Haskoin.Test.Block
+      Haskoin.Test.Crypto
+      Haskoin.Test.Keys
+      Haskoin.Test.Message
+      Haskoin.Test.Network
+      Haskoin.Test.Script
+      Haskoin.Test.Transaction
+      Haskoin.Test.Util
+      Haskoin.Transaction.PartialSpec
+      Haskoin.TransactionSpec
+      Haskoin.UtilSpec
+      Haskoin
+      Haskoin.Address
+      Haskoin.Address.Base58
+      Haskoin.Address.Bech32
+      Haskoin.Address.CashAddr
+      Haskoin.Block
+      Haskoin.Block.Common
+      Haskoin.Block.Headers
+      Haskoin.Block.Merkle
+      Haskoin.Constants
+      Haskoin.Crypto
+      Haskoin.Crypto.Hash
+      Haskoin.Crypto.Signature
+      Haskoin.Keys
+      Haskoin.Keys.Common
+      Haskoin.Keys.Extended
+      Haskoin.Keys.Mnemonic
+      Haskoin.Network
+      Haskoin.Network.Bloom
+      Haskoin.Network.Common
+      Haskoin.Network.Message
+      Haskoin.Script
+      Haskoin.Script.Common
+      Haskoin.Script.SigHash
+      Haskoin.Script.Standard
+      Haskoin.Transaction
+      Haskoin.Transaction.Builder
+      Haskoin.Transaction.Builder.Sign
+      Haskoin.Transaction.Common
+      Haskoin.Transaction.Partial
+      Haskoin.Transaction.Segwit
+      Haskoin.Util
+      Paths_haskoin_core
+  hs-source-dirs:
+      test
+      src
+  build-depends:
+      HUnit >=1.6.0.0
+    , QuickCheck >=2.13.2
+    , aeson >=1.4.6.0
+    , array >=0.5.4.0
+    , base >=4.9 && <5
+    , base16-bytestring >=0.1.1.6
+    , bytestring >=0.10.10.0
+    , cereal >=0.5.8.1
+    , conduit >=1.3.1.2
+    , containers >=0.6.2.1
+    , cryptonite >=0.26
+    , deepseq >=1.4.4.0
+    , entropy >=0.4.1.5
+    , hashable >=1.3.0.0
+    , hspec >=2.7.1
+    , memory >=0.15.0
+    , mtl >=2.2.2
+    , murmur3 >=1.0.3
+    , network >=3.1.1.1
+    , safe >=0.3.18
+    , scientific >=0.3.6.2
+    , secp256k1-haskell >=0.2.1
+    , split >=0.2.3.3
+    , string-conversions >=0.4.0.1
+    , text >=1.2.4.0
+    , time >=1.9.3
+    , transformers >=0.5.6.2
+    , unordered-containers >=0.2.10.0
+    , vector >=0.12.1.2
+  default-language: Haskell2010
+  build-tool-depends: hspec-discover:hspec-discover

@@ -10,7 +10,6 @@ import           Data.Either
 import           Data.List
 import           Data.Map.Strict         (singleton)
 import           Data.Maybe
-import           Data.Monoid             ((<>))
 import           Data.Serialize          as S
 import           Data.String
 import           Data.String.Conversions (cs)

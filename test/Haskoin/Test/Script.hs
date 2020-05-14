@@ -149,6 +149,11 @@ arbitraryScriptOp =
         , return OP_NOP8
         , return OP_NOP9
         , return OP_NOP10
+        -- Bitcoin Cash Nov 2018 hard fork
+        , return OP_CHECKDATASIG
+        , return OP_CHECKDATASIGVERIFY
+        -- Bitcoin Cash May 2020 hard fork
+        , return OP_REVERSEBYTES
         -- Other
         , return OP_PUBKEYHASH
         , return OP_PUBKEY

@@ -214,6 +214,8 @@ data ScriptOp
       -- Bitcoin Cash Nov 2018 hard fork
     | OP_CHECKDATASIG
     | OP_CHECKDATASIGVERIFY
+      -- Bitcoin Cash May 2020 hard fork
+    | OP_REVERSEBYTES
       -- Other
     | OP_PUBKEYHASH
     | OP_PUBKEY
@@ -366,6 +368,9 @@ instance Serialize ScriptOp where
             -- Bitcoin Cash Nov 2018 hard fork
             | op == 0xba = return OP_CHECKDATASIG
             | op == 0xbb = return OP_CHECKDATASIGVERIFY
+
+            -- Bitcoin Cash May 2020 hard fork
+            | op == 0xbc = return OP_REVERSEBYTES
 
             -- Constants
             | op == 0xfd = return OP_PUBKEYHASH
@@ -533,6 +538,9 @@ instance Serialize ScriptOp where
         -- Bitcoin Cash Nov 2018 hard fork
         OP_CHECKDATASIG      -> putWord8 0xba
         OP_CHECKDATASIGVERIFY -> putWord8 0xbb
+
+        -- Bitcoin Cash May 2020 hard fork
+        OP_REVERSEBYTES      -> putWord8 0xbc
 
 
 -- | Check whether opcode is only data.

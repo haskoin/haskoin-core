@@ -80,11 +80,14 @@ arbitraryWLTx net wit = do
                            then 2
                            else 0
                      , 5 -- avoid witness case
-                     )
+                      )
     inps <- vectorOf ni (arbitraryTxIn net)
     outs <- vectorOf no (arbitraryTxOut net)
     let uniqueInps = nubBy (\a b -> prevOutput a == prevOutput b) inps
-    w <- if wit then vectorOf (length uniqueInps) (listOf arbitraryBS) else return []
+    w <-
+        if wit
+            then vectorOf (length uniqueInps) (listOf arbitraryBS)
+            else return []
     Tx <$> arbitrary <*> pure uniqueInps <*> pure outs <*> pure w <*> arbitrary
 
 -- | Arbitrary transaction containing only inputs of type 'SpendPKHash',

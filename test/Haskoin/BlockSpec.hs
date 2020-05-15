@@ -4,20 +4,16 @@ module Haskoin.BlockSpec
     ) where
 
 import           Control.Monad.State.Strict
-import           Data.Aeson                 as A
 import           Data.Either                (fromRight)
-import           Data.Map.Strict            (singleton)
 import           Data.Maybe                 (fromJust)
-import           Data.Serialize             as S
 import           Data.String                (fromString)
 import           Data.String.Conversions    (cs)
 import           Data.Text                  (Text)
 import           Haskoin.Block
-import           Haskoin.Block.Headers
-import           Haskoin.Block.Merkle
 import           Haskoin.Constants
 import           Haskoin.Test
 import           Haskoin.Transaction
+import           Haskoin.UtilSpec           (cerealID, testJsonID)
 import           Test.Hspec
 import           Test.HUnit                 hiding (State)
 import           Test.QuickCheck
@@ -67,7 +63,6 @@ spec = do
                 fromString (cs $ blockHashToHex h) == h
         it "show and read block hash" $
             property $ forAll arbitraryBlockHash $ \h -> read (show h) == h
-        it "json block hash" $ property $ forAll arbitraryBlockHash testID
     describe "merkle trees" $ do
         let net' = btc
         it "builds tree of right width at height 1" $ property testTreeWidth
@@ -82,15 +77,11 @@ spec = do
     describe "compact number" $ do
         it "compact number local vectors" testCompact
         it "compact number imported vectors" testCompactBitcoinCore
-    describe "block serialization" $ do
+    describe "binary block serialization" $ do
         it "encodes and decodes block" $
             property $ forAll (arbitraryBlock net) cerealID
-        it "encodes and decodes block JSON" $
-            property $ forAll (arbitraryBlock net) testID
         it "encodes and decodes block header" $
             property $ forAll arbitraryBlockHeader cerealID
-        it "encodes and decodes block header JSON" $
-            property $ forAll arbitraryBlockHeader testID
         it "encodes and decodes getblocks" $
             property $ forAll arbitraryGetBlocks cerealID
         it "encodes and decodes getheaders" $
@@ -99,6 +90,13 @@ spec = do
             property $ forAll arbitraryHeaders cerealID
         it "encodes and decodes merkle block" $
             property $ forAll arbitraryMerkleBlock cerealID
+    describe "JSON block serialization" $ do
+        it "encodes and decodes Block" $
+            property $ forAll (arbitraryBlock net) testJsonID
+        it "encodes and decodes BlockHash" $
+            property $ forAll arbitraryBlockHash testJsonID
+        it "encodes and decodes BlockHeader" $
+            property $ forAll arbitraryBlockHeader testJsonID
     describe "helper functions" $ do
         it "computes bitcoin block subsidy correctly" (testSubsidy btc)
         it "computes regtest block subsidy correctly" (testSubsidy btcRegTest)
@@ -337,14 +335,6 @@ merkleVectors =
         ]
       )
     ]
-
-testID :: (FromJSON a, ToJSON a, Eq a) => a -> Bool
-testID x =
-    (A.decode . A.encode) (singleton ("object" :: String) x) ==
-    Just (singleton ("object" :: String) x)
-
-cerealID :: (Serialize a, Eq a) => a -> Bool
-cerealID x = S.decode (S.encode x) == Right x
 
 testSubsidy :: Network -> Assertion
 testSubsidy net = go (2 * 50 * 100 * 1000 * 1000) 0

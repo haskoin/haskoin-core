@@ -320,18 +320,21 @@ findSigInput = S.findInputIndex sigInputOP
 -- | Merge partially-signed multisig transactions.  This function does not
 -- support segwit and P2SH-segwit inputs.  Use PSBTs to merge transactions with
 -- segwit inputs.
-mergeTxs :: Network -> [Tx] -> [(ScriptOutput, Word64, OutPoint)] -> Either String Tx
+mergeTxs ::
+       Network -> [Tx] -> [(ScriptOutput, Word64, OutPoint)] -> Either String Tx
 mergeTxs net txs os
     | null txs = Left "Transaction list is empty"
     | length (nub emptyTxs) /= 1 = Left "Transactions do not match"
     | length txs == 1 = return $ head txs
     | otherwise = foldM (mergeTxInput net txs) (head emptyTxs) outs
   where
-    zipOp = zip (matchTemplate os (txIn $ head txs) f) [0..]
-    outs = map (first $ (\(o,v,_) -> (o,v)) . fromJust) $ filter (isJust . fst) zipOp
+    zipOp = zip (matchTemplate os (txIn $ head txs) f) [0 ..]
+    outs =
+        map (first $ (\(o, v, _) -> (o, v)) . fromJust) $
+        filter (isJust . fst) zipOp
     f (_, _, o) txin = o == prevOutput txin
     emptyTxs = map (\tx -> foldl clearInput tx outs) txs
-    ins is i = updateIndex i is (\ti -> ti{ scriptInput = B.empty })
+    ins is i = updateIndex i is (\ti -> ti {scriptInput = B.empty})
     clearInput tx (_, i) =
         Tx (txVersion tx) (ins (txIn tx) i) (txOut tx) [] (txLockTime tx)
 
@@ -349,7 +352,7 @@ mergeTxInput net txs tx ((so, val), i)
     let ins = map (scriptInput . (!! i) . txIn) txs
     sigRes <- mapM extractSigs $ filter (not . B.null) ins
     let rdm = snd $ head sigRes
-    unless (all (== rdm) $ map snd sigRes) $ Left "Redeem scripts do not match"
+    unless (all ((== rdm) . snd) sigRes) $ Left "Redeem scripts do not match"
     si <- encodeInputBS <$> go (nub $ concatMap fst sigRes) so rdm
     let ins' = updateIndex i (txIn tx) (\ti -> ti {scriptInput = si})
     return $ Tx (txVersion tx) ins' (txOut tx) [] (txLockTime tx)
@@ -390,16 +393,34 @@ verifyStdTx net tx xs =
   where
     f (_, _, o) txin = o == prevOutput txin
     go (Just (so, val, _), i) = verifyStdInput net tx i so val
-    go _                      = False
+    go _ = False
 
 -- | Verify if a transaction input is valid and standard.
 verifyStdInput :: Network -> Tx -> Int -> ScriptOutput -> Word64 -> Bool
 verifyStdInput net tx i so0 val
-    | isSegwit so0 = fromRight False $ (inp == mempty &&) . verifySegwitInput so0 <$> wp so0
-    | otherwise    = fromRight False
-                   $ verifyLegacyInput so0 <$> decodeInputBS net inp
-                 <|> (nestedScriptOutput >>= \so -> verifyNestedInput so0 so <$> wp so)
+    | isSegwit so0 =
+      fromRight False $ (inp == mempty &&) . verifySegwitInput so0 <$> wp so0
+    | otherwise =
+        fromRight False $
+            (verifyLegacyInput so0 <$> decodeInputBS net inp) <|>
+            (nestedScriptOutput >>= \so -> verifyNestedInput so0 so <$> wp so)
   where
+    inp = scriptInput $ txIn tx !! i
+    theTxSigHash so = S.makeSigHash net tx i so val
+
+    ws :: WitnessStack
+    ws | length (txWitness tx) > i = txWitness tx !! i
+       | otherwise = []
+
+    wp :: ScriptOutput -> Either String (Maybe ScriptOutput, SimpleInput)
+    wp so = decodeWitnessInput net =<< viewWitnessProgram net so ws
+
+    nestedScriptOutput :: Either String ScriptOutput
+    nestedScriptOutput = scriptOps <$> decode inp >>= \case
+        [OP_PUSHDATA bs _] -> decodeOutputBS bs
+        _ -> Left "nestedScriptOutput: not a nested output"
+
+    verifyLegacyInput :: ScriptOutput -> ScriptInput -> Bool
     verifyLegacyInput so si = case (so, si) of
         (PayPK pub, RegularInput (SpendPK (TxSignature sig sh))) ->
             verifyHashSig (theTxSigHash so sh Nothing) sig (pubKeyPoint pub)
@@ -413,6 +434,8 @@ verifyStdInput net tx i so0 val
         _ -> False
       where out = encodeOutput so
 
+    verifySegwitInput ::
+        ScriptOutput -> (Maybe ScriptOutput, SimpleInput) -> Bool
     verifySegwitInput so (rdm, si) = case (so, rdm, si) of
         (PayWitnessPKHash h, Nothing, SpendPKHash (TxSignature sig sh) pub) ->
             pubKeyWitnessAddr pub == p2wpkhAddr h &&
@@ -429,20 +452,11 @@ verifyStdInput net tx i so0 val
             countMulSig' (\sh -> theTxSigHash so sh $ Just rdm') (pubKeyPoint <$> pubs) sigs == r
         _ -> False
 
+    verifyNestedInput ::
+        ScriptOutput -> ScriptOutput -> (Maybe RedeemScript, SimpleInput) -> Bool
     verifyNestedInput so so' x = case so of
         PayScriptHash h -> payToScriptAddress so' == p2shAddr h && verifySegwitInput so' x
-        _               -> False
-
-    inp             = scriptInput $ txIn tx !! i
-    theTxSigHash so = S.makeSigHash net tx i so val
-
-    ws | length (txWitness tx) > i = txWitness tx !! i
-       | otherwise                 = []
-    wp so = decodeWitnessInput net =<< viewWitnessProgram net so ws
-
-    nestedScriptOutput = scriptOps <$> decode inp >>= \case
-        [OP_PUSHDATA bs _] -> decodeOutputBS bs
-        _                  -> Left "nestedScriptOutput: not a nested output"
+        _ -> False
 
 -- | Count the number of valid signatures for a multi-signature transaction.
 countMulSig ::

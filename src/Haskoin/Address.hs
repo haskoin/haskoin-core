@@ -139,10 +139,7 @@ addrToJSON :: Network -> Address -> Value
 addrToJSON net a = toJSON (addrToString net a)
 
 addrToEncoding :: Network -> Address -> Encoding
-addrToEncoding net a =
-    case addrToString net a of
-        Nothing  -> null_
-        Just txt -> text txt
+addrToEncoding net = maybe null_ text . addrToString net
 
 -- | JSON parsing for Bitcoin addresses. Works with 'Base58', 'CashAddr' and
 -- 'Bech32'.
@@ -151,7 +148,7 @@ addrFromJSON net =
     withText "address" $ \t ->
         case stringToAddr net t of
             Nothing -> fail "could not decode address"
-            Just x  -> return x
+            Just x -> return x
 
 -- | Convert address to human-readable string. Uses 'Base58', 'Bech32', or
 -- 'CashAddr' depending on network.

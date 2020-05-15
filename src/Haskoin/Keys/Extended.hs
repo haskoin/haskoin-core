@@ -170,6 +170,14 @@ xPrvToJSON net = A.String . xPrvExport net
 xPrvToEncoding :: Network -> XPrvKey -> Encoding
 xPrvToEncoding net = text . xPrvExport net
 
+-- | Decode an extended private key from a JSON string
+xPrvFromJSON :: Network -> Value -> Parser XPrvKey
+xPrvFromJSON net =
+    withText "xprv" $ \t ->
+        case xPrvImport net t of
+            Nothing -> fail "could not read xprv"
+            Just x  -> return x
+
 -- | Data type representing an extended BIP32 public key.
 data XPubKey = XPubKey
     { xPubDepth  :: !Word8     -- ^ depth in the tree
@@ -178,7 +186,6 @@ data XPubKey = XPubKey
     , xPubChain  :: !ChainCode -- ^ chain code
     , xPubKey    :: !PubKey    -- ^ public key of this node
     } deriving (Generic, Eq, Show, Read, NFData)
-
 
 -- | Decode an extended public key from a JSON string
 xPubFromJSON :: Network -> Value -> Parser XPubKey
@@ -194,14 +201,6 @@ xPubToJSON net = A.String . xPubExport net
 
 xPubToEncoding :: Network -> XPubKey -> Encoding
 xPubToEncoding net = text . xPubExport net
-
--- | Decode an extended private key from a JSON string
-xPrvFromJSON :: Network -> Value -> Parser XPrvKey
-xPrvFromJSON net =
-    withText "xprv" $ \t ->
-        case xPrvImport net t of
-            Nothing -> fail "could not read xprv"
-            Just x  -> return x
 
 -- | Build a BIP32 compatible extended private key from a bytestring. This will
 -- produce a root node (@depth=0@ and @parent=0@).
@@ -358,46 +357,46 @@ xPrvWif net xkey = toWif net (wrapSecKey True (xPrvKey xkey))
 -- | Parse a binary extended private key.
 getXPrvKey :: Network -> Get XPrvKey
 getXPrvKey net = do
-        ver <- getWord32be
-        unless (ver == getExtSecretPrefix net) $ fail
-            "Get: Invalid version for extended private key"
-        XPrvKey <$> getWord8
-                <*> getWord32be
-                <*> getWord32be
-                <*> S.get
-                <*> getPadPrvKey
+    ver <- getWord32be
+    unless (ver == getExtSecretPrefix net) $ fail
+        "Get: Invalid version for extended private key"
+    XPrvKey <$> getWord8
+            <*> getWord32be
+            <*> getWord32be
+            <*> S.get
+            <*> getPadPrvKey
 
 -- | Serialize an extended private key.
 putXPrvKey :: Network -> Putter XPrvKey
 putXPrvKey net k = do
-        putWord32be  $ getExtSecretPrefix net
-        putWord8     $ xPrvDepth k
-        putWord32be  $ xPrvParent k
-        putWord32be  $ xPrvIndex k
-        put          $ xPrvChain k
-        putPadPrvKey $ xPrvKey k
+    putWord32be $ getExtSecretPrefix net
+    putWord8 $ xPrvDepth k
+    putWord32be $ xPrvParent k
+    putWord32be $ xPrvIndex k
+    put $ xPrvChain k
+    putPadPrvKey $ xPrvKey k
 
 -- | Parse a binary extended public key.
 getXPubKey :: Network -> Get XPubKey
 getXPubKey net = do
-        ver <- getWord32be
-        unless (ver == getExtPubKeyPrefix net) $ fail
-            "Get: Invalid version for extended public key"
-        XPubKey <$> getWord8
-                <*> getWord32be
-                <*> getWord32be
-                <*> S.get
-                <*> (pubKeyPoint <$> S.get)
+    ver <- getWord32be
+    unless (ver == getExtPubKeyPrefix net) $ fail
+        "Get: Invalid version for extended public key"
+    XPubKey <$> getWord8
+            <*> getWord32be
+            <*> getWord32be
+            <*> S.get
+            <*> (pubKeyPoint <$> S.get)
 
 -- | Serialize an extended public key.
 putXPubKey :: Network -> Putter XPubKey
 putXPubKey net k = do
-        putWord32be $ getExtPubKeyPrefix net
-        putWord8    $ xPubDepth k
-        putWord32be $ xPubParent k
-        putWord32be $ xPubIndex k
-        put         $ xPubChain k
-        put         $ wrapPubKey True (xPubKey k)
+    putWord32be $ getExtPubKeyPrefix net
+    putWord8 $ xPubDepth k
+    putWord32be $ xPubParent k
+    putWord32be $ xPubIndex k
+    put $ xPubChain k
+    put $ wrapPubKey True (xPubKey k)
 
 {- Derivation helpers -}
 
@@ -541,8 +540,8 @@ data DerivPathI t where
     Deriv :: DerivPathI t
 
 instance NFData (DerivPathI t) where
-    rnf (a :| b) = rnf a `seq` rnf b `seq` ()
-    rnf (a :/ b) = rnf a `seq` rnf b `seq` ()
+    rnf (a :| b) = rnf a `seq` rnf b
+    rnf (a :/ b) = rnf a `seq` rnf b
     rnf Deriv    = ()
 
 instance Eq (DerivPathI t) where
@@ -568,9 +567,16 @@ instance Ord (DerivPathI t) where
     Deriv `compare` _      = LT
     _     `compare` Deriv  = GT
 
-
 instance Serialize DerivPath where
     get = listToPath <$> S.get
+    put = put . pathToList
+
+instance Serialize HardPath where
+    get = maybe mzero return . toHard . listToPath =<< S.get
+    put = put . pathToList
+
+instance Serialize SoftPath where
+    get = maybe mzero return . toSoft . listToPath =<< S.get
     put = put . pathToList
 
 -- | Get a list of derivation indices from a derivation path.
@@ -729,11 +735,15 @@ instance FromJSON SoftPath where
 
 instance ToJSON (DerivPathI t) where
     toJSON = A.String . cs . pathToStr
+    toEncoding = text . cs . pathToStr
 
 instance ToJSON ParsedPath where
     toJSON (ParsedPrv p)   = A.String . cs . ("m" ++) . pathToStr $ p
     toJSON (ParsedPub p)   = A.String . cs . ("M" ++) . pathToStr $ p
     toJSON (ParsedEmpty p) = A.String . cs . ("" ++) . pathToStr $ p
+    toEncoding (ParsedPrv p)   = text . cs . ("m" ++) . pathToStr $ p
+    toEncoding (ParsedPub p)   = text . cs . ("M" ++) . pathToStr $ p
+    toEncoding (ParsedEmpty p) = text . cs . ("" ++) . pathToStr $ p
 
 {- Parsing derivation paths of the form m/1/2'/3 or M/1/2'/3 -}
 

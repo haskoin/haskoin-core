@@ -2,11 +2,9 @@
 module Haskoin.Keys.ExtendedSpec (spec) where
 
 import           Data.Aeson                 as A
-import           Data.Aeson.Types           as A
 import           Data.Bits                  ((.&.))
 import qualified Data.ByteString.Lazy.Char8 as B8
 import           Data.Either                (isLeft)
-import           Data.Map.Strict            (singleton)
 import           Data.Maybe                 (fromJust, isJust, isNothing)
 import           Data.Serialize             as S
 import           Data.String                (fromString)
@@ -18,6 +16,9 @@ import           Haskoin.Constants
 import           Haskoin.Keys
 import           Haskoin.Test
 import           Haskoin.Util
+import           Haskoin.UtilSpec           (cerealID, customCerealID,
+                                             testCustomEncoding, testCustomJSON,
+                                             testJsonID)
 import           Test.Hspec
 import           Test.HUnit                 (Assertion, assertBool, assertEqual)
 import           Test.QuickCheck            hiding ((.&.))
@@ -46,18 +47,52 @@ spec = do
         it "path parsing" testParsePath
         it "from json" testFromJsonPath
         it "to json" testToJsonPath
-    describe "extended keys" $ do
+    describe "JSON Encoding" $ do
         let net = btc
-        it "computes pubkey of a subkey is subkey of the pubkey" $
-            property $ forAll arbitraryXPrvKey pubKeyOfSubKeyIsSubKeyOfPubKey
-        it "exports and imports extended private key" $
+        it "encodes and decodes derivation path to JSON" $
+            forAll arbitraryDerivPath testJsonID
+        it "encodes and decodes hard path to JSON" $
+            forAll arbitraryHardPath testJsonID
+        it "encodes and decodes soft path to JSON" $
+            forAll arbitrarySoftPath testJsonID
+        it "encodes and decodes parsed derivation path to JSON" $
+            forAll arbitraryParsedPath testJsonID
+        it "encodes and decodes extended private key (JSON)" $
+            forAll
+                arbitraryXPrvKey
+                (testCustomJSON (xPrvFromJSON net) (xPrvToJSON net))
+        it "encodes and decodes extended private key (Encoding)" $
+            forAll
+                arbitraryXPrvKey
+                (testCustomEncoding (xPrvFromJSON net) (xPrvToEncoding net))
+        it "encodes and decodes extended public key (JSON)" $
+            forAll
+                arbitraryXPubKey
+                (testCustomJSON (xPubFromJSON net) (xPubToJSON net) . snd)
+        it "encodes and decodes extended public key (Encoding)" $
+            forAll
+                arbitraryXPubKey
+                (testCustomEncoding (xPubFromJSON net) (xPubToEncoding net) . snd)
+    describe "Binary Encoding" $ do
+        let net = btc
+        it "encodes and decodes extended private key" $
             property $
-            forAll arbitraryXPrvKey $ \k ->
-                xPrvImport net (xPrvExport net k) == Just k
-        it "exports and imports extended public key" $
+            forAll arbitraryXPrvKey $
+            customCerealID (getXPrvKey net) (putXPrvKey net)
+        it "encodes and decodes extended public key" $
             property $
-            forAll arbitraryXPubKey $ \(_, k) ->
-                xPubImport net (xPubExport net k) == Just k
+            forAll arbitraryXPubKey $
+            customCerealID (getXPubKey net) (putXPubKey net) . snd
+        it "Cereal encode derivation path" $
+            property $ forAll arbitraryDerivPath cerealID
+        it "Cereal encode hard derivation path" $
+            property $ forAll arbitraryHardPath cerealID
+        it "Cereal encode soft derivation path" $
+            property $ forAll arbitrarySoftPath cerealID
+        -- This instance does not exist. Uncomment if you add a sensible one.
+        -- it "Cereal encode parsed derivation path" $
+        --     property $ forAll arbitraryParsedPath cerealID
+    describe "Derivation Paths" $ do
         it "show and read derivation path" $
             property $ forAll arbitraryDerivPath $ \p -> read (show p) == p
         it "show and read hard derivation path" $
@@ -86,22 +121,18 @@ spec = do
                 toSoft (listToPath $ pathToList p) == Just p
         it "read and show parsed path" $
             property $ forAll arbitraryParsedPath $ \p -> read (show p) == p
-        it "encodes and decodes extended private key" $
-            forAll
-                arbitraryXPrvKey
-                (testCustom (xPrvFromJSON net) (xPrvToJSON net))
-        it "encodes and decodes extended public key" $
-            forAll
-                arbitraryXPubKey
-                (testCustom (xPubFromJSON net) (xPubToJSON net) . snd)
-        it "encodes and decodes derivation path" $
-            forAll arbitraryDerivPath testID
-        it "encodes and decodes parsed derivation path" $
-            forAll arbitraryParsedPath testID
-        it "encodes and decodes extended private key" $
+    describe "Extended Keys" $ do
+        let net = btc
+        it "computes pubkey of a subkey is subkey of the pubkey" $
+            property $ forAll arbitraryXPrvKey pubKeyOfSubKeyIsSubKeyOfPubKey
+        it "exports and imports extended private key" $
             property $
-            forAll arbitraryXPrvKey $
-            testPutGet (getXPrvKey net) (putXPrvKey net)
+            forAll arbitraryXPrvKey $ \k ->
+                xPrvImport net (xPrvExport net k) == Just k
+        it "exports and imports extended public key" $
+            property $
+            forAll arbitraryXPubKey $ \(_, k) ->
+                xPubImport net (xPubExport net k) == Just k
         it "shows and reads extended private key" $
             property $
             forAll arbitraryXPrvKey $ \k -> read (show k) `shouldBe` k
@@ -507,15 +538,3 @@ pubKeyOfSubKeyIsSubKeyOfPubKey k i =
     deriveXPubKey (prvSubKey k i') == pubSubKey (deriveXPubKey k) i'
   where
     i' = fromIntegral $ i .&. 0x7fffffff -- make it a public derivation
-
-
-testID :: (FromJSON a, ToJSON a, Eq a) => a -> Bool
-testID x =
-    (A.decode . A.encode) (singleton ("object" :: String) x) ==
-    Just (singleton ("object" :: String) x)
-
-testCustom :: Eq a => (Value -> Parser a) -> (a -> Value) -> a -> Bool
-testCustom f g x = parseMaybe f (g x) == Just x
-
-testPutGet :: Eq a => Get a -> Putter a -> a -> Bool
-testPutGet g p a = runGet g (runPut (p a)) == Right a

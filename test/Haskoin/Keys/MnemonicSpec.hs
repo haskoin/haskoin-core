@@ -3,18 +3,14 @@ module Haskoin.Keys.MnemonicSpec (spec) where
 
 import           Control.Monad           (zipWithM_)
 import           Data.Bits               (shiftR, (.&.))
-import           Data.ByteString         (ByteString)
 import qualified Data.ByteString         as BS
-import qualified Data.ByteString.Char8   as C
 import           Data.Either             (fromRight)
 import           Data.List               (isPrefixOf)
 import           Data.Maybe              (fromJust)
 import           Data.Serialize          (Serialize, encode)
-import           Data.String.Conversions (cs)
 import           Data.Text               (Text)
 import qualified Data.Text               as T
 import           Data.Word               (Word32, Word64)
-import           Haskoin.Crypto
 import           Haskoin.Keys
 import           Haskoin.Test
 import           Haskoin.Util

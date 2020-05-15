@@ -1,11 +1,24 @@
-module Haskoin.UtilSpec (spec) where
+module Haskoin.UtilSpec
+    ( spec
+    , testJsonID
+    , testCustomJSON
+    , testCustomEncoding
+    , cerealID
+    , customCerealID
+    ) where
 
-import qualified Data.ByteString as BS
-import           Data.Either     (fromLeft, fromRight, isLeft, isRight)
-import           Data.Foldable   (toList)
-import           Data.List       (permutations)
+import           Data.Aeson          (FromJSON, ToJSON)
+import qualified Data.Aeson          as A
+import           Data.Aeson.Encoding (encodingToLazyByteString)
+import           Data.Aeson.Types    (Parser, parseMaybe)
+import qualified Data.ByteString     as BS
+import           Data.Either         (fromLeft, fromRight, isLeft, isRight)
+import           Data.Foldable       (toList)
+import           Data.List           (permutations)
+import           Data.Map.Strict     (singleton)
 import           Data.Maybe
-import qualified Data.Sequence   as Seq
+import qualified Data.Sequence       as Seq
+import           Data.Serialize      as S
 import           Haskoin.Test
 import           Haskoin.Util
 import           Test.Hspec
@@ -62,3 +75,33 @@ testEither e =
             not (isRight e) &&
             fromLeft (error "Unexpected Right") e == v &&
             isNothing (eitherToMaybe e)
+
+cerealID :: (Serialize a, Eq a) => a -> Bool
+cerealID x = S.decode (S.encode x) == Right x
+
+customCerealID :: Eq a => Get a -> Putter a -> a -> Bool
+customCerealID g p a = runGet g (runPut (p a)) == Right a
+
+testJsonID :: (FromJSON a, ToJSON a, Eq a) => a -> Bool
+testJsonID x = jsonID_ x && encodingID_ x
+
+jsonID_ :: (FromJSON a, ToJSON a, Eq a) => a -> Bool
+jsonID_ x =
+    (A.fromJSON . A.toJSON) (singleton ("object" :: String) x) ==
+    A.Success (singleton ("object" :: String) x)
+
+encodingID_ :: (FromJSON a, ToJSON a, Eq a) => a -> Bool
+encodingID_ x =
+    (A.decode . encodingToLazyByteString . A.toEncoding)
+        (singleton ("object" :: String) x) ==
+    Just (singleton ("object" :: String) x)
+
+testCustomJSON :: Eq a => (A.Value -> Parser a) -> (a -> A.Value) -> a -> Bool
+testCustomJSON f g x = parseMaybe f (g x) == Just x
+
+testCustomEncoding ::
+       Eq a => (A.Value -> Parser a) -> (a -> A.Encoding) -> a -> Bool
+testCustomEncoding f g x =
+    dec (encodingToLazyByteString $ g x) == Just x
+  where
+    dec bs = parseMaybe f =<< A.decode bs

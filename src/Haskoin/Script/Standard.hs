@@ -48,21 +48,20 @@ import           Haskoin.Util
 -- provide the signing data required to unlock the coins of the output they are
 -- trying to spend, except in pay-to-witness-public-key-hash and
 -- pay-to-script-hash transactions.
-data SimpleInput
-      -- | spend pay-to-public-key output
-    = SpendPK { getInputSig :: !TxSignature
-                  -- ^ transaction signature
-               }
-      -- | spend pay-to-public-key-hash output
-    | SpendPKHash { getInputSig :: !TxSignature
-                      -- ^ embedded signature
-                  , getInputKey :: !PubKeyI
-                      -- ^ public key
-                   }
-      -- | spend multisig output
-    | SpendMulSig { getInputMulSigKeys :: ![TxSignature]
-                      -- ^ list of signatures
-                   }
+data SimpleInput = SpendPK
+    { getInputSig :: !TxSignature
+    -- ^ transaction signature
+    }
+    | SpendPKHash
+    { getInputSig :: !TxSignature
+    -- ^ embedded signature
+    , getInputKey :: !PubKeyI
+    -- ^ public key
+    }
+    | SpendMulSig
+    { getInputMulSigKeys :: ![TxSignature]
+    -- ^ list of signatures
+    }
     deriving (Eq, Show, Generic, NFData)
 
 -- | Returns true if the input script is spending from a pay-to-public-key
@@ -92,17 +91,16 @@ isScriptHashInput _                     = False
 type RedeemScript = ScriptOutput
 
 -- | Standard input script high-level representation.
-data ScriptInput
-    = RegularInput
-          { getRegularInput :: !SimpleInput
-            -- ^ get wrapped simple input
-          }
+data ScriptInput = RegularInput
+    { getRegularInput :: !SimpleInput
+    -- ^ get wrapped simple input
+    }
     | ScriptHashInput
-          { getScriptHashInput  :: !SimpleInput
-            -- ^ get simple input associated with redeem script
-          , getScriptHashRedeem :: !RedeemScript
-            -- ^ redeem script
-          }
+    { getScriptHashInput  :: !SimpleInput
+    -- ^ get simple input associated with redeem script
+    , getScriptHashRedeem :: !RedeemScript
+    -- ^ redeem script
+    }
     deriving (Eq, Show, Generic, NFData)
 
 -- | Heuristic to decode an input script into one of the standard types.
@@ -111,7 +109,7 @@ decodeSimpleInput net (Script ops) =
     maybeToEither errMsg $ matchPK ops <|> matchPKHash ops <|> matchMulSig ops
   where
     matchPK [op] = SpendPK <$> f op
-    matchPK _    = Nothing
+    matchPK _ = Nothing
     matchPKHash [op, OP_PUSHDATA pub _] =
         SpendPKHash <$> f op <*> eitherToMaybe (decode pub)
     matchPKHash _ = Nothing
@@ -119,10 +117,10 @@ decodeSimpleInput net (Script ops) =
         guard $ x == OP_0
         SpendMulSig <$> mapM f xs
     matchMulSig _ = Nothing
-    f OP_0                    = return TxSignatureEmpty
+    f OP_0 = return TxSignatureEmpty
     f (OP_PUSHDATA "" OPCODE) = f OP_0
-    f (OP_PUSHDATA bs _)      = eitherToMaybe $ decodeTxSig net bs
-    f _                       = Nothing
+    f (OP_PUSHDATA bs _) = eitherToMaybe $ decodeTxSig net bs
+    f _ = Nothing
     errMsg = "decodeInput: Could not decode script input"
 
 -- | Heuristic to decode a 'ScriptInput' from a 'Script'. This function fails if

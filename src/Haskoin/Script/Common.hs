@@ -618,9 +618,11 @@ data ScriptOutput
     deriving (Eq, Show, Read, Generic, Hashable, NFData)
 
 instance FromJSON ScriptOutput where
-    parseJSON = withText "scriptoutput" $ \t -> either fail return $
-        maybeToEither "scriptoutput not hex" (decodeHex t) >>=
-        decodeOutputBS
+    parseJSON =
+        withText "scriptoutput" $ \t ->
+            either fail return $
+            maybeToEither "scriptoutput not hex" (decodeHex t) >>=
+            decodeOutputBS
 
 instance ToJSON ScriptOutput where
     toJSON = String . encodeHex . encodeOutputBS

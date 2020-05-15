@@ -52,7 +52,10 @@ isSegwit = \case
 -- | High level represenation of a (v0) witness program
 --
 -- @since 0.11.0.0
-data WitnessProgram = P2WPKH WitnessProgramPKH | P2WSH WitnessProgramSH | EmptyWitnessProgram
+data WitnessProgram
+    = P2WPKH WitnessProgramPKH
+    | P2WSH WitnessProgramSH
+    | EmptyWitnessProgram
     deriving (Eq, Show)
 
 -- | Encode a witness program
@@ -70,7 +73,8 @@ toWitnessStack = \case
 data WitnessProgramPKH = WitnessProgramPKH
     { witnessSignature :: !TxSignature
     , witnessPubKey    :: !PubKeyI
-    } deriving (Eq, Show)
+    }
+    deriving (Eq, Show)
 
 -- | High-level representation of a P2WSH witness
 --
@@ -78,12 +82,14 @@ data WitnessProgramPKH = WitnessProgramPKH
 data WitnessProgramSH = WitnessProgramSH
     { witnessScriptHashStack  :: ![ByteString]
     , witnessScriptHashScript :: !Script
-    } deriving (Eq, Show)
+    }
+    deriving (Eq, Show)
 
 -- | Calculate the witness program from the transaction data
 --
 -- @since 0.11.0.0
-viewWitnessProgram :: Network -> ScriptOutput -> WitnessStack -> Either String WitnessProgram
+viewWitnessProgram ::
+       Network -> ScriptOutput -> WitnessStack -> Either String WitnessProgram
 viewWitnessProgram net so witness = case so of
     PayWitnessPKHash _ | length witness == 2 -> do
         sig    <- decodeTxSig net $ head witness
@@ -98,7 +104,10 @@ viewWitnessProgram net so witness = case so of
 -- | Analyze the witness, trying to match it with standard input structures
 --
 -- @since 0.11.0.0
-decodeWitnessInput :: Network -> WitnessProgram -> Either String (Maybe ScriptOutput, SimpleInput)
+decodeWitnessInput ::
+       Network
+    -> WitnessProgram
+    -> Either String (Maybe ScriptOutput, SimpleInput)
 decodeWitnessInput net = \case
     P2WPKH (WitnessProgramPKH sig key) -> return (Nothing, SpendPKHash sig key)
     P2WSH (WitnessProgramSH st scr) -> do

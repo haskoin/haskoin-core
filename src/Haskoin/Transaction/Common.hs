@@ -34,9 +34,10 @@ import           Control.DeepSeq
 import           Control.Monad           (forM_, guard, liftM2, mzero,
                                           replicateM, (<=<))
 import           Data.Aeson              as A
-import           Data.Aeson.Encoding     (text)
+import           Data.Aeson.Encoding     (unsafeToEncoding)
 import           Data.ByteString         (ByteString)
 import qualified Data.ByteString         as B
+import           Data.ByteString.Builder (char7)
 import           Data.Hashable           (Hashable)
 import           Data.Maybe              (fromMaybe)
 import           Data.Serialize          as S
@@ -74,7 +75,8 @@ instance FromJSON TxHash where
 
 instance ToJSON TxHash where
     toJSON = A.String . txHashToHex
-    toEncoding h = text $ txHashToHex h
+    toEncoding h =
+        unsafeToEncoding $ char7 '"' <> hexBuilder (B.reverse (S.encode h)) <> char7 '"'
 
 -- | Transaction hash excluding signatures.
 nosigTxHash :: Tx -> TxHash
@@ -218,21 +220,21 @@ instance FromJSON Tx where
         f = maybe mzero return . decodeHex
 
 instance ToJSON Tx where
-    toJSON (Tx v i o w l) = 
+    toJSON (Tx v i o w l) =
         object
             [ "version" .= v
-            , "inputs" .= i   
-            , "outputs" .= o   
+            , "inputs" .= i
+            , "outputs" .= o
             , "witnessdata" .= fmap (fmap encodeHex) w
-            , "locktime" .= l   
+            , "locktime" .= l
             ]
-    toEncoding (Tx v i o w l) = 
+    toEncoding (Tx v i o w l) =
         pairs
             ( "version" .= v
-           <> "inputs" .= i   
-           <> "outputs" .= o   
+           <> "inputs" .= i
+           <> "outputs" .= o
            <> "witnessdata" .= fmap (fmap encodeHex) w
-           <> "locktime" .= l   
+           <> "locktime" .= l
             )
 
 -- | Data type representing a transaction input.

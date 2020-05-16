@@ -35,9 +35,10 @@ import           Control.Monad              (forM_, liftM2, mzero, replicateM)
 import           Data.Aeson                 (FromJSON (..), ToJSON (..),
                                              Value (..), object, toJSON,
                                              withObject, withText, (.:), (.=))
-import           Data.Aeson.Encoding        (pairs, text)
+import           Data.Aeson.Encoding        (pairs, unsafeToEncoding)
 import           Data.Bits                  (shiftL, shiftR, (.&.), (.|.))
 import qualified Data.ByteString            as B
+import           Data.ByteString.Builder    (char7)
 import           Data.Hashable              (Hashable)
 import           Data.Maybe                 (fromMaybe)
 import           Data.Serialize             (Serialize, decode, encode, get,
@@ -112,7 +113,9 @@ instance FromJSON BlockHash where
 
 instance ToJSON BlockHash where
     toJSON = String . blockHashToHex
-    toEncoding = text . blockHashToHex
+    toEncoding h =
+        unsafeToEncoding $
+        char7 '"' <> hexBuilder (B.reverse (encode h)) <> char7 '"'
 
 -- | Block hashes are reversed with respect to the in-memory byte order in a
 -- block hash when displayed.

@@ -12,6 +12,7 @@ import           Haskoin.Network
 import           Haskoin.Test
 import           Haskoin.Transaction
 import           Haskoin.Util
+import           Haskoin.UtilSpec    (cerealID, customCerealID)
 import           Test.Hspec
 import           Test.HUnit          (Assertion, assertBool, assertEqual)
 import           Test.QuickCheck
@@ -57,7 +58,7 @@ spec = do
         it "encodes and decodes message" $
             property $
             forAll (arbitraryMessage net) $
-            testPutGet (getMessage net) (putMessage net)
+            customCerealID (getMessage net) (putMessage net)
     describe "serialization of bloom types" $ do
         it "encodes and decodes bloom flags" $
             property $ forAll arbitraryBloomFlags cerealID
@@ -106,12 +107,6 @@ bloomFilter3 =
     p = derivePubKeyI k
     bs = fromJust $ decodeHex "038fc16b080000000000000001"
 
-cerealID :: (Serialize a, Eq a) => a -> Bool
-cerealID x = S.decode (S.encode x) == Right x
-
-testPutGet :: Eq a => Get a -> Putter a -> a -> Bool
-testPutGet g p a = runGet g (runPut (p a)) == Right a
-
 relevantOutputUpdated :: Assertion
 relevantOutputUpdated = assertBool "Bloom filter output updated" $
     any (bloomContains bf2) spendTxInput
@@ -120,7 +115,7 @@ relevantOutputUpdated = assertBool "Bloom filter output updated" $
         relevantOutputHash = fromJust $ decodeHex"03f47604ea2736334151081e13265b4fe38e6fa8"
         bf1 = bloomInsert bf0 relevantOutputHash
         bf2 = fromJust $ bloomRelevantUpdate bf1 relevantTx
-        spendTxInput = (encode .prevOutput) <$> txIn spendRelevantTx
+        spendTxInput = encode .prevOutput <$> txIn spendRelevantTx
 
 irrelevantOutputNotUpdated :: Assertion
 irrelevantOutputNotUpdated = assertEqual "Bloom filter not updated" Nothing bf2
@@ -129,7 +124,6 @@ irrelevantOutputNotUpdated = assertEqual "Bloom filter not updated" Nothing bf2
         relevantOutputHash = fromJust $ decodeHex"03f47604ea2736334151081e13265b4fe38e6fa8"
         bf1 = bloomInsert bf0 relevantOutputHash
         bf2 = bloomRelevantUpdate bf1 unrelatedTx
-        spendTxInput = (encode .prevOutput) <$> txIn spendRelevantTx
 
 -- Random transaction (57dc904f32ad4daab7b321dd469e8791ad09df784cdd273a73985150a4f225e9)
 relevantTx :: Tx

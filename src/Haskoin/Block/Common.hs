@@ -1,5 +1,6 @@
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric  #-}
+{-# LANGUAGE DeriveAnyClass    #-}
+{-# LANGUAGE DeriveGeneric     #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-|
 Module      : Haskoin.Block.Common
 Copyright   : No rights reserved
@@ -32,8 +33,9 @@ module Haskoin.Block.Common
 import           Control.DeepSeq
 import           Control.Monad              (forM_, liftM2, mzero, replicateM)
 import           Data.Aeson                 (FromJSON (..), ToJSON (..),
-                                             Value (String), toJSON, withText)
-import           Data.Aeson.Encoding        (unsafeToEncoding)
+                                             Value (..), object, toJSON,
+                                             withObject, withText, (.:), (.=))
+import           Data.Aeson.Encoding        (pairs, unsafeToEncoding)
 import           Data.Bits                  (shiftL, shiftR, (.&.), (.|.))
 import qualified Data.ByteString            as B
 import           Data.ByteString.Builder    (char7)
@@ -61,16 +63,17 @@ type BlockHeight = Word32
 type Timestamp = Word32
 
 -- | Block header and transactions.
-data Block =
-    Block { blockHeader :: !BlockHeader
-          , blockTxns   :: ![Tx]
-          } deriving (Eq, Show, Read, Generic, Hashable, NFData)
+data Block = Block
+    { blockHeader :: !BlockHeader
+    , blockTxns   :: ![Tx]
+    }
+    deriving (Eq, Show, Read, Generic, Hashable, NFData)
 
 instance Serialize Block where
     get = do
-        header     <- get
+        header <- get
         (VarInt c) <- get
-        txs        <- replicateM (fromIntegral c) get
+        txs <- replicateM (fromIntegral c) get
         return $ Block header txs
     put (Block h txs) = do
         put h
@@ -78,41 +81,18 @@ instance Serialize Block where
         forM_ txs put
 
 instance ToJSON Block where
-    toJSON = String . encodeHex . encode
-    toEncoding s =
-        unsafeToEncoding $ char7 '"' <> hexBuilder (encode s) <> char7 '"'
+    toJSON (Block h t) = object ["header" .= h, "transactions" .= t]
+    toEncoding (Block h t) = pairs $ "header" .= h <> "transactions" .= t
 
 instance FromJSON Block where
     parseJSON =
-        withText "Block" $ \t -> do
-            bin <-
-                case decodeHex t of
-                    Nothing  -> mzero
-                    Just bin -> return bin
-            case decode bin of
-                Left e  -> fail e
-                Right h -> return h
-
-instance ToJSON BlockHeader where
-    toJSON = String . encodeHex . encode
-    toEncoding s =
-        unsafeToEncoding $ char7 '"' <> hexBuilder (encode s) <> char7 '"'
-
-instance FromJSON BlockHeader where
-    parseJSON =
-        withText "BlockHeader" $ \t -> do
-            bin <-
-                case decodeHex t of
-                    Nothing  -> mzero
-                    Just bin -> return bin
-            case decode bin of
-                Left e  -> fail e
-                Right h -> return h
+        withObject "Block" $ \o ->
+            Block <$> o .: "header" <*> o .: "transactions"
 
 -- | Block header hash. To be serialized reversed for display purposes.
 newtype BlockHash = BlockHash
-    { getBlockHash :: Hash256 }
-    deriving (Eq, Ord, Generic, Hashable, Serialize, NFData)
+    { getBlockHash :: Hash256
+    } deriving (Eq, Ord, Generic, Hashable, Serialize, NFData)
 
 instance Show BlockHash where
     showsPrec _ = shows . blockHashToHex
@@ -128,14 +108,14 @@ instance IsString BlockHash where
         in fromMaybe e $ hexToBlockHash $ cs s
 
 instance FromJSON BlockHash where
-    parseJSON = withText "block hash" $
+    parseJSON = withText "BlockHash" $
         maybe mzero return . hexToBlockHash
 
 instance ToJSON BlockHash where
     toJSON = String . blockHashToHex
-    toEncoding s =
+    toEncoding h =
         unsafeToEncoding $
-        char7 '"' <> hexBuilder (B.reverse (encode s)) <> char7 '"'
+        char7 '"' <> hexBuilder (B.reverse (encode h)) <> char7 '"'
 
 -- | Block hashes are reversed with respect to the in-memory byte order in a
 -- block hash when displayed.
@@ -156,24 +136,53 @@ hexToBlockHash hex = do
 -- 'BlockHeader' and/or additional entropy in the coinbase 'Transaction' of this
 -- 'Block'. Variations in the coinbase will result in different merkle roots in
 -- the 'BlockHeader'.
-data BlockHeader =
-    BlockHeader { blockVersion   :: !Word32      --  4 bytes
-                  -- | hash of the previous block (parent)
-                , prevBlock      :: !BlockHash   -- 32 bytes
-                  -- | root of the merkle tree of transactions
-                , merkleRoot     :: !Hash256     -- 32 bytes
-                  -- | unix timestamp
-                , blockTimestamp :: !Timestamp   --  4 bytes
-                  -- | difficulty target
-                , blockBits      :: !Word32      --  4 bytes
-                  -- | random nonce
-                , bhNonce        :: !Word32      --  4 bytes
-                } deriving (Eq, Ord, Show, Read, Generic, Hashable, NFData)
+data BlockHeader = BlockHeader
+    { blockVersion   :: !Word32 --  4 bytes
+    -- | hash of the previous block (parent)
+    , prevBlock      :: !BlockHash -- 32 bytes
+    -- | root of the merkle tree of transactions
+    , merkleRoot     :: !Hash256 -- 32 bytes
+    -- | unix timestamp
+    , blockTimestamp :: !Timestamp --  4 bytes
+    -- | difficulty target
+    , blockBits      :: !Word32 --  4 bytes
+    -- | random nonce
+    , bhNonce        :: !Word32 --  4 bytes
+    }
+    deriving (Eq, Ord, Show, Read, Generic, Hashable, NFData)
                                                  -- 80 bytes
 
--- | Compute hash of 'BlockHeader'.
-headerHash :: BlockHeader -> BlockHash
-headerHash = BlockHash . doubleSHA256 . encode
+instance ToJSON BlockHeader where
+    toJSON (BlockHeader v p m t b n) =
+        object
+            [ "version" .= v
+            , "prevblock" .= p
+            , "merkleroot" .= encodeHex (encode m)
+            , "timestamp" .= t
+            , "bits" .= b
+            , "nonce" .= n
+            ]
+    toEncoding (BlockHeader v p m t b n) =
+        pairs
+            ( "version" .= v
+           <> "prevblock" .= p
+           <> "merkleroot" .= encodeHex (encode m)
+           <> "timestamp" .= t
+           <> "bits" .= b
+           <> "nonce" .= n
+            )
+
+instance FromJSON BlockHeader where
+    parseJSON =
+        withObject "BlockHeader" $ \o ->
+            BlockHeader <$> o .: "version"
+                        <*> o .: "prevblock"
+                        <*> (f =<< o .: "merkleroot")
+                        <*> o .: "timestamp"
+                        <*> o .: "bits"
+                        <*> o .: "nonce"
+      where
+        f = maybe mzero return . (eitherToMaybe . decode =<<) . decodeHex
 
 instance Serialize BlockHeader where
     get = do
@@ -183,22 +192,26 @@ instance Serialize BlockHeader where
         t <- getWord32le
         b <- getWord32le
         n <- getWord32le
-        return BlockHeader
-            { blockVersion   = v
-            , prevBlock      = p
-            , merkleRoot     = m
-            , blockTimestamp = t
-            , blockBits      = b
-            , bhNonce        = n
-            }
-
+        return
+            BlockHeader
+                { blockVersion = v
+                , prevBlock = p
+                , merkleRoot = m
+                , blockTimestamp = t
+                , blockBits = b
+                , bhNonce = n
+                }
     put (BlockHeader v p m bt bb n) = do
         putWord32le v
-        put         p
-        put         m
+        put p
+        put m
         putWord32le bt
         putWord32le bb
         putWord32le n
+
+-- | Compute hash of 'BlockHeader'.
+headerHash :: BlockHeader -> BlockHash
+headerHash = BlockHash . doubleSHA256 . encode
 
 -- | A block locator is a set of block headers, denser towards the best block
 -- and sparser towards the genesis block. It starts at the highest block known.
@@ -214,23 +227,19 @@ type BlockLocator = [BlockHash]
 -- missing. The number of block hashes in that inv message will end at the stop
 -- block hash, at at the tip of the chain, or after 500 entries, whichever comes
 -- earlier.
-data GetBlocks =
-    GetBlocks { -- | protocol version.
-                getBlocksVersion  :: !Word32
-                -- | block locator object
-              , getBlocksLocator  :: !BlockLocator
-                -- | hash of the last desired block
-              , getBlocksHashStop :: !BlockHash
-              } deriving (Eq, Show, Generic, NFData)
+data GetBlocks = GetBlocks
+    { getBlocksVersion  :: !Word32
+    -- | block locator object
+    , getBlocksLocator  :: !BlockLocator
+    -- | hash of the last desired block
+    , getBlocksHashStop :: !BlockHash
+    }
+    deriving (Eq, Show, Generic, NFData)
 
 instance Serialize GetBlocks where
-
-    get = GetBlocks <$> getWord32le
-                    <*> (repList =<< get)
-                    <*> get
+    get = GetBlocks <$> getWord32le <*> (repList =<< get) <*> get
       where
         repList (VarInt c) = replicateM (fromIntegral c) get
-
     put (GetBlocks v xs h) = putGetBlockMsg v xs h
 
 putGetBlockMsg :: Word32 -> BlockLocator -> BlockHash -> Put
@@ -245,24 +254,19 @@ putGetBlockMsg v xs h = do
 -- containing a list of block headers. A maximum of 2000 block headers can be
 -- returned. 'GetHeaders' is used by simplified payment verification (SPV)
 -- clients to exclude block contents when synchronizing the block chain.
-data GetHeaders =
-    GetHeaders {
-                 -- | protocol version
-                 getHeadersVersion  :: !Word32
-                 -- | block locator object
-               , getHeadersBL       :: !BlockLocator
-                 -- | hash of the last desired block header
-               , getHeadersHashStop :: !BlockHash
-               } deriving (Eq, Show, Generic, NFData)
+data GetHeaders = GetHeaders
+    { getHeadersVersion  :: !Word32
+    -- | block locator object
+    , getHeadersBL       :: !BlockLocator
+    -- | hash of the last desired block header
+    , getHeadersHashStop :: !BlockHash
+    }
+    deriving (Eq, Show, Generic, NFData)
 
 instance Serialize GetHeaders where
-
-    get = GetHeaders <$> getWord32le
-                     <*> (repList =<< get)
-                     <*> get
+    get = GetHeaders <$> getWord32le <*> (repList =<< get) <*> get
       where
         repList (VarInt c) = replicateM (fromIntegral c) get
-
     put (GetHeaders v xs h) = putGetBlockMsg v xs h
 
 -- | 'BlockHeader' type with a transaction count as 'VarInt'
@@ -270,22 +274,18 @@ type BlockHeaderCount = (BlockHeader, VarInt)
 
 -- | The 'Headers' type is used to return a list of block headers in
 -- response to a 'GetHeaders' message.
-newtype Headers =
-    Headers { -- | list of block headers with transaction count
-              headersList :: [BlockHeaderCount]
-            }
-    deriving (Eq, Show, Generic, NFData)
+newtype Headers = Headers -- | list of block headers with transaction count
+    { headersList :: [BlockHeaderCount]
+    } deriving (Eq, Show, Generic, NFData)
 
 instance Serialize Headers where
-
     get = Headers <$> (repList =<< get)
       where
         repList (VarInt c) = replicateM (fromIntegral c) action
         action = liftM2 (,) get get
-
     put (Headers xs) = do
         putVarInt $ length xs
-        forM_ xs $ \(a,b) -> put a >> put b
+        forM_ xs $ \(a, b) -> put a >> put b
 
 -- | Decode the compact number used in the difficulty target of a block.
 --

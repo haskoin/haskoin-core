@@ -8,7 +8,6 @@ import qualified Data.ByteString         as B
 import qualified Data.ByteString.Lazy    as L
 import           Data.Either
 import           Data.List
-import           Data.Map.Strict         (singleton)
 import           Data.Maybe
 import           Data.Serialize          as S
 import           Data.String
@@ -22,6 +21,7 @@ import           Haskoin.Script
 import           Haskoin.Test
 import           Haskoin.Transaction
 import           Haskoin.Util
+import           Haskoin.UtilSpec        (cerealID, testJsonID)
 import           Test.Hspec
 import           Test.HUnit              as HUnit
 import           Test.QuickCheck
@@ -38,12 +38,12 @@ spec = do
         zipWithM_ (curry (sigDecodeMap net)) scriptSigSignatures [0 ..]
     describe "json serialization" $ do
         it "encodes and decodes script output" $
-            forAll (arbitraryScriptOutput net) testID
-        it "encodes and decodes outpoint" $ forAll arbitraryOutPoint testID
-        it "encodes and decodes sighash" $ forAll arbitrarySigHash testID
+            forAll (arbitraryScriptOutput net) testJsonID
+        it "encodes and decodes outpoint" $ forAll arbitraryOutPoint testJsonID
+        it "encodes and decodes sighash" $ forAll arbitrarySigHash testJsonID
         it "encodes and decodes siginput" $
-            forAll (arbitrarySigInput net) (testID . fst)
-    describe "script serialization" $ do
+            forAll (arbitrarySigInput net) (testJsonID . fst)
+    describe "Cereal script serialization" $ do
         it "encodes and decodes script op" $
             property $ forAll arbitraryScriptOp cerealID
         it "encodes and decodes script" $
@@ -58,9 +58,6 @@ props net = do
     forkIdScriptSpec net
     sigHashSpec net
     txSigHashSpec net
-
-cerealID :: (Serialize a, Eq a) => a -> Bool
-cerealID x = S.decode (S.encode x) == Right x
 
 standardSpec :: Network -> Spec
 standardSpec net = do
@@ -397,9 +394,3 @@ scriptSigSignatures =
       -- decode strict signatures.
       -- "3048022200002b83d59c1d23c08efd82ee0662fec23309c3adbcbd1f0b8695378db4b14e736602220000334a96676e58b1bb01784cb7c556dd8ce1c220171904da22e18fe1e7d1510db501"
     ]
-
-
-testID :: (FromJSON a, ToJSON a, Eq a) => a -> Bool
-testID x =
-    (A.decode . A.encode) (singleton ("object" :: String) x) ==
-    Just (singleton ("object" :: String) x)

@@ -24,10 +24,10 @@ module Haskoin.Transaction.Builder.Sign
     ) where
 
 import           Control.DeepSeq            (NFData)
-import           Control.Monad              (foldM, mzero, when)
-import           Data.Aeson                 (FromJSON, ToJSON (..),
-                                             Value (Object), object, pairs,
-                                             parseJSON, (.:), (.:?), (.=))
+import           Control.Monad              (foldM, when)
+import           Data.Aeson                 (FromJSON, ToJSON (..), object,
+                                             pairs, parseJSON, withObject, (.:),
+                                             (.:?), (.=))
 import           Data.Either                (rights)
 import           Data.Hashable              (Hashable)
 import           Data.List                  (find, nub)
@@ -63,37 +63,43 @@ import           Haskoin.Util               (matchTemplate, updateIndex)
 -- required. When signing a pay to script hash output, an additional redeem
 -- script is required.
 data SigInput = SigInput
-    { sigInputScript :: !ScriptOutput         -- ^ output script to spend
-    , sigInputValue  :: !Word64               -- ^ output script value
-    , sigInputOP     :: !OutPoint             -- ^ outpoint to spend
-    , sigInputSH     :: !SigHash              -- ^ signature type
+    { sigInputScript :: !ScriptOutput -- ^ output script to spend
+    -- ^ output script value
+    , sigInputValue  :: !Word64 -- ^ output script value
+    -- ^ outpoint to spend
+    , sigInputOP     :: !OutPoint -- ^ outpoint to spend
+    -- ^ signature type
+    , sigInputSH     :: !SigHash -- ^ signature type
+    -- ^ redeem script
     , sigInputRedeem :: !(Maybe RedeemScript) -- ^ redeem script
-    } deriving (Eq, Show, Read, Generic, Hashable, NFData)
+    }
+    deriving (Eq, Show, Read, Generic, Hashable, NFData)
 
 instance ToJSON SigInput where
-    toJSON (SigInput so val op sh rdm) = object $
-        [ "pkscript" .= so
-        , "value"    .= val
-        , "outpoint" .= op
-        , "sighash"  .= sh
-        ] ++ [ "redeem" .= r | r <- maybeToList rdm ]
-    toEncoding (SigInput so val op sh rdm) = pairs $
-        "pkscript" .= so
-        <> "value"    .= val
-        <> "outpoint" .= op
-        <> "sighash"  .= sh
-        <> (case rdm of Nothing -> mempty
-                        Just r  -> "redeem" .= r)
+    toJSON (SigInput so val op sh rdm) =
+        object $
+            [ "pkscript" .= so
+            , "value"    .= val
+            , "outpoint" .= op
+            , "sighash"  .= sh
+            ] ++
+            [ "redeem" .= r | r <- maybeToList rdm ]
+    toEncoding (SigInput so val op sh rdm) =
+        pairs $
+            "pkscript" .= so
+         <> "value"    .= val
+         <> "outpoint" .= op
+         <> "sighash"  .= sh
+         <> maybe mempty ("redeem" .=) rdm
 
 instance FromJSON SigInput where
-    parseJSON (Object o) = do
-        so  <- o .: "pkscript"
-        val <- o .: "value"
-        op  <- o .: "outpoint"
-        sh  <- o .: "sighash"
-        rdm <- o .:? "redeem"
-        return $ SigInput so val op sh rdm
-    parseJSON _ = mzero
+    parseJSON =
+        withObject "SigInput" $ \o ->
+            SigInput <$> o .: "pkscript"
+                     <*> o .: "value"
+                     <*> o .: "outpoint"
+                     <*> o .: "sighash"
+                     <*> o .:? "redeem"
 
 -- | Sign a transaction by providing the 'SigInput' signing parameters and a
 -- list of private keys. The signature is computed deterministically as defined

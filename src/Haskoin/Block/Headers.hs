@@ -314,8 +314,8 @@ parentBlock :: BlockHeaders m
             -> m (Maybe BlockNode)
 parentBlock bh = getBlockHeader (prevBlock bh)
 
--- | Validate and connect single block header to the block chain. Return 'Left' if fails
--- to be validated.
+-- | Validate and connect single block header to the block chain. Return 'Left'
+-- if fails to be validated.
 connectBlock ::
        BlockHeaders m
     => Network

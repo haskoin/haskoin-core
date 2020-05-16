@@ -75,9 +75,8 @@ instance FromJSON TxHash where
 
 instance ToJSON TxHash where
     toJSON = A.String . txHashToHex
-    toEncoding (TxHash h) =
-        unsafeToEncoding $
-        char7 '"' <> hexBuilder (B.reverse (S.encode h)) <> char7 '"'
+    toEncoding h =
+        unsafeToEncoding $ char7 '"' <> hexBuilder (B.reverse (S.encode h)) <> char7 '"'
 
 -- | Transaction hash excluding signatures.
 nosigTxHash :: Tx -> TxHash
@@ -211,13 +210,32 @@ putWitnessData = mapM_ putWitnessStack
         putByteString bs
 
 instance FromJSON Tx where
-    parseJSON = withText "Tx" $
-        maybe mzero return . (eitherToMaybe . S.decode <=< decodeHex)
+    parseJSON = withObject "Tx" $ \o ->
+        Tx <$> o .: "version"
+           <*> o .: "inputs"
+           <*> o .: "outputs"
+           <*> (mapM (mapM f) =<< o .: "witnessdata")
+           <*> o .: "locktime"
+      where
+        f = maybe mzero return . decodeHex
 
 instance ToJSON Tx where
-    toJSON = A.String . encodeHex . S.encode
-    toEncoding tx =
-        unsafeToEncoding $ char7 '"' <> hexBuilder (S.encode tx) <> char7 '"'
+    toJSON (Tx v i o w l) =
+        object
+            [ "version" .= v
+            , "inputs" .= i
+            , "outputs" .= o
+            , "witnessdata" .= fmap (fmap encodeHex) w
+            , "locktime" .= l
+            ]
+    toEncoding (Tx v i o w l) =
+        pairs
+            ( "version" .= v
+           <> "inputs" .= i
+           <> "outputs" .= o
+           <> "witnessdata" .= fmap (fmap encodeHex) w
+           <> "locktime" .= l
+            )
 
 -- | Data type representing a transaction input.
 data TxIn =
@@ -242,6 +260,27 @@ instance Serialize TxIn where
         putByteString s
         putWord32le q
 
+instance FromJSON TxIn where
+    parseJSON =
+        withObject "TxIn" $ \o ->
+            TxIn <$> o .: "prevoutput"
+                 <*> (maybe mzero return . decodeHex =<< o .: "inputscript")
+                 <*> o .: "sequence"
+
+instance ToJSON TxIn where
+    toJSON (TxIn o s q) =
+        object
+            [ "prevoutput" .= o
+            , "inputscript" .= encodeHex s
+            , "sequence" .= q
+            ]
+    toEncoding (TxIn o s q) =
+        pairs
+            ( "prevoutput" .= o
+           <> "inputscript" .= encodeHex s
+           <> "sequence" .= q
+            )
+
 -- | Data type representing a transaction output.
 data TxOut =
     TxOut {
@@ -262,6 +301,18 @@ instance Serialize TxOut where
         putVarInt $ B.length s
         putByteString s
 
+instance FromJSON TxOut where
+    parseJSON =
+        withObject "TxOut" $ \o ->
+            TxOut <$> o .: "value"
+                  <*> (maybe mzero return . decodeHex =<< o .: "outputscript")
+
+instance ToJSON TxOut where
+    toJSON (TxOut o s) =
+        object ["value" .= o, "outputscript" .= encodeHex s]
+    toEncoding (TxOut o s) =
+        pairs ("value" .= o <> "outputscript" .= encodeHex s)
+
 -- | The 'OutPoint' refers to a transaction output being spent.
 data OutPoint = OutPoint
     { -- | hash of previous transaction
@@ -270,20 +321,20 @@ data OutPoint = OutPoint
     , outPointIndex :: !Word32
     } deriving (Show, Read, Eq, Ord, Generic, Hashable, NFData)
 
-instance FromJSON OutPoint where
-    parseJSON = withText "OutPoint" $
-        maybe mzero return . (eitherToMaybe . S.decode <=< decodeHex)
-
-instance ToJSON OutPoint where
-    toJSON = A.String . encodeHex . S.encode
-    toEncoding op =
-        unsafeToEncoding $ char7 '"' <> hexBuilder (S.encode op) <> char7 '"'
-
 instance Serialize OutPoint where
     get = do
         (h,i) <- liftM2 (,) S.get getWord32le
         return $ OutPoint h i
     put (OutPoint h i) = put h >> putWord32le i
+
+instance FromJSON OutPoint where
+    parseJSON =
+        withObject "OutPoint" $ \o ->
+            OutPoint <$> o .: "txid" <*> o .: "index"
+
+instance ToJSON OutPoint where
+    toJSON (OutPoint h i) = object ["txid" .= h, "index" .= i]
+    toEncoding (OutPoint h i) = pairs ("txid" .= h <> "index" .= i)
 
 -- | Outpoint used in coinbase transactions.
 nullOutPoint :: OutPoint

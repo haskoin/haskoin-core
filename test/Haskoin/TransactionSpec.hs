@@ -2,10 +2,8 @@
 
 module Haskoin.TransactionSpec (spec) where
 
-import           Data.Aeson                 as A
 import qualified Data.ByteString            as B
 import           Data.Either
-import           Data.Map.Strict            (singleton)
 import           Data.Maybe
 import           Data.Serialize             as S
 import           Data.String                (fromString)
@@ -20,6 +18,7 @@ import           Haskoin.Test
 import           Haskoin.Transaction
 import           Haskoin.Transaction.Segwit (isSegwit)
 import           Haskoin.Util
+import           Haskoin.UtilSpec           (cerealID, testJsonID)
 import           Safe                       (readMay)
 import           Test.Hspec
 import           Test.HUnit                 (Assertion, assertBool)
@@ -68,12 +67,18 @@ spec = do
             property $ forAll (arbitrarySigningData net) (testDetSignNestedTx net)
         it "merge partially signed transactions" $
             property $ forAll (arbitraryPartialTxs net) (testMergeTx net)
-    describe "json serialization" $ do
+    describe "transaction JSON serialization" $ do
         it "encodes and decodes transaction" $
-            property $ forAll (arbitraryTx net) testID
+            property $ forAll (arbitraryTx net) testJsonID
         it "encodes and decodes transaction hash" $
-            property $ forAll arbitraryTxHash testID
-    describe "transaction serialization" $ do
+            property $ forAll arbitraryTxHash testJsonID
+        it "encodes and decodes transaction inputs" $
+            property $ forAll (arbitraryTxIn net) testJsonID
+        it "encodes and decodes transaction outputs" $
+            property $ forAll (arbitraryTxOut net) testJsonID
+        it "encodes and decodes outpoints" $
+            property $ forAll arbitraryOutPoint testJsonID
+    describe "transaction binary serialization" $ do
         it "encodes and decodes tx input" $
             property $ forAll (arbitraryTxIn net) cerealID
         it "encodes and decodes tx output" $
@@ -86,9 +91,6 @@ spec = do
             property $ forAll (arbitraryWitnessTx net) cerealID
         it "encodes and decodes legacy transaction" $
             property $ forAll (arbitraryLegacyTx net) cerealID
-
-cerealID :: (Serialize a, Eq a) => a -> Bool
-cerealID x = S.decode (S.encode x) == Right x
 
 runTxIDVec :: (Text, Text) -> Assertion
 runTxIDVec (tid, tx) = assertBool "txid" $ txHashToHex (txHash txBS) == tid
@@ -389,8 +391,3 @@ testMergeTx net (txs, os) = and
         Right (RegularInput (SpendMulSig sigs)) -> length sigs
         Right (ScriptHashInput (SpendMulSig sigs) _) -> length sigs
         _ -> error "Invalid input script type"
-
-testID :: (FromJSON a, ToJSON a, Eq a) => a -> Bool
-testID x =
-    (A.decode . A.encode) (singleton ("object" :: String) x) ==
-    Just (singleton ("object" :: String) x)

@@ -274,8 +274,9 @@ type BlockHeaderCount = (BlockHeader, VarInt)
 
 -- | The 'Headers' type is used to return a list of block headers in
 -- response to a 'GetHeaders' message.
-newtype Headers = Headers -- | list of block headers with transaction count
-    { headersList :: [BlockHeaderCount]
+newtype Headers = Headers
+    { -- | list of block headers with transaction count
+      headersList :: [BlockHeaderCount]
     } deriving (Eq, Show, Generic, NFData)
 
 instance Serialize Headers where

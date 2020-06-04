@@ -10,7 +10,7 @@ import           Haskoin.Address
 import           Haskoin.Constants
 import           Haskoin.Crypto
 import           Haskoin.Keys
-import           Haskoin.Test
+import           Haskoin.Util.Arbitrary
 import           Haskoin.Util
 import           Test.Hspec
 import           Test.QuickCheck

@@ -6,7 +6,7 @@ Maintainer  : jprupp@protonmail.ch
 Stability   : experimental
 Portability : POSIX
 -}
-module Haskoin.Test.Transaction where
+module Haskoin.Util.Arbitrary.Transaction where
 
 import           Control.Monad
 import qualified Data.ByteString     as BS
@@ -17,10 +17,10 @@ import           Haskoin.Address
 import           Haskoin.Constants
 import           Haskoin.Keys.Common
 import           Haskoin.Script
-import           Haskoin.Test.Crypto
-import           Haskoin.Test.Keys
-import           Haskoin.Test.Script
-import           Haskoin.Test.Util
+import           Haskoin.Util.Arbitrary.Crypto
+import           Haskoin.Util.Arbitrary.Keys
+import           Haskoin.Util.Arbitrary.Script
+import           Haskoin.Util.Arbitrary.Util
 import           Haskoin.Transaction
 import           Test.QuickCheck
 

@@ -8,7 +8,7 @@ import           Data.Text              (Text)
 import           Haskoin.Address
 import           Haskoin.Constants
 import           Haskoin.Keys           (derivePubKeyI)
-import           Haskoin.Test
+import           Haskoin.Util.Arbitrary
 import           Haskoin.UtilSpec       (testCustomEncoding, testCustomJSON)
 import           Test.Hspec
 import           Test.HUnit             (Assertion, assertBool, assertEqual)

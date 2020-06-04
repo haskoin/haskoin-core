@@ -18,9 +18,9 @@ import           Haskoin.Address
 import           Haskoin.Constants
 import           Haskoin.Keys
 import           Haskoin.Script
-import           Haskoin.Test
 import           Haskoin.Transaction
 import           Haskoin.Util
+import           Haskoin.Util.Arbitrary
 import           Haskoin.UtilSpec        (cerealID, testJsonID)
 import           Test.Hspec
 import           Test.HUnit              as HUnit

@@ -6,13 +6,14 @@ Maintainer  : jprupp@protonmail.ch
 Stability   : experimental
 Portability : POSIX
 -}
-module Haskoin.Test.Util where
+module Haskoin.Util.Arbitrary.Util where
 
 import           Data.ByteString       (ByteString, pack)
 import           Data.Time.Clock       (UTCTime (..))
 import           Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import           Data.Word             (Word32)
 import           Test.QuickCheck
+import           Haskoin.Constants
 
 -- | Arbitrary strict 'ByteString'.
 arbitraryBS :: Gen ByteString
@@ -37,4 +38,7 @@ arbitraryMaybe :: Gen a -> Gen (Maybe a)
 arbitraryMaybe g = frequency [ (1, return Nothing)
                              , (5, Just <$> g)
                              ]
+
+arbitraryNetwork :: Gen Network
+arbitraryNetwork = elements allNets
 

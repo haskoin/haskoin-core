@@ -4,10 +4,10 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 9d9195e4ebe6a0ef3c20fc7252c63ad4bca7d0844dfaf15f479f7e08fc98b009
+-- hash: 14c9f49e8a8cbf3de72ab19366de7910b9e4f84ea0bf5191e211116e71102f98
 
 name:           haskoin-core
-version:        0.13.5
+version:        0.13.6
 synopsis:       Bitcoin & Bitcoin Cash library for Haskell
 description:    Haskoin Core is a complete Bitcoin and Bitcoin Cash library of functions and data types for Haskell developers.
 category:       Bitcoin, Finance, Network
@@ -46,6 +46,7 @@ library
       Haskoin.Script
       Haskoin.Transaction
       Haskoin.Util
+      Haskoin.Util.Arbitrary
   other-modules:
       Haskoin.Address.Base58
       Haskoin.Address.Bech32
@@ -69,11 +70,21 @@ library
       Haskoin.Transaction.Common
       Haskoin.Transaction.Partial
       Haskoin.Transaction.Segwit
+      Haskoin.Util.Arbitrary.Address
+      Haskoin.Util.Arbitrary.Block
+      Haskoin.Util.Arbitrary.Crypto
+      Haskoin.Util.Arbitrary.Keys
+      Haskoin.Util.Arbitrary.Message
+      Haskoin.Util.Arbitrary.Network
+      Haskoin.Util.Arbitrary.Script
+      Haskoin.Util.Arbitrary.Transaction
+      Haskoin.Util.Arbitrary.Util
       Paths_haskoin_core
   hs-source-dirs:
       src
   build-depends:
-      aeson >=1.4.6.0
+      QuickCheck >=2.13.2
+    , aeson >=1.4.6.0
     , array >=0.5.4.0
     , base >=4.9 && <5
     , base16-bytestring >=0.1.1.6
@@ -117,16 +128,6 @@ test-suite spec
       Haskoin.KeysSpec
       Haskoin.NetworkSpec
       Haskoin.ScriptSpec
-      Haskoin.Test
-      Haskoin.Test.Address
-      Haskoin.Test.Block
-      Haskoin.Test.Crypto
-      Haskoin.Test.Keys
-      Haskoin.Test.Message
-      Haskoin.Test.Network
-      Haskoin.Test.Script
-      Haskoin.Test.Transaction
-      Haskoin.Test.Util
       Haskoin.Transaction.PartialSpec
       Haskoin.TransactionSpec
       Haskoin.UtilSpec
@@ -162,6 +163,16 @@ test-suite spec
       Haskoin.Transaction.Partial
       Haskoin.Transaction.Segwit
       Haskoin.Util
+      Haskoin.Util.Arbitrary
+      Haskoin.Util.Arbitrary.Address
+      Haskoin.Util.Arbitrary.Block
+      Haskoin.Util.Arbitrary.Crypto
+      Haskoin.Util.Arbitrary.Keys
+      Haskoin.Util.Arbitrary.Message
+      Haskoin.Util.Arbitrary.Network
+      Haskoin.Util.Arbitrary.Script
+      Haskoin.Util.Arbitrary.Transaction
+      Haskoin.Util.Arbitrary.Util
       Paths_haskoin_core
   hs-source-dirs:
       test

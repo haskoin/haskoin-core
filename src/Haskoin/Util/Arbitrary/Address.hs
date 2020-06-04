@@ -6,10 +6,10 @@ Maintainer  : jprupp@protonmail.ch
 Stability   : experimental
 Portability : POSIX
 -}
-module Haskoin.Test.Address where
+module Haskoin.Util.Arbitrary.Address where
 
 import           Haskoin.Address
-import           Haskoin.Test.Crypto
+import           Haskoin.Util.Arbitrary.Crypto
 import           Test.QuickCheck
 
 -- | Arbitrary pay-to-public-key-hash or pay-to-script-hash address.

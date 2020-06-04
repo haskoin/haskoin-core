@@ -6,14 +6,14 @@ Maintainer  : jprupp@protonmail.ch
 Stability   : experimental
 Portability : POSIX
 -}
-module Haskoin.Test.Block where
+module Haskoin.Util.Arbitrary.Block where
 
 import           Haskoin.Block.Common
 import           Haskoin.Block.Merkle
 import           Haskoin.Constants
-import           Haskoin.Test.Crypto
-import           Haskoin.Test.Network
-import           Haskoin.Test.Transaction
+import           Haskoin.Util.Arbitrary.Crypto
+import           Haskoin.Util.Arbitrary.Network
+import           Haskoin.Util.Arbitrary.Transaction
 import           Test.QuickCheck
 
 -- | Block full or arbitrary transactions.

@@ -1,22 +1,22 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Haskoin.Keys.MnemonicSpec (spec) where
 
-import           Control.Monad           (zipWithM_)
-import           Data.Bits               (shiftR, (.&.))
-import qualified Data.ByteString         as BS
-import           Data.Either             (fromRight)
-import           Data.List               (isPrefixOf)
-import           Data.Maybe              (fromJust)
-import           Data.Serialize          (Serialize, encode)
-import           Data.Text               (Text)
-import qualified Data.Text               as T
-import           Data.Word               (Word32, Word64)
+import           Control.Monad          (zipWithM_)
+import           Data.Bits              (shiftR, (.&.))
+import qualified Data.ByteString        as BS
+import           Data.Either            (fromRight)
+import           Data.List              (isPrefixOf)
+import           Data.Maybe             (fromJust)
+import           Data.Serialize         (Serialize, encode)
+import           Data.Text              (Text)
+import qualified Data.Text              as T
+import           Data.Word              (Word32, Word64)
 import           Haskoin.Keys
-import           Haskoin.Test
 import           Haskoin.Util
+import           Haskoin.Util.Arbitrary
 import           Test.Hspec
 import           Test.HUnit
-import           Test.QuickCheck         hiding ((.&.))
+import           Test.QuickCheck        hiding ((.&.))
 
 spec :: Spec
 spec =

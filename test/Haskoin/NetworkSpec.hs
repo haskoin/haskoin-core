@@ -1,20 +1,20 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Haskoin.NetworkSpec (spec) where
 
-import           Data.Maybe          (fromJust)
-import           Data.Serialize      as S
-import           Data.Text           (Text)
-import           Data.Word           (Word32)
+import           Data.Maybe             (fromJust)
+import           Data.Serialize         as S
+import           Data.Text              (Text)
+import           Data.Word              (Word32)
 import           Haskoin.Address
 import           Haskoin.Constants
 import           Haskoin.Keys
 import           Haskoin.Network
-import           Haskoin.Test
 import           Haskoin.Transaction
 import           Haskoin.Util
-import           Haskoin.UtilSpec    (cerealID, customCerealID)
+import           Haskoin.Util.Arbitrary
+import           Haskoin.UtilSpec       (cerealID, customCerealID)
 import           Test.Hspec
-import           Test.HUnit          (Assertion, assertBool, assertEqual)
+import           Test.HUnit             (Assertion, assertBool, assertEqual)
 import           Test.QuickCheck
 
 spec :: Spec

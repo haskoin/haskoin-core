@@ -11,8 +11,8 @@ import           Data.String.Conversions    (cs)
 import           Data.Text                  (Text)
 import           Haskoin.Block
 import           Haskoin.Constants
-import           Haskoin.Test
 import           Haskoin.Transaction
+import           Haskoin.Util.Arbitrary
 import           Haskoin.UtilSpec           (cerealID, testJsonID)
 import           Test.Hspec
 import           Test.HUnit                 hiding (State)

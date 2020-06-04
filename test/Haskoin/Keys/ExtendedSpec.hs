@@ -14,8 +14,8 @@ import           Data.Word                  (Word32)
 import           Haskoin.Address
 import           Haskoin.Constants
 import           Haskoin.Keys
-import           Haskoin.Test
 import           Haskoin.Util
+import           Haskoin.Util.Arbitrary
 import           Haskoin.UtilSpec           (cerealID, customCerealID,
                                              testCustomEncoding, testCustomJSON,
                                              testJsonID)

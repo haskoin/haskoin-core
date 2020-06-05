@@ -6,10 +6,10 @@ Maintainer  : jprupp@protonmail.ch
 Stability   : experimental
 Portability : POSIX
 -}
-module Haskoin.Test.Crypto where
+module Haskoin.Util.Arbitrary.Crypto where
 
 import           Haskoin.Crypto.Hash
-import           Haskoin.Test.Util
+import           Haskoin.Util.Arbitrary.Util
 import           Test.QuickCheck
 
 -- | Arbitrary 160-bit hash.

@@ -14,10 +14,10 @@ import           Haskoin.Address
 import           Haskoin.Constants
 import           Haskoin.Keys
 import           Haskoin.Script
-import           Haskoin.Test
 import           Haskoin.Transaction
 import           Haskoin.Transaction.Segwit (isSegwit)
 import           Haskoin.Util
+import           Haskoin.Util.Arbitrary
 import           Haskoin.UtilSpec           (cerealID, testJsonID)
 import           Safe                       (readMay)
 import           Test.Hspec

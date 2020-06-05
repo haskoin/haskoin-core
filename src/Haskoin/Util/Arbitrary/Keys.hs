@@ -6,7 +6,7 @@ Maintainer  : jprupp@protonmail.ch
 Stability   : experimental
 Portability : POSIX
 -}
-module Haskoin.Test.Keys where
+module Haskoin.Util.Arbitrary.Keys where
 
 import           Data.Bits             (clearBit)
 import           Data.List             (foldl')
@@ -14,7 +14,7 @@ import           Data.Word             (Word32)
 import           Haskoin.Crypto
 import           Haskoin.Keys.Common
 import           Haskoin.Keys.Extended
-import           Haskoin.Test.Crypto
+import           Haskoin.Util.Arbitrary.Crypto
 import           Test.QuickCheck
 
 -- | Arbitrary private key with arbitrary compressed flag.

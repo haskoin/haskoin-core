@@ -7,20 +7,20 @@ module Haskoin.UtilSpec
     , customCerealID
     ) where
 
-import           Data.Aeson          (FromJSON, ToJSON)
-import qualified Data.Aeson          as A
-import           Data.Aeson.Encoding (encodingToLazyByteString)
-import           Data.Aeson.Types    (Parser, parseMaybe)
-import qualified Data.ByteString     as BS
-import           Data.Either         (fromLeft, fromRight, isLeft, isRight)
-import           Data.Foldable       (toList)
-import           Data.List           (permutations)
-import           Data.Map.Strict     (singleton)
+import           Data.Aeson             (FromJSON, ToJSON)
+import qualified Data.Aeson             as A
+import           Data.Aeson.Encoding    (encodingToLazyByteString)
+import           Data.Aeson.Types       (Parser, parseMaybe)
+import qualified Data.ByteString        as BS
+import           Data.Either            (fromLeft, fromRight, isLeft, isRight)
+import           Data.Foldable          (toList)
+import           Data.List              (permutations)
+import           Data.Map.Strict        (singleton)
 import           Data.Maybe
-import qualified Data.Sequence       as Seq
-import           Data.Serialize      as S
-import           Haskoin.Test
+import qualified Data.Sequence          as Seq
+import           Data.Serialize         as S
 import           Haskoin.Util
+import           Haskoin.Util.Arbitrary
 import           Test.Hspec
 import           Test.QuickCheck
 

@@ -1,21 +1,21 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Haskoin.Crypto.SignatureSpec (spec) where
 
-import           Data.Bits             (testBit)
-import           Data.ByteString       (ByteString)
-import qualified Data.ByteString       as BS (index, length)
-import           Data.Serialize        as S
-import           Data.Text             (Text)
-import           Haskoin.Crypto        (SecKey, Sig, decodeStrictSig,
-                                        derivePubKey, exportSig,
-                                        importCompactSig, isCanonicalHalfOrder,
-                                        sha256, signHash, verifyHashSig)
-import           Haskoin.Test          (arbitrarySignature)
-import           Haskoin.Util          (decodeHex, eitherToMaybe, lst3)
-import           Test.Hspec            (Spec, describe, it)
-import           Test.Hspec.QuickCheck (prop)
-import           Test.HUnit            (Assertion, assertBool)
-import           Test.QuickCheck       (forAll)
+import           Data.Bits              (testBit)
+import           Data.ByteString        (ByteString)
+import qualified Data.ByteString        as BS (index, length)
+import           Data.Serialize         as S
+import           Data.Text              (Text)
+import           Haskoin.Crypto         (SecKey, Sig, decodeStrictSig,
+                                         derivePubKey, exportSig,
+                                         importCompactSig, isCanonicalHalfOrder,
+                                         sha256, signHash, verifyHashSig)
+import           Haskoin.Util           (decodeHex, eitherToMaybe, lst3)
+import           Haskoin.Util.Arbitrary (arbitrarySignature)
+import           Test.Hspec             (Spec, describe, it)
+import           Test.Hspec.QuickCheck  (prop)
+import           Test.HUnit             (Assertion, assertBool)
+import           Test.QuickCheck        (forAll)
 
 spec :: Spec
 spec = do

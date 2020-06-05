@@ -9,8 +9,8 @@ import           Data.String             (fromString)
 import           Data.String.Conversions
 import           Haskoin.Block
 import           Haskoin.Crypto
-import           Haskoin.Test
 import           Haskoin.Util
+import           Haskoin.Util.Arbitrary
 import           Test.Hspec
 import           Test.HUnit              (Assertion, assertBool)
 import           Test.QuickCheck

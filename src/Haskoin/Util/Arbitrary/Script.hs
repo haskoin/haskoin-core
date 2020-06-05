@@ -7,7 +7,7 @@ Maintainer  : jprupp@protonmail.ch
 Stability   : experimental
 Portability : POSIX
 -}
-module Haskoin.Test.Script where
+module Haskoin.Util.Arbitrary.Script where
 
 import           Crypto.Secp256k1
 import           Data.Maybe
@@ -16,12 +16,12 @@ import           Haskoin.Address
 import           Haskoin.Constants
 import           Haskoin.Keys.Common
 import           Haskoin.Script
-import           Haskoin.Test.Address
-import           Haskoin.Test.Crypto
-import           Haskoin.Test.Keys
-import           Haskoin.Test.Util
 import           Haskoin.Transaction.Common
 import           Haskoin.Util
+import           Haskoin.Util.Arbitrary.Address
+import           Haskoin.Util.Arbitrary.Crypto
+import           Haskoin.Util.Arbitrary.Keys
+import           Haskoin.Util.Arbitrary.Util
 import           Test.QuickCheck
 
 -- | Arbitrary 'Script' with random script ops.

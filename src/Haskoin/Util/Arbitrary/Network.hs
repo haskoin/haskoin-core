@@ -6,15 +6,15 @@ Maintainer  : jprupp@protonmail.ch
 Stability   : experimental
 Portability : POSIX
 -}
-module Haskoin.Test.Network where
+module Haskoin.Util.Arbitrary.Network where
 
-import qualified Data.ByteString       as BS (empty, pack)
-import qualified Data.ByteString.Char8 as C8
-import           Data.Word             (Word16, Word32)
+import qualified Data.ByteString               as BS (empty, pack)
+import qualified Data.ByteString.Char8         as C8
+import           Data.Word                     (Word16, Word32)
 import           Haskoin.Network
-import           Haskoin.Test.Crypto
-import           Haskoin.Test.Util
-import           Network.Socket        (SockAddr (..))
+import           Haskoin.Util.Arbitrary.Crypto
+import           Haskoin.Util.Arbitrary.Util
+import           Network.Socket                (SockAddr (..))
 import           Test.QuickCheck
 
 -- | Arbitrary 'VarInt'.

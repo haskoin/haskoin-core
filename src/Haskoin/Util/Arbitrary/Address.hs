@@ -6,10 +6,10 @@ Maintainer  : jprupp@protonmail.ch
 Stability   : experimental
 Portability : POSIX
 -}
-module Haskoin.Test.Address where
+module Haskoin.Util.Arbitrary.Address where
 
 import           Haskoin.Address
-import           Haskoin.Test.Crypto
+import           Haskoin.Util.Arbitrary.Crypto
 import           Test.QuickCheck
 
 -- | Arbitrary pay-to-public-key-hash or pay-to-script-hash address.
@@ -18,8 +18,16 @@ arbitraryAddress = oneof [arbitraryPubKeyAddress, arbitraryScriptAddress]
 
 -- | Arbitrary pay-to-public-key-hash address.
 arbitraryPubKeyAddress :: Gen Address
-arbitraryPubKeyAddress = p2pkhAddr <$> arbitraryHash160
+arbitraryPubKeyAddress = PubKeyAddress <$> arbitraryHash160
 
 -- | Arbitrary pay-to-script-hash address.
 arbitraryScriptAddress :: Gen Address
-arbitraryScriptAddress = p2shAddr <$> arbitraryHash160
+arbitraryScriptAddress = ScriptAddress <$> arbitraryHash160
+
+-- | Arbitrary pay-to-witness public key hash
+arbitraryWitnessPubKeyAddress :: Gen Address
+arbitraryWitnessPubKeyAddress = WitnessPubKeyAddress <$> arbitraryHash160 
+
+-- | Arbitrary pay-to-witness script hash
+arbitraryWitnessScriptAddress :: Gen Address
+arbitraryWitnessScriptAddress = WitnessPubKeyAddress <$> arbitraryHash160 

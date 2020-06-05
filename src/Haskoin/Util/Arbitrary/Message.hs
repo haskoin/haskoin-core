@@ -6,14 +6,14 @@ Maintainer  : jprupp@protonmail.ch
 Stability   : experimental
 Portability : POSIX
 -}
-module Haskoin.Test.Message where
+module Haskoin.Util.Arbitrary.Message where
 
 import           Haskoin.Constants
 import           Haskoin.Network.Message
-import           Haskoin.Test.Block
-import           Haskoin.Test.Crypto
-import           Haskoin.Test.Network
-import           Haskoin.Test.Transaction
+import           Haskoin.Util.Arbitrary.Block
+import           Haskoin.Util.Arbitrary.Crypto
+import           Haskoin.Util.Arbitrary.Network
+import           Haskoin.Util.Arbitrary.Transaction
 import           Test.QuickCheck
 
 -- | Arbitrary 'MessageHeader'.

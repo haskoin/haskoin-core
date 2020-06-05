@@ -19,10 +19,10 @@ import           Haskoin.Constants
 import           Haskoin.Crypto
 import           Haskoin.Keys
 import           Haskoin.Script
-import           Haskoin.Test
 import           Haskoin.Transaction
 import           Haskoin.Transaction.Partial
 import           Haskoin.Util
+import           Haskoin.Util.Arbitrary
 
 spec :: Spec
 spec = describe "partially signed bitcoin transaction unit tests" $ do

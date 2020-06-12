@@ -234,7 +234,7 @@ data GetBlocks = GetBlocks
     -- | hash of the last desired block
     , getBlocksHashStop :: !BlockHash
     }
-    deriving (Eq, Show, Generic, NFData)
+    deriving (Eq, Show, Read, Generic, NFData)
 
 instance Serialize GetBlocks where
     get = GetBlocks <$> getWord32le <*> (repList =<< get) <*> get
@@ -261,7 +261,7 @@ data GetHeaders = GetHeaders
     -- | hash of the last desired block header
     , getHeadersHashStop :: !BlockHash
     }
-    deriving (Eq, Show, Generic, NFData)
+    deriving (Eq, Show, Read, Generic, NFData)
 
 instance Serialize GetHeaders where
     get = GetHeaders <$> getWord32le <*> (repList =<< get) <*> get
@@ -277,7 +277,7 @@ type BlockHeaderCount = (BlockHeader, VarInt)
 newtype Headers = Headers
     { -- | list of block headers with transaction count
       headersList :: [BlockHeaderCount]
-    } deriving (Eq, Show, Generic, NFData)
+    } deriving (Eq, Show, Read, Generic, NFData)
 
 instance Serialize Headers where
     get = Headers <$> (repList =<< get)

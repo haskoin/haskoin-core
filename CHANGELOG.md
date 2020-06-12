@@ -6,6 +6,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## 0.14.0
 ### Changed
+- Add helpers for writing Data.Serialize and Data.Aeson identity tests
 - Expose all modules for tests.
 - Tests depend on library instead of having access to its source code.
 - Use MIT license.

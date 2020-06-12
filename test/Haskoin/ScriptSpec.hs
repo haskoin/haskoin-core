@@ -21,33 +21,48 @@ import           Haskoin.Script
 import           Haskoin.Transaction
 import           Haskoin.Util
 import           Haskoin.Util.Arbitrary
-import           Haskoin.UtilSpec        (cerealID, testJsonID)
 import           Test.Hspec
+import           Test.Hspec.QuickCheck
 import           Test.HUnit              as HUnit
 import           Test.QuickCheck
 import           Text.Read
 
+serialVals :: [SerialBox]
+serialVals =
+    [ SerialBox arbitraryScriptOp
+    , SerialBox arbitraryScript
+    ]
+
+readVals :: [ReadBox]
+readVals =
+    [ ReadBox arbitrarySigHash
+    , ReadBox arbitrarySigHashFlag
+    , ReadBox arbitraryScript
+    , ReadBox arbitraryPushDataType
+    , ReadBox arbitraryScriptOp
+    , ReadBox (arbitraryScriptOutput =<< arbitraryNetwork)
+    ]
+
+jsonVals :: [JsonBox]
+jsonVals =
+    [ JsonBox $ arbitraryScriptOutput =<< arbitraryNetwork
+    , JsonBox arbitraryOutPoint
+    , JsonBox arbitrarySigHash
+    , JsonBox $ fst <$> (arbitrarySigInput =<< arbitraryNetwork)
+    ]
+
 spec :: Spec
 spec = do
-    let net = btc
+    testIdentity serialVals readVals jsonVals []
     describe "btc scripts" $ props btc
     describe "bch scripts" $ props bch
     describe "multi signatures" $
         zipWithM_ (curry mapMulSigVector) mulSigVectors [0 ..]
     describe "signature decoding" $
-        zipWithM_ (curry (sigDecodeMap net)) scriptSigSignatures [0 ..]
-    describe "json serialization" $ do
-        it "encodes and decodes script output" $
-            forAll (arbitraryScriptOutput net) testJsonID
-        it "encodes and decodes outpoint" $ forAll arbitraryOutPoint testJsonID
-        it "encodes and decodes sighash" $ forAll arbitrarySigHash testJsonID
-        it "encodes and decodes siginput" $
-            forAll (arbitrarySigInput net) (testJsonID . fst)
-    describe "Cereal script serialization" $ do
-        it "encodes and decodes script op" $
-            property $ forAll arbitraryScriptOp cerealID
-        it "encodes and decodes script" $
-            property $ forAll arbitraryScript cerealID
+        zipWithM_ (curry (sigDecodeMap btc)) scriptSigSignatures [0 ..]
+    describe "SigHashFlag fromEnum/toEnum" $
+        prop "fromEnum/toEnum" $
+        forAll arbitrarySigHashFlag $ \f -> toEnum (fromEnum f) `shouldBe` f
 
 props :: Network -> Spec
 props net = do
@@ -61,23 +76,20 @@ props net = do
 
 standardSpec :: Network -> Spec
 standardSpec net = do
-    it "has intToScriptOp . scriptOpToInt identity" $
-        property $
+    prop "has intToScriptOp . scriptOpToInt identity" $
         forAll arbitraryIntScriptOp $ \i ->
             intToScriptOp <$> scriptOpToInt i `shouldBe` Right i
-    it "has decodeOutput . encodeOutput identity" $
-        property $
+    prop "has decodeOutput . encodeOutput identity" $
         forAll (arbitraryScriptOutput net) $ \so ->
             decodeOutput (encodeOutput so) `shouldBe` Right so
-    it "has decodeInput . encodeOutput identity" $
-        property $
+    prop "has decodeInput . encodeOutput identity" $
         forAll (arbitraryScriptInput net) $ \si ->
             decodeInput net (encodeInput si) `shouldBe` Right si
-    it "can sort multisig scripts" $
+    prop "can sort multisig scripts" $
         forAll arbitraryMSOutput $ \out ->
             map S.encode (getOutputMulSigKeys (sortMulSig out)) `shouldSatisfy` \xs ->
                 xs == sort xs
-    it "can decode inputs with empty signatures" $ do
+    prop "can decode inputs with empty signatures" $ do
         decodeInput net (Script [OP_0]) `shouldBe`
             Right (RegularInput (SpendPK TxSignatureEmpty))
         decodeInput net (Script [opPushData ""]) `shouldBe`
@@ -268,8 +280,6 @@ txSigHashForkIdSpec net =
 
 sigHashSpec :: Network -> Spec
 sigHashSpec net = do
-    it "can read . show" $
-        property $ forAll arbitrarySigHash $ \sh -> read (show sh) `shouldBe` sh
     it "can correctly show" $ do
         show (0x00 :: SigHash) `shouldBe` "SigHash " <> show (0x00 :: Word32)
         show (0x01 :: SigHash) `shouldBe` "SigHash " <> show (0x01 :: Word32)

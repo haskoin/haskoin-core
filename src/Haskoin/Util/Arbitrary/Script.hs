@@ -190,6 +190,16 @@ arbitraryValidSigHash net = do
     f2 <- elements [id, setAnyoneCanPayFlag]
     return $ f1 $ f2 sh
 
+arbitrarySigHashFlag :: Gen SigHashFlag
+arbitrarySigHashFlag =
+    elements
+        [ SIGHASH_ALL
+        , SIGHASH_NONE
+        , SIGHASH_SINGLE
+        , SIGHASH_FORKID
+        , SIGHASH_ANYONECANPAY
+        ]
+
 -- | Arbitrary message hash, private key and corresponding 'TxSignature'. The
 -- signature is generated deterministically using a random message and a random
 -- private key.

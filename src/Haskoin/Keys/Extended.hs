@@ -918,11 +918,11 @@ getPadPrvKey :: Get SecKey
 getPadPrvKey = do
     pad <- getWord8
     unless (pad == 0x00) $ fail "Private key must be padded with 0x00"
-    secKeyGet
+    S.get
 
 -- | Serialize HDW-specific private key.
 putPadPrvKey :: Putter SecKey
-putPadPrvKey p = putWord8 0x00 >> secKeyPut p
+putPadPrvKey p = putWord8 0x00 >> S.put p
 
 bsPadPrvKey :: SecKey -> ByteString
 bsPadPrvKey = runPut . putPadPrvKey

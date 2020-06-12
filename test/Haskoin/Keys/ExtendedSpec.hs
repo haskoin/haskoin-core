@@ -16,15 +16,64 @@ import           Haskoin.Constants
 import           Haskoin.Keys
 import           Haskoin.Util
 import           Haskoin.Util.Arbitrary
-import           Haskoin.UtilSpec           (cerealID, customCerealID,
-                                             testCustomEncoding, testCustomJSON,
-                                             testJsonID)
+import           Haskoin.UtilSpec           (customCerealID)
 import           Test.Hspec
+import           Test.Hspec.QuickCheck
 import           Test.HUnit                 (Assertion, assertBool, assertEqual)
 import           Test.QuickCheck            hiding ((.&.))
 
+serialVals :: [SerialBox]
+serialVals =
+    [ SerialBox arbitraryDerivPath
+    , SerialBox arbitraryHardPath
+    , SerialBox arbitrarySoftPath
+    ]
+
+readVals :: [ReadBox]
+readVals =
+    [ ReadBox arbitraryDerivPath
+    , ReadBox arbitraryHardPath
+    , ReadBox arbitrarySoftPath
+    , ReadBox arbitraryXPrvKey
+    , ReadBox (snd <$> arbitraryXPubKey)
+    , ReadBox arbitraryParsedPath
+    , ReadBox arbitraryBip32PathIndex
+    ]
+
+jsonVals :: [JsonBox]
+jsonVals =
+    [ JsonBox arbitraryDerivPath
+    , JsonBox arbitraryHardPath
+    , JsonBox arbitrarySoftPath
+    , JsonBox arbitraryParsedPath
+    ]
+
+netVals :: [NetBox]
+netVals =
+    [ NetBox
+          ( xPrvToJSON
+          , xPrvToEncoding
+          , xPrvFromJSON
+          , genNetData arbitraryXPrvKey)
+    , NetBox
+          ( xPubToJSON
+          , xPubToEncoding
+          , xPubFromJSON
+          , genNetData (snd <$> arbitraryXPubKey))
+    ]
+
 spec :: Spec
 spec = do
+    testIdentity serialVals readVals jsonVals netVals
+    describe "Custom identity tests" $ do
+        prop "encodes and decodes extended private key" $
+            forAll arbitraryNetwork $ \net ->
+                forAll arbitraryXPrvKey $
+                customCerealID (getXPrvKey net) (putXPrvKey net)
+        prop "encodes and decodes extended public key" $
+            forAll arbitraryNetwork $ \net ->
+                forAll arbitraryXPubKey $
+                customCerealID (getXPubKey net) (putXPubKey net) . snd
     describe "bip32 derivation vector 1" $ do
         it "chain m" $ runXKeyVec (head xKeyVec)
         it "chain m/0'" $ runXKeyVec (xKeyVec !! 1)
@@ -47,80 +96,21 @@ spec = do
         it "path parsing" testParsePath
         it "from json" testFromJsonPath
         it "to json" testToJsonPath
-    describe "JSON Encoding" $ do
-        let net = btc
-        it "encodes and decodes derivation path to JSON" $
-            forAll arbitraryDerivPath testJsonID
-        it "encodes and decodes hard path to JSON" $
-            forAll arbitraryHardPath testJsonID
-        it "encodes and decodes soft path to JSON" $
-            forAll arbitrarySoftPath testJsonID
-        it "encodes and decodes parsed derivation path to JSON" $
-            forAll arbitraryParsedPath testJsonID
-        it "encodes and decodes extended private key (JSON)" $
-            forAll
-                arbitraryXPrvKey
-                (testCustomJSON (xPrvFromJSON net) (xPrvToJSON net))
-        it "encodes and decodes extended private key (Encoding)" $
-            forAll
-                arbitraryXPrvKey
-                (testCustomEncoding (xPrvFromJSON net) (xPrvToEncoding net))
-        it "encodes and decodes extended public key (JSON)" $
-            forAll
-                arbitraryXPubKey
-                (testCustomJSON (xPubFromJSON net) (xPubToJSON net) . snd)
-        it "encodes and decodes extended public key (Encoding)" $
-            forAll
-                arbitraryXPubKey
-                (testCustomEncoding (xPubFromJSON net) (xPubToEncoding net) . snd)
-    describe "Binary Encoding" $ do
-        let net = btc
-        it "encodes and decodes extended private key" $
-            property $
-            forAll arbitraryXPrvKey $
-            customCerealID (getXPrvKey net) (putXPrvKey net)
-        it "encodes and decodes extended public key" $
-            property $
-            forAll arbitraryXPubKey $
-            customCerealID (getXPubKey net) (putXPubKey net) . snd
-        it "Cereal encode derivation path" $
-            property $ forAll arbitraryDerivPath cerealID
-        it "Cereal encode hard derivation path" $
-            property $ forAll arbitraryHardPath cerealID
-        it "Cereal encode soft derivation path" $
-            property $ forAll arbitrarySoftPath cerealID
-        -- This instance does not exist. Uncomment if you add a sensible one.
-        -- it "Cereal encode parsed derivation path" $
-        --     property $ forAll arbitraryParsedPath cerealID
     describe "Derivation Paths" $ do
-        it "show and read derivation path" $
-            property $ forAll arbitraryDerivPath $ \p -> read (show p) == p
-        it "show and read hard derivation path" $
-            property $ forAll arbitraryHardPath $ \p -> read (show p) == p
-        it "show and read soft derivation path" $
-            property $ forAll arbitrarySoftPath $ \p -> read (show p) == p
-        it "from string derivation path" $
-            property $
+        prop "from string derivation path" $
             forAll arbitraryDerivPath $ \p -> fromString (cs $ pathToStr p) == p
-        it "from string hard derivation path" $
-            property $
+        prop "from string hard derivation path" $
             forAll arbitraryHardPath $ \p -> fromString (cs $ pathToStr p) == p
-        it "from string soft derivation path" $
-            property $
+        prop "from string soft derivation path" $
             forAll arbitrarySoftPath $ \p -> fromString (cs $ pathToStr p) == p
-        it "from and to lists of derivation paths" $
-            property $
+        prop "from and to lists of derivation paths" $
             forAll arbitraryDerivPath $ \p -> listToPath (pathToList p) == p
-        it "from and to lists of hard derivation paths" $
-            property $
+        prop "from and to lists of hard derivation paths" $
             forAll arbitraryHardPath $ \p ->
                 toHard (listToPath $ pathToList p) == Just p
-        it "from and to lists of soft derivation paths" $
-            property $
+        prop "from and to lists of soft derivation paths" $
             forAll arbitrarySoftPath $ \p ->
                 toSoft (listToPath $ pathToList p) == Just p
-        it "read and show parsed path" $
-            property $ forAll arbitraryParsedPath $ \p -> read (show p) == p
     describe "Extended Keys" $ do
         let net = btc
         it "computes pubkey of a subkey is subkey of the pubkey" $
@@ -133,13 +123,6 @@ spec = do
             property $
             forAll arbitraryXPubKey $ \(_, k) ->
                 xPubImport net (xPubExport net k) == Just k
-        it "shows and reads extended private key" $
-            property $
-            forAll arbitraryXPrvKey $ \k -> read (show k) `shouldBe` k
-        it "shows and reads extended private key" $
-            property $
-            forAll arbitraryXPubKey $ \(prv, pub) ->
-                read (show (prv, pub)) `shouldBe` (prv, pub)
 
 testFromJsonPath :: Assertion
 testFromJsonPath =

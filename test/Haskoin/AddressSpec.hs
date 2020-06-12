@@ -9,46 +9,43 @@ import           Haskoin.Address
 import           Haskoin.Constants
 import           Haskoin.Keys           (derivePubKeyI)
 import           Haskoin.Util.Arbitrary
-import           Haskoin.UtilSpec       (testCustomEncoding, testCustomJSON)
 import           Test.Hspec
-import           Test.HUnit             (Assertion, assertBool, assertEqual)
+import           Test.Hspec.QuickCheck
+import           Test.HUnit
 import           Test.QuickCheck
+
+serialVals :: [SerialBox]
+serialVals = [SerialBox arbitraryAddressAll]
+
+readVals :: [ReadBox]
+readVals = [ReadBox arbitraryAddressAll]
+
+netVals :: [NetBox]
+netVals =
+    [NetBox (addrToJSON, addrToEncoding, addrFromJSON, arbitraryNetAddress)]
 
 spec :: Spec
 spec = do
-    let net = btc
-    describe "btc address" . it "base58 encodings" $ mapM_ runVector vectors
-    describe "btc-test address" $ props btcTest
-    describe "bch address" $ props bch
-    describe "bch-test address" $ props bchTest
-    describe "bch-regtest address" $ props bchRegTest
-    describe "json serialization" $ do
-        it "encodes and decodes address (addrToJSON)" $
-            forAll
-                arbitraryAddress
-                (testCustomJSON (addrFromJSON net) (addrToJSON net))
-        it "encodes and decodes address (addrToEncoding)" $
-            forAll
-                arbitraryAddress
-                (testCustomEncoding (addrFromJSON net) (addrToEncoding net))
-    describe "witness address vectors" . it "p2sh(pwpkh)" $
+    testIdentity serialVals readVals [] netVals
+    describe "Address properties" $ do
+        prop "encodes and decodes base58 bytestring" $
+            forAll arbitraryBS $ \bs ->
+                decodeBase58 (encodeBase58 bs) == Just bs
+        prop "encodes and decodes base58 bytestring with checksum" $
+            forAll arbitraryBS $ \bs ->
+                decodeBase58Check (encodeBase58Check bs) == Just bs
+        prop "encodes and decodes address" $
+            forAll arbitraryNetAddress $ \(net, a) ->
+                (stringToAddr net =<< addrToString net a) == Just a
+    describe "Address vectors" . it "base58 btc address vectors" $
+        mapM_ runVector vectors
+    describe "Witness address vectors" . it "p2sh(pwpkh)" $
         mapM_ testCompatWitness compatWitnessVectors
-
-props :: Network -> Spec
-props net = do
-    it "encodes and decodes base58 bytestring" $
-        property $
-        forAll arbitraryBS $ \bs -> decodeBase58 (encodeBase58 bs) == Just bs
-    it "encodes and decodes base58 bytestring with checksum" $
-        property $
-        forAll arbitraryBS $ \bs ->
-            decodeBase58Check (encodeBase58Check bs) == Just bs
-    it "encodes and decodes address" $
-        property $
-        forAll arbitraryAddress $ \a ->
-            (stringToAddr net =<< addrToString net a) == Just a
-    it "shows and reads address" $
-        property $ forAll arbitraryAddress $ \a -> read (show a) == a
+    describe "WIF keys" $
+        prop "encode and decode wif private keys" $
+        forAll arbitraryNetwork $ \net ->
+            forAll arbitraryKeyPair $ \(pk, _) ->
+                fromWif net (toWif net pk) == Just pk
 
 runVector :: (ByteString, Text, Text) -> Assertion
 runVector (bs, e, chk) = do

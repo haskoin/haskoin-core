@@ -109,16 +109,20 @@ type BlockWork = Integer
 -- block chain.
 data BlockNode
     -- | non-Genesis block header
-    = BlockNode { nodeHeader :: !BlockHeader
-                , nodeHeight :: !BlockHeight
-        -- | accumulated work so far
-                , nodeWork   :: !BlockWork
-        -- | akip magic block hash
-                , nodeSkip   :: !BlockHash }
+    = BlockNode
+          { nodeHeader :: !BlockHeader
+          , nodeHeight :: !BlockHeight
+          -- | accumulated work so far
+          , nodeWork   :: !BlockWork
+          -- | akip magic block hash
+          , nodeSkip   :: !BlockHash
+          }
     -- | Genesis block header
-    | GenesisNode { nodeHeader :: !BlockHeader
-                  , nodeHeight :: !BlockHeight
-                  , nodeWork   :: !BlockWork }
+    | GenesisNode
+          { nodeHeader :: !BlockHeader
+          , nodeHeight :: !BlockHeight
+          , nodeWork   :: !BlockWork
+          }
     deriving (Show, Read, Generic, Hashable, NFData)
 
 instance Serialize BlockNode where

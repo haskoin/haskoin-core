@@ -8,9 +8,10 @@ Portability : POSIX
 -}
 module Haskoin.Util.Arbitrary.Block where
 
-import           Haskoin.Block.Common
-import           Haskoin.Block.Merkle
+import qualified Data.HashMap.Strict                as HashMap
+import           Haskoin.Block
 import           Haskoin.Constants
+import           Haskoin.Util.Arbitrary.Util
 import           Haskoin.Util.Arbitrary.Crypto
 import           Haskoin.Util.Arbitrary.Network
 import           Haskoin.Util.Arbitrary.Transaction
@@ -66,4 +67,27 @@ arbitraryMerkleBlock = do
     c      <- choose (1,10)
     flags  <- vectorOf (c*8) arbitrary
     return $ MerkleBlock bh ntx hashes flags
+
+-- | Arbitrary 'BlockNode'
+arbitraryBlockNode :: Gen BlockNode
+arbitraryBlockNode =
+    oneof
+    [ BlockNode
+        <$> arbitraryBlockHeader
+        <*> choose (1, maxBound)
+        <*> arbitrarySizedNatural
+        <*> arbitraryBlockHash
+    , GenesisNode
+        <$> arbitraryBlockHeader
+        <*> (return 0)
+        <*> arbitrarySizedNatural
+    ]
+
+-- | Arbitrary 'HeaderMemory'
+arbitraryHeaderMemory :: Gen HeaderMemory
+arbitraryHeaderMemory = do
+    ls <- listOf $ (,) <$> arbitrary <*> arbitraryBSS
+    HeaderMemory
+        <$> (return $ HashMap.fromList ls)
+        <*> arbitraryBlockNode
 

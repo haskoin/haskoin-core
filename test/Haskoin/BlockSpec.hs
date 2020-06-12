@@ -13,10 +13,42 @@ import           Haskoin.Block
 import           Haskoin.Constants
 import           Haskoin.Transaction
 import           Haskoin.Util.Arbitrary
-import           Haskoin.UtilSpec           (cerealID, testJsonID)
 import           Test.Hspec
+import           Test.Hspec.QuickCheck
 import           Test.HUnit                 hiding (State)
 import           Test.QuickCheck
+
+
+serialVals :: [SerialBox]
+serialVals =
+    [ SerialBox (arbitraryBlock =<< arbitraryNetwork)
+    , SerialBox arbitraryBlockHash
+    , SerialBox arbitraryBlockHeader
+    , SerialBox arbitraryGetBlocks
+    , SerialBox arbitraryGetHeaders
+    , SerialBox arbitraryHeaders
+    , SerialBox arbitraryMerkleBlock
+    , SerialBox arbitraryBlockNode
+    ]
+
+readVals :: [ReadBox]
+readVals =
+    [ ReadBox (arbitraryBlock =<< arbitraryNetwork)
+    , ReadBox arbitraryBlockHash
+    , ReadBox arbitraryBlockHeader
+    , ReadBox arbitraryGetBlocks
+    , ReadBox arbitraryGetHeaders
+    , ReadBox arbitraryHeaders
+    , ReadBox arbitraryMerkleBlock
+    , ReadBox arbitraryBlockNode
+    ]
+
+jsonVals :: [JsonBox]
+jsonVals =
+    [ JsonBox (arbitraryBlock =<< arbitraryNetwork)
+    , JsonBox arbitraryBlockHash
+    , JsonBox arbitraryBlockHeader
+    ]
 
 myTime :: Timestamp
 myTime = 1499083075
@@ -33,70 +65,47 @@ chain net bh i = do
 
 spec :: Spec
 spec = do
-    let net = bchRegTest
+    testIdentity serialVals readVals jsonVals []
     describe "blockchain headers" $ do
-        it "gets best block" $
-            let bb =
+        it "gets best block on bchRegTest" $
+            let net = bchRegTest
+                bb =
                     withChain net $ do
                         chain net (getGenesisHeader net) 100
                         getBestBlockHeader
              in nodeHeight bb `shouldBe` 100
-        it "builds a block locator" $
-            let loc =
+        it "builds a block locator on bchRegTest" $
+            let net = bchRegTest
+                loc =
                     withChain net $ do
                         chain net (getGenesisHeader net) 100
                         bb <- getBestBlockHeader
                         blockLocatorNodes bb
                 heights = map nodeHeight loc
              in heights `shouldBe` [100,99 .. 90] <> [88, 84, 76, 60, 28, 0]
-        it "follows split chains" $
-            let bb = withChain net $ splitChain net >> getBestBlockHeader
+        it "follows split chains on bchRegTest" $
+            let net = bchRegTest
+                bb = withChain net $ splitChain net >> getBestBlockHeader
              in nodeHeight bb `shouldBe` 4035
     describe "block hash" $ do
-        it "encodes and decodes block hash" $
-            property $
+        prop "encodes and decodes block hash" $
             forAll arbitraryBlockHash $ \h ->
                 hexToBlockHash (blockHashToHex h) == Just h
-        it "from string block hash" $
-            property $
+        prop "from string block hash" $
             forAll arbitraryBlockHash $ \h ->
                 fromString (cs $ blockHashToHex h) == h
-        it "show and read block hash" $
-            property $ forAll arbitraryBlockHash $ \h -> read (show h) == h
     describe "merkle trees" $ do
-        let net' = btc
-        it "builds tree of right width at height 1" $ property testTreeWidth
-        it "builds tree of right width at height 0" $ property testBaseWidth
-        it "builds and extracts partial merkle tree" $
-            property $
-            forAll
-                (listOf1 ((,) <$> arbitraryTxHash <*> arbitrary))
-                (buildExtractTree net')
-        it "merkle root test vectors" $
-            mapM_ runMerkleVector merkleVectors
+        prop "builds tree of right width at height 1" testTreeWidth
+        prop "builds tree of right width at height 0" testBaseWidth
+        prop "builds and extracts partial merkle tree" $
+            forAll arbitraryNetwork $ \net ->
+                forAll
+                    (listOf1 ((,) <$> arbitraryTxHash <*> arbitrary))
+                    (buildExtractTree net)
+        it "merkle root test vectors" $ mapM_ runMerkleVector merkleVectors
     describe "compact number" $ do
         it "compact number local vectors" testCompact
         it "compact number imported vectors" testCompactBitcoinCore
-    describe "binary block serialization" $ do
-        it "encodes and decodes block" $
-            property $ forAll (arbitraryBlock net) cerealID
-        it "encodes and decodes block header" $
-            property $ forAll arbitraryBlockHeader cerealID
-        it "encodes and decodes getblocks" $
-            property $ forAll arbitraryGetBlocks cerealID
-        it "encodes and decodes getheaders" $
-            property $ forAll arbitraryGetHeaders cerealID
-        it "encodes and decdoes headers" $
-            property $ forAll arbitraryHeaders cerealID
-        it "encodes and decodes merkle block" $
-            property $ forAll arbitraryMerkleBlock cerealID
-    describe "JSON block serialization" $ do
-        it "encodes and decodes Block" $
-            property $ forAll (arbitraryBlock net) testJsonID
-        it "encodes and decodes BlockHash" $
-            property $ forAll arbitraryBlockHash testJsonID
-        it "encodes and decodes BlockHeader" $
-            property $ forAll arbitraryBlockHeader testJsonID
     describe "helper functions" $ do
         it "computes bitcoin block subsidy correctly" (testSubsidy btc)
         it "computes regtest block subsidy correctly" (testSubsidy btcRegTest)

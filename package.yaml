@@ -1,15 +1,15 @@
 name: haskoin-core
-version: 0.13.6
+version: &version 0.13.6
 synopsis: Bitcoin & Bitcoin Cash library for Haskell
-description: 'Haskoin Core is a complete Bitcoin and Bitcoin Cash library of functions and data types for Haskell developers.'
+description: Please see the README on GitHub at <https://github.com/haskoin/haskoin-core#readme>
 category: Bitcoin, Finance, Network
 author:
   - Philippe Laprade
   - Jean-Pierre Rupp
   - Matthew Wraith
 maintainer: jprupp@protonmail.ch
-license: PublicDomain
-license-file: UNLICENSE
+license: MIT
+license-file: LICENSE
 homepage: http://github.com/haskoin/haskoin#readme
 git: git://github.com/haskoin/haskoin.git
 bug-reports: http://github.com/haskoin/haskoin/issues
@@ -47,28 +47,15 @@ dependencies:
   vector: ">= 0.12.1.2"
 library:
   source-dirs: src
-  exposed-modules:
-    - Haskoin
-    - Haskoin.Address
-    - Haskoin.Block
-    - Haskoin.Constants
-    - Haskoin.Crypto
-    - Haskoin.Keys
-    - Haskoin.Network
-    - Haskoin.Script
-    - Haskoin.Transaction
-    - Haskoin.Util
-    - Haskoin.Util.Arbitrary
 tests:
   spec:
     main: Spec.hs
-    source-dirs:
-      - test
-      - src
+    source-dirs: test
     verbatim:
       build-tool-depends:
           hspec-discover:hspec-discover
     dependencies:
+      haskoin-core: *version
       hspec: ">= 2.7.1"
       HUnit: ">= 1.6.0.0"
       QuickCheck: ">= 2.13.2"

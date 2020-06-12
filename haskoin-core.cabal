@@ -4,12 +4,12 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 14c9f49e8a8cbf3de72ab19366de7910b9e4f84ea0bf5191e211116e71102f98
+-- hash: 1021b657985752cc782739b6960ee69d9ca79a21602c3e287e77ea7f15e05ffa
 
 name:           haskoin-core
 version:        0.13.6
 synopsis:       Bitcoin & Bitcoin Cash library for Haskell
-description:    Haskoin Core is a complete Bitcoin and Bitcoin Cash library of functions and data types for Haskell developers.
+description:    Please see the README on GitHub at <https://github.com/haskoin/haskoin-core#readme>
 category:       Bitcoin, Finance, Network
 homepage:       http://github.com/haskoin/haskoin#readme
 bug-reports:    http://github.com/haskoin/haskoin/issues
@@ -17,8 +17,8 @@ author:         Philippe Laprade,
                 Jean-Pierre Rupp,
                 Matthew Wraith
 maintainer:     jprupp@protonmail.ch
-license:        PublicDomain
-license-file:   UNLICENSE
+license:        MIT
+license-file:   LICENSE
 build-type:     Simple
 extra-source-files:
     data/forkid_script_tests.json
@@ -38,38 +38,37 @@ library
   exposed-modules:
       Haskoin
       Haskoin.Address
-      Haskoin.Block
-      Haskoin.Constants
-      Haskoin.Crypto
-      Haskoin.Keys
-      Haskoin.Network
-      Haskoin.Script
-      Haskoin.Transaction
-      Haskoin.Util
-      Haskoin.Util.Arbitrary
-  other-modules:
       Haskoin.Address.Base58
       Haskoin.Address.Bech32
       Haskoin.Address.CashAddr
+      Haskoin.Block
       Haskoin.Block.Common
       Haskoin.Block.Headers
       Haskoin.Block.Merkle
+      Haskoin.Constants
+      Haskoin.Crypto
       Haskoin.Crypto.Hash
       Haskoin.Crypto.Signature
+      Haskoin.Keys
       Haskoin.Keys.Common
       Haskoin.Keys.Extended
       Haskoin.Keys.Mnemonic
+      Haskoin.Network
       Haskoin.Network.Bloom
       Haskoin.Network.Common
       Haskoin.Network.Message
+      Haskoin.Script
       Haskoin.Script.Common
       Haskoin.Script.SigHash
       Haskoin.Script.Standard
+      Haskoin.Transaction
       Haskoin.Transaction.Builder
       Haskoin.Transaction.Builder.Sign
       Haskoin.Transaction.Common
       Haskoin.Transaction.Partial
       Haskoin.Transaction.Segwit
+      Haskoin.Util
+      Haskoin.Util.Arbitrary
       Haskoin.Util.Arbitrary.Address
       Haskoin.Util.Arbitrary.Block
       Haskoin.Util.Arbitrary.Crypto
@@ -79,6 +78,7 @@ library
       Haskoin.Util.Arbitrary.Script
       Haskoin.Util.Arbitrary.Transaction
       Haskoin.Util.Arbitrary.Util
+  other-modules:
       Paths_haskoin_core
   hs-source-dirs:
       src
@@ -131,52 +131,9 @@ test-suite spec
       Haskoin.Transaction.PartialSpec
       Haskoin.TransactionSpec
       Haskoin.UtilSpec
-      Haskoin
-      Haskoin.Address
-      Haskoin.Address.Base58
-      Haskoin.Address.Bech32
-      Haskoin.Address.CashAddr
-      Haskoin.Block
-      Haskoin.Block.Common
-      Haskoin.Block.Headers
-      Haskoin.Block.Merkle
-      Haskoin.Constants
-      Haskoin.Crypto
-      Haskoin.Crypto.Hash
-      Haskoin.Crypto.Signature
-      Haskoin.Keys
-      Haskoin.Keys.Common
-      Haskoin.Keys.Extended
-      Haskoin.Keys.Mnemonic
-      Haskoin.Network
-      Haskoin.Network.Bloom
-      Haskoin.Network.Common
-      Haskoin.Network.Message
-      Haskoin.Script
-      Haskoin.Script.Common
-      Haskoin.Script.SigHash
-      Haskoin.Script.Standard
-      Haskoin.Transaction
-      Haskoin.Transaction.Builder
-      Haskoin.Transaction.Builder.Sign
-      Haskoin.Transaction.Common
-      Haskoin.Transaction.Partial
-      Haskoin.Transaction.Segwit
-      Haskoin.Util
-      Haskoin.Util.Arbitrary
-      Haskoin.Util.Arbitrary.Address
-      Haskoin.Util.Arbitrary.Block
-      Haskoin.Util.Arbitrary.Crypto
-      Haskoin.Util.Arbitrary.Keys
-      Haskoin.Util.Arbitrary.Message
-      Haskoin.Util.Arbitrary.Network
-      Haskoin.Util.Arbitrary.Script
-      Haskoin.Util.Arbitrary.Transaction
-      Haskoin.Util.Arbitrary.Util
       Paths_haskoin_core
   hs-source-dirs:
       test
-      src
   build-depends:
       HUnit >=1.6.0.0
     , QuickCheck >=2.13.2
@@ -192,6 +149,7 @@ test-suite spec
     , deepseq >=1.4.4.0
     , entropy >=0.4.1.5
     , hashable >=1.3.0.0
+    , haskoin-core ==0.13.6
     , hspec >=2.7.1
     , memory >=0.15.0
     , mtl >=2.2.2

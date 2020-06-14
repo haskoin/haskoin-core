@@ -4,10 +4,10 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 1021b657985752cc782739b6960ee69d9ca79a21602c3e287e77ea7f15e05ffa
+-- hash: cd8ec1d089e181beb14b72be0d419691ab2b792fd59cb7cb9f2b884c5a649e40
 
 name:           haskoin-core
-version:        0.13.6
+version:        0.14.0
 synopsis:       Bitcoin & Bitcoin Cash library for Haskell
 description:    Please see the README on GitHub at <https://github.com/haskoin/haskoin-core#readme>
 category:       Bitcoin, Finance, Network
@@ -102,7 +102,7 @@ library
     , network >=3.1.1.1
     , safe >=0.3.18
     , scientific >=0.3.6.2
-    , secp256k1-haskell >=0.2.1
+    , secp256k1-haskell >=0.3.0
     , split >=0.2.3.3
     , string-conversions >=0.4.0.1
     , text >=1.2.4.0
@@ -149,7 +149,7 @@ test-suite spec
     , deepseq >=1.4.4.0
     , entropy >=0.4.1.5
     , hashable >=1.3.0.0
-    , haskoin-core ==0.13.6
+    , haskoin-core ==0.14.0
     , hspec >=2.7.1
     , memory >=0.15.0
     , mtl >=2.2.2
@@ -157,7 +157,7 @@ test-suite spec
     , network >=3.1.1.1
     , safe >=0.3.18
     , scientific >=0.3.6.2
-    , secp256k1-haskell >=0.2.1
+    , secp256k1-haskell >=0.3.0
     , split >=0.2.3.3
     , string-conversions >=0.4.0.1
     , text >=1.2.4.0

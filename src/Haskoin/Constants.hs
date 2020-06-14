@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP               #-}
 {-# LANGUAGE DeriveAnyClass    #-}
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -33,16 +34,18 @@ import           Data.Maybe
 import           Data.Serialize
 import           Data.String
 import           Data.Text            (Text)
-import           Data.Version
 import           Data.Word            (Word32, Word64, Word8)
 import           GHC.Generics         (Generic)
 import           Haskoin.Block.Common
-import           Paths_haskoin_core
 import           Text.Read
 
 -- | Version of Haskoin Core package.
 versionString :: IsString a => a
-versionString = fromString (showVersion version)
+#ifdef CURRENT_PACKAGE_VERSION
+versionString = CURRENT_PACKAGE_VERSION
+#else
+versionString = "Unavailable"
+#endif
 
 -- | Constants for network.
 data Network = Network
@@ -213,6 +216,7 @@ btc =
           , "seed.bitcoin.jonasschnelli.ch" -- Jonas Schnelli
           , "seed.btc.petertodd.org" -- Peter Todd
           , "seed.bitcoin.sprovoost.nl" -- Sjors Provoost
+          , "dnsseed.emzy.de" -- Stephan Oeste
           ]
     , getBip44Coin = 0
     , getSigHashForkId = Nothing
@@ -405,9 +409,9 @@ bch =
           [ "seed.bitcoinabc.org"
           , "seed-abc.bitcoinforks.org"
           , "btccash-seeder.bitcoinunlimited.info"
-          , "seed.bitprim.org"
+          , "seeder.jasonbcox.com"
           , "seed.deadalnix.me"
-          , "seeder.criptolayer.net"
+          , "seed.bchd.cash"
           ]
     , getBip44Coin = 145
     , getSigHashForkId = Just 0
@@ -469,9 +473,9 @@ bchTest =
     , getSeeds =
           [ "testnet-seed.bitcoinabc.org"
           , "testnet-seed-abc.bitcoinforks.org"
-          , "testnet-seed.bitprim.org"
           , "testnet-seed.deadalnix.me"
           , "testnet-seeder.criptolayer.net"
+          , "testnet-seed.bchd.cash"
           ]
     , getBip44Coin = 1
     , getSigHashForkId = Just 0

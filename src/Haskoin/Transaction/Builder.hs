@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-|
@@ -247,25 +248,23 @@ guessMSSize (m, n)
 -- | Build a transaction by providing a list of outpoints as inputs
 -- and a list of recipient addresses and amounts as outputs.
 buildAddrTx :: Network -> [OutPoint] -> [(Text, Word64)] -> Either String Tx
-buildAddrTx net xs ys = buildTx xs =<< mapM f ys
+buildAddrTx net ops rcps =
+    buildTx ops <$> mapM f rcps
   where
-    f (s, v) =
-        maybe (Left ("buildAddrTx: Invalid address " ++ cs s)) Right $ do
-            a <- stringToAddr net s
+    f (aTxt, v) =
+        maybeToEither ("buildAddrTx: Invalid address " <> cs aTxt) $ do
+            a <- textToAddr net aTxt
             let o = addressToOutput a
             return (o, v)
 
 -- | Build a transaction by providing a list of outpoints as inputs
 -- and a list of 'ScriptOutput' and amounts as outputs.
-buildTx :: [OutPoint] -> [(ScriptOutput, Word64)] -> Either String Tx
-buildTx xs ys =
-    mapM fo ys >>= \os -> return $ Tx 1 (map fi xs) os [] 0
+buildTx :: [OutPoint] -> [(ScriptOutput, Word64)] -> Tx
+buildTx ops rcpts =
+    Tx 1 (toIn <$> ops) (toOut <$> rcpts) [] 0
   where
-    fi outPoint = TxIn outPoint B.empty maxBound
-    fo (o, v)
-        | v <= 2100000000000000 = return $ TxOut v $ encodeOutputBS o
-        | otherwise =
-            Left $ "buildTx: Invalid amount " ++ show v
+    toIn op = TxIn op B.empty maxBound
+    toOut (o, v) = TxOut v $ encodeOutputBS o
 
 -- | Sign a transaction by providing the 'SigInput' signing parameters and a
 -- list of private keys. The signature is computed deterministically as defined
@@ -346,9 +345,8 @@ mergeTxInput ::
     -> Tx
     -> ((ScriptOutput, Word64), Int)
     -> Either String Tx
-mergeTxInput net txs tx ((so, val), i)
+mergeTxInput net txs tx ((so, val), i) = do
     -- Ignore transactions with empty inputs
- = do
     let ins = map (scriptInput . (!! i) . txIn) txs
     sigRes <- mapM extractSigs $ filter (not . B.null) ins
     let rdm = snd $ head sigRes
@@ -393,7 +391,7 @@ verifyStdTx net tx xs =
   where
     f (_, _, o) txin = o == prevOutput txin
     go (Just (so, val, _), i) = verifyStdInput net tx i so val
-    go _ = False
+    go _                      = False
 
 -- | Verify if a transaction input is valid and standard.
 verifyStdInput :: Network -> Tx -> Int -> ScriptOutput -> Word64 -> Bool
@@ -468,7 +466,8 @@ countMulSig ::
     -> [PubKey]
     -> [TxSignature]
     -> Int
-countMulSig net tx out val i = countMulSig' h
+countMulSig net tx out val i =
+    countMulSig' h
   where
     h = txSigHash net tx out val i
 

@@ -291,7 +291,7 @@ testBuildAddrTx net a (TestCoin v)
     | isScriptAddress a = Right (PayScriptHash (getAddrHash160 a)) == out
     | otherwise = undefined
   where
-    tx = buildAddrTx net [] [(fromJust (addrToString net a), v)]
+    tx = buildAddrTx net [] [(fromJust (addrToText net a), v)]
     out =
         decodeOutputBS $
         scriptOutput $

@@ -312,9 +312,9 @@ runVector m v = do
     assertBool "xPrvID" $ encodeHex (S.encode $ xPrvID m) == v !! 0
     assertBool "xPrvFP" $ encodeHex (S.encode $ xPrvFP m) == v !! 1
     assertBool "xPrvAddr" $
-        addrToString btc (xPubAddr $ deriveXPubKey m) == Just (v !! 2)
+        addrToText btc (xPubAddr $ deriveXPubKey m) == Just (v !! 2)
     assertBool "bip44Addr" $
-        addrToString btc (xPubAddr $ deriveXPubKey $ derivePath bip44Addr m) ==
+        addrToText btc (xPubAddr $ deriveXPubKey $ derivePath bip44Addr m) ==
         Just (v !! 3)
     assertBool "prvKey" $ encodeHex (getSecKey $ xPrvKey m) == v !! 4
     assertBool "xPrvWIF" $ xPrvWif btc m == v !! 5
@@ -332,10 +332,10 @@ genVector :: XPrvKey -> [(Text, Text)]
 genVector m =
     [ ("xPrvID", encodeHex (S.encode $ xPrvID m))
     , ("xPrvFP", encodeHex (S.encode $ xPrvFP m))
-    , ("xPrvAddr", fromJust $ addrToString btc (xPubAddr $ deriveXPubKey m))
+    , ("xPrvAddr", fromJust $ addrToText btc (xPubAddr $ deriveXPubKey m))
     , ( "bip44Addr"
       , fromJust $
-        addrToString btc (xPubAddr $ deriveXPubKey $ derivePath bip44Addr m))
+        addrToText btc (xPubAddr $ deriveXPubKey $ derivePath bip44Addr m))
     , ("prvKey", encodeHex (getSecKey $ xPrvKey m))
     , ("xPrvWIF", xPrvWif btc m)
     , ("pubKey", encodeHex (exportPubKey True $ xPubKey $ deriveXPubKey m))

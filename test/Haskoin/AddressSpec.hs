@@ -34,18 +34,19 @@ spec = do
         prop "encodes and decodes base58 bytestring with checksum" $
             forAll arbitraryBS $ \bs ->
                 decodeBase58Check (encodeBase58Check bs) == Just bs
-        prop "encodes and decodes address" $
+        prop "textToAddr . addrToText identity" $
             forAll arbitraryNetAddress $ \(net, a) ->
-                (stringToAddr net =<< addrToString net a) == Just a
-    describe "Address vectors" . it "base58 btc address vectors" $
-        mapM_ runVector vectors
-    describe "Witness address vectors" . it "p2sh(pwpkh)" $
-        mapM_ testCompatWitness compatWitnessVectors
-    describe "WIF keys" $
+                (textToAddr net =<< addrToText net a) == Just a
+    describe "WIF key properties" $
         prop "encode and decode wif private keys" $
         forAll arbitraryNetwork $ \net ->
             forAll arbitraryKeyPair $ \(pk, _) ->
                 fromWif net (toWif net pk) == Just pk
+    describe "Address vectors" $ do
+        it "Passes Base58 address vectors" $
+            mapM_ runVector vectors
+        it "Passes addresses witness p2sh(pwpkh) vectors" $
+            mapM_ testCompatWitness compatWitnessVectors
 
 runVector :: (ByteString, Text, Text) -> Assertion
 runVector (bs, e, chk) = do
@@ -82,6 +83,6 @@ testCompatWitness (net, seckey, addr) = do
     let seckeyM = fromWif net seckey
     assertBool "decode seckey" (isJust seckeyM)
     let pubkey = derivePubKeyI (fromJust seckeyM)
-    let addrM = addrToString btcTest (pubKeyCompatWitnessAddr pubkey)
+    let addrM = addrToText btcTest (pubKeyCompatWitnessAddr pubkey)
     assertBool "address can be encoded" (isJust addrM)
     assertEqual "witness address matches" addr (fromJust addrM)

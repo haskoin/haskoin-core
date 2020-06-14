@@ -472,10 +472,10 @@ bchTest =
           ]
     , getSeeds =
           [ "testnet-seed.bitcoinabc.org"
-          , "testnet-seed-abc.bitcoinforks.org"
+          , "testnet-seed-bch.bitcoinforks.org"
           , "testnet-seed.deadalnix.me"
-          , "testnet-seeder.criptolayer.net"
           , "testnet-seed.bchd.cash"
+          , "testnet-seed.bitcoinunlimited.info"
           ]
     , getBip44Coin = 1
     , getSigHashForkId = Just 0

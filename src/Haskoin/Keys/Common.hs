@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 {-|
 Module      : Haskoin.Keys.Common
 Copyright   : No rights reserved
@@ -25,8 +26,6 @@ module Haskoin.Keys.Common
     , fromMiniKey
     , tweakPubKey
     , tweakSecKey
-    , secKeyPut
-    , secKeyGet
     , getSecKey
     , secKey
     ) where
@@ -44,8 +43,8 @@ import           Data.ByteString.Builder (char7)
 import           Data.Hashable
 import           Data.Maybe              (fromMaybe)
 import           Data.Serialize          (Serialize, decode, encode, get, put)
-import           Data.Serialize.Get      (Get, getByteString)
-import           Data.Serialize.Put      (Putter, putByteString)
+import           Data.Serialize.Get      (getByteString)
+import           Data.Serialize.Put      (putByteString)
 import           Data.String             (IsString, fromString)
 import           Data.String.Conversions (cs)
 import           GHC.Generics            (Generic)
@@ -108,19 +107,15 @@ data SecKeyI = SecKeyI
     , secKeyCompressed :: !Bool
     } deriving (Eq, Show, Read, Generic, NFData)
 
+instance Serialize SecKey where
+    get = do
+        bs <- getByteString 32
+        maybe (fail "invalid private key") return (secKey bs)
+    put = putByteString . getSecKey
+
 -- | Wrap private key with corresponding public key compression flag.
 wrapSecKey :: Bool -> SecKey -> SecKeyI
 wrapSecKey c d = SecKeyI d c
-
--- | Deserialize 'SecKey'.
-secKeyGet :: Get SecKey
-secKeyGet = do
-    bs <- getByteString 32
-    maybe (fail "invalid private key") return (secKey bs)
-
--- | Serialize 'SecKey'.
-secKeyPut :: Putter SecKey
-secKeyPut = putByteString . getSecKey
 
 -- | Decode Casascius mini private keys (22 or 30 characters).
 fromMiniKey :: ByteString -> Maybe SecKeyI

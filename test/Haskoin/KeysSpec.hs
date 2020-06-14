@@ -15,31 +15,34 @@ import           Haskoin.Util
 import           Test.Hspec
 import           Test.QuickCheck
 
+serialVals :: [SerialBox]
+serialVals =
+    [ SerialBox (arbitrary :: Gen SecKey)
+    , SerialBox (snd <$> arbitraryKeyPair) -- PubKeyI
+    ]
+
+readVals :: [ReadBox]
+readVals =
+    [ ReadBox (arbitrary :: Gen SecKey)
+    , ReadBox arbitrarySecKeyI
+    , ReadBox (snd <$> arbitraryKeyPair) -- PubKeyI
+    ]
+
+jsonVals :: [JsonBox]
+jsonVals =
+    [ JsonBox (snd <$> arbitraryKeyPair) -- PubKeyI
+    ]
+
 spec :: Spec
 spec =
     describe "keys" $ do
-        let net = btc
+        testIdentity serialVals readVals jsonVals []
         it "is public key canonical" $
             property $ forAll arbitraryKeyPair (isCanonicalPubKey . snd)
-        it "encode and decode wif private keys" $
-            property $
-            forAll arbitraryKeyPair $ \(pk, _) ->
-                fromWif net (toWif net pk) == Just pk
-        it "encode and decode serialized private key" $
-            property $ forAll arbitrary binaryPrvKey
-        it "read and show public key" $
-            property $ forAll arbitraryKeyPair $ \(_, k) -> read (show k) == k
-        it "read and show private key" $
-            property $ forAll arbitrarySecKeyI $ \k -> read (show k) == k
         it "from string public key" $
             property $
             forAll arbitraryKeyPair $ \(_, k) ->
                 fromString (cs . encodeHex $ S.encode k) == k
-        it "encode and decode json public key" $
-            property $ forAll arbitraryKeyPair (testID . snd)
-        it "encodes and decodes serialized public key" $
-            property $ forAll arbitraryKeyPair $ cerealID . snd
-
 
 -- github.com/bitcoin/bitcoin/blob/master/src/script.cpp
 -- from function IsCanonicalPubKey
@@ -56,17 +59,3 @@ isCanonicalPubKey p = not $
   where
     bs = S.encode p
 
-{- Key formats -}
-
-binaryPrvKey :: SecKey -> Bool
-binaryPrvKey k =
-    Right k == runGet secKeyGet (runPut (secKeyPut k)) &&
-    Just k == secKey (getSecKey k)
-
-testID :: (FromJSON a, ToJSON a, Eq a) => a -> Bool
-testID x =
-    (A.decode . A.encode) (singleton ("object" :: String) x) ==
-    Just (singleton ("object" :: String) x)
-
-cerealID :: (Serialize a, Eq a) => a -> Bool
-cerealID x = S.decode (S.encode x) == Right x

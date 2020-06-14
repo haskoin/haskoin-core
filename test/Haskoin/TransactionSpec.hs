@@ -18,18 +18,47 @@ import           Haskoin.Transaction
 import           Haskoin.Transaction.Segwit (isSegwit)
 import           Haskoin.Util
 import           Haskoin.Util.Arbitrary
-import           Haskoin.UtilSpec           (cerealID, testJsonID)
 import           Safe                       (readMay)
 import           Test.Hspec
+import           Test.Hspec.QuickCheck
 import           Test.HUnit                 (Assertion, assertBool)
 import           Test.QuickCheck
 
+serialVals :: [SerialBox]
+serialVals =
+    [ SerialBox $ arbitraryTx =<< arbitraryNetwork
+    , SerialBox $ arbitraryWitnessTx =<< arbitraryNetwork
+    , SerialBox $ arbitraryLegacyTx =<< arbitraryNetwork
+    , SerialBox $ arbitraryTxIn =<< arbitraryNetwork
+    , SerialBox $ arbitraryTxOut =<< arbitraryNetwork
+    , SerialBox arbitraryOutPoint
+    ]
+
+readVals :: [ReadBox]
+readVals =
+    [ ReadBox arbitraryTxHash
+    , ReadBox $ arbitraryTx =<< arbitraryNetwork
+    , ReadBox $ arbitraryTxIn =<< arbitraryNetwork
+    , ReadBox $ arbitraryTxOut =<< arbitraryNetwork
+    , ReadBox arbitraryOutPoint
+    ]
+
+jsonVals :: [JsonBox]
+jsonVals =
+    [ JsonBox  arbitraryTxHash
+    , JsonBox $ arbitraryTx =<< arbitraryNetwork
+    , JsonBox $ arbitraryWitnessTx =<< arbitraryNetwork
+    , JsonBox $ arbitraryLegacyTx =<< arbitraryNetwork
+    , JsonBox $ arbitraryTxIn =<< arbitraryNetwork
+    , JsonBox $ arbitraryTxOut =<< arbitraryNetwork
+    , JsonBox arbitraryOutPoint
+    ]
+
 spec :: Spec
 spec = do
-    let net = btc
+    testIdentity serialVals readVals jsonVals []
     describe "transaction unit tests" $ do
-        it "compute txid from tx" $
-            mapM_ runTxIDVec txIDVec
+        it "compute txid from tx" $ mapM_ runTxIDVec txIDVec
         it "build pkhash transaction (generated from bitcoind)" $
             mapM_ runPKHashVec pkHashVec
         it "encode satoshi core script pubkey" tEncodeSatoshiCoreScriptPubKey
@@ -43,54 +72,33 @@ spec = do
         -- it "builds a p2wsh multisig transaction" testP2WSHMulsig
         -- it "agrees with BIP143 p2sh-p2wsh multisig example" testBip143p2shp2wpkhMulsig
     describe "btc transaction" $ do
-        it "decode and encode txid" $
-            property $
+        prop "decode and encode txid" $
             forAll arbitraryTxHash $ \h -> hexToTxHash (txHashToHex h) == Just h
-        it "from string transaction id" $
-            property $
+        prop "from string transaction id" $
             forAll arbitraryTxHash $ \h -> fromString (cs $ txHashToHex h) == h
-        it "building address tx" $
-            property $
-            forAll arbitraryAddress $
-            forAll (arbitrarySatoshi net) . testBuildAddrTx net
-        it "guess transaction size" $
-            property $ forAll (arbitraryAddrOnlyTxFull net) (testGuessSize net)
-        it "choose coins" $
-            property $ forAll (listOf (arbitrarySatoshi net)) testChooseCoins
-        it "choose multisig coins" $
-            property $
-            forAll arbitraryMSParam $
-            forAll (listOf (arbitrarySatoshi net)) . testChooseMSCoins
-        it "sign and validate transaction" $
-            property $ forAll (arbitrarySigningData net) (testDetSignTx net)
-        it "sign and validate (nested) transaction" $
-            property $ forAll (arbitrarySigningData net) (testDetSignNestedTx net)
-        it "merge partially signed transactions" $
-            property $ forAll (arbitraryPartialTxs net) (testMergeTx net)
-    describe "transaction JSON serialization" $ do
-        it "encodes and decodes transaction" $
-            property $ forAll (arbitraryTx net) testJsonID
-        it "encodes and decodes transaction hash" $
-            property $ forAll arbitraryTxHash testJsonID
-        it "encodes and decodes transaction inputs" $
-            property $ forAll (arbitraryTxIn net) testJsonID
-        it "encodes and decodes transaction outputs" $
-            property $ forAll (arbitraryTxOut net) testJsonID
-        it "encodes and decodes outpoints" $
-            property $ forAll arbitraryOutPoint testJsonID
-    describe "transaction binary serialization" $ do
-        it "encodes and decodes tx input" $
-            property $ forAll (arbitraryTxIn net) cerealID
-        it "encodes and decodes tx output" $
-            property $ forAll (arbitraryTxOut net) cerealID
-        it "encodes and decodes outpoint" $
-            property $ forAll arbitraryOutPoint cerealID
-        it "encodes and decodes transaction" $
-            property $ forAll (arbitraryTx net) cerealID
-        it "encodes and decodes witness transaction" $
-            property $ forAll (arbitraryWitnessTx net) cerealID
-        it "encodes and decodes legacy transaction" $
-            property $ forAll (arbitraryLegacyTx net) cerealID
+        prop "building address tx" $
+            forAll arbitraryNetwork $ \net ->
+                forAll arbitraryAddress $
+                forAll (arbitrarySatoshi net) . testBuildAddrTx net
+        prop "guess transaction size" $
+            forAll arbitraryNetwork $ \net ->
+                forAll (arbitraryAddrOnlyTxFull net) (testGuessSize net)
+        prop "choose coins" $
+            forAll arbitraryNetwork $ \net ->
+                forAll (listOf (arbitrarySatoshi net)) testChooseCoins
+        prop "choose multisig coins" $
+            forAll arbitraryNetwork $ \net ->
+                forAll arbitraryMSParam $
+                forAll (listOf (arbitrarySatoshi net)) . testChooseMSCoins
+        prop "sign and validate transaction" $
+            forAll arbitraryNetwork $ \net ->
+                forAll (arbitrarySigningData net) (testDetSignTx net)
+        prop "sign and validate (nested) transaction" $
+            forAll arbitraryNetwork $ \net ->
+                forAll (arbitrarySigningData net) (testDetSignNestedTx net)
+        prop "merge partially signed transactions" $
+            forAll arbitraryNetwork $ \net ->
+                property $ forAll (arbitraryPartialTxs net) (testMergeTx net)
 
 runTxIDVec :: (Text, Text) -> Assertion
 runTxIDVec (tid, tx) = assertBool "txid" $ txHashToHex (txHash txBS) == tid

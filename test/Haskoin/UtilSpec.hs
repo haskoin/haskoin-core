@@ -1,9 +1,5 @@
 module Haskoin.UtilSpec
     ( spec
-    , testJsonID
-    , testCustomJSON
-    , testCustomEncoding
-    , cerealID
     , customCerealID
     ) where
 
@@ -22,18 +18,19 @@ import           Data.Serialize         as S
 import           Haskoin.Util
 import           Haskoin.Util.Arbitrary
 import           Test.Hspec
+import           Test.Hspec.QuickCheck
 import           Test.QuickCheck
 
 spec :: Spec
 spec =
     describe "utility functions" $ do
-        it "bsToInteger . integerToBS" $ property getPutInteger
-        it "decodeHex . encodeHex" $ property $ forAll arbitraryBS fromToHex
-        it "compare updateIndex with Data.Sequence" $ property testUpdateIndex
-        it "matchTemplate" $ property testMatchTemplate
-        it "testing matchTemplate with two lists" $
-            property testMatchTemplateLen
-        it "either helper functions" $ property testEither
+        prop "bsToInteger . integerToBS" getPutInteger
+        prop "decodeHex . encodeHex" $ forAll arbitraryBS fromToHex
+        prop "compare updateIndex with Data.Sequence" testUpdateIndex
+        prop "matchTemplate" testMatchTemplate
+        prop "testing matchTemplate with two lists" testMatchTemplateLen
+        prop "test eitherToMaybe" testEitherToMaybe
+        prop "test maybeToEither" testMaybeToEither
 
 {- Various utilities -}
 
@@ -62,46 +59,14 @@ testMatchTemplateLen as bs = length bs == length res
   where
     res = matchTemplate as bs (==)
 
-testEither :: Either String Int -> Bool
-testEither e =
-    case e of
-        (Right v) ->
-            isRight e &&
-            not (isLeft e) &&
-            fromRight (error "Unexpected Left") e == v &&
-            eitherToMaybe e == Just v
-        (Left v) ->
-            isLeft e &&
-            not (isRight e) &&
-            fromLeft (error "Unexpected Right") e == v &&
-            isNothing (eitherToMaybe e)
+testEitherToMaybe :: Either String Int -> Bool
+testEitherToMaybe (Right v) = eitherToMaybe (Right v) == Just v
+testEitherToMaybe e = isNothing (eitherToMaybe e)
 
-cerealID :: (Serialize a, Eq a) => a -> Bool
-cerealID x = S.decode (S.encode x) == Right x
+testMaybeToEither :: Maybe Int -> String -> Bool
+testMaybeToEither (Just v) str = maybeToEither str (Just v) == Right v
+testMaybeToEither m str = maybeToEither str m == Left str
 
 customCerealID :: Eq a => Get a -> Putter a -> a -> Bool
 customCerealID g p a = runGet g (runPut (p a)) == Right a
 
-testJsonID :: (FromJSON a, ToJSON a, Eq a) => a -> Bool
-testJsonID x = jsonID_ x && encodingID_ x
-
-jsonID_ :: (FromJSON a, ToJSON a, Eq a) => a -> Bool
-jsonID_ x =
-    (A.fromJSON . A.toJSON) (singleton ("object" :: String) x) ==
-    A.Success (singleton ("object" :: String) x)
-
-encodingID_ :: (FromJSON a, ToJSON a, Eq a) => a -> Bool
-encodingID_ x =
-    (A.decode . encodingToLazyByteString . A.toEncoding)
-        (singleton ("object" :: String) x) ==
-    Just (singleton ("object" :: String) x)
-
-testCustomJSON :: Eq a => (A.Value -> Parser a) -> (a -> A.Value) -> a -> Bool
-testCustomJSON f g x = parseMaybe f (g x) == Just x
-
-testCustomEncoding ::
-       Eq a => (A.Value -> Parser a) -> (a -> A.Encoding) -> a -> Bool
-testCustomEncoding f g x =
-    dec (encodingToLazyByteString $ g x) == Just x
-  where
-    dec bs = parseMaybe f =<< A.decode bs

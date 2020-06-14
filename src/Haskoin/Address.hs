@@ -156,8 +156,7 @@ addrToString :: Network -> Address -> Maybe Text
 addrToString net a@PubKeyAddress {getAddrHash160 = h}
     | isNothing (getCashAddrPrefix net) =
         Just . encodeBase58Check . runPut $ base58put net a
-    | otherwise =
-        cashAddrEncode net 0 (S.encode h)
+    | otherwise = cashAddrEncode net 0 (S.encode h)
 addrToString net a@ScriptAddress {getAddrHash160 = h}
     | isNothing (getCashAddrPrefix net) =
         Just . encodeBase58Check . runPut $ base58put net a

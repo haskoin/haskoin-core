@@ -60,7 +60,6 @@ testSigning (prv, msg, str) = do
     g = signHash prv msg'
     msg' = sha256 msg
 
-
 {- ECDSA Canonical -}
 
 -- github.com/bitcoin/bitcoin/blob/master/src/script.cpp
@@ -106,7 +105,6 @@ testIsCanonical sig = not $
     len = fromIntegral $ BS.length s
     rlen = BS.index s 3
     slen = BS.index s (fromIntegral rlen + 5)
-
 
 {- Trezor RFC 6979 Test Vectors -}
 -- github.com/trezor/python-ecdsa/blob/master/ecdsa/test_pyecdsa.py

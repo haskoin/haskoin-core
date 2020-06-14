@@ -12,14 +12,45 @@ import           Haskoin.Network
 import           Haskoin.Transaction
 import           Haskoin.Util
 import           Haskoin.Util.Arbitrary
-import           Haskoin.UtilSpec       (cerealID, customCerealID)
+import           Haskoin.UtilSpec       (customCerealID)
 import           Test.Hspec
+import           Test.Hspec.QuickCheck
 import           Test.HUnit             (Assertion, assertBool, assertEqual)
 import           Test.QuickCheck
 
+serialVals :: [SerialBox]
+serialVals =
+    [ SerialBox arbitraryVarInt
+    , SerialBox arbitraryVarString
+    , SerialBox arbitraryNetworkAddress
+    , SerialBox arbitraryInvType
+    , SerialBox arbitraryInvVector
+    , SerialBox arbitraryInv1
+    , SerialBox arbitraryVersion
+    , SerialBox arbitraryAddr1
+    , SerialBox arbitraryAlert
+    , SerialBox arbitraryReject
+    , SerialBox arbitraryRejectCode
+    , SerialBox arbitraryGetData
+    , SerialBox arbitraryNotFound
+    , SerialBox arbitraryPing
+    , SerialBox arbitraryPong
+    , SerialBox arbitraryMessageCommand
+    , SerialBox arbitraryMessageHeader
+    , SerialBox arbitraryBloomFlags
+    , SerialBox arbitraryBloomFilter
+    , SerialBox arbitraryFilterLoad
+    , SerialBox arbitraryFilterAdd
+    ]
+
 spec :: Spec
 spec = do
-    let net = btc
+    testIdentity serialVals [] [] []
+    describe "Custom identity tests" $ do
+        prop "Data.Serialize Encoding for type Message" $
+            forAll arbitraryNetwork $ \net ->
+                forAll (arbitraryMessage net) $
+                customCerealID (getMessage net) (putMessage net)
     describe "bloom filters" $ do
         it "bloom filter vector 1" bloomFilter1
         it "bloom filter vector 2" bloomFilter2
@@ -27,47 +58,6 @@ spec = do
     describe "relevant bloom filter update" $ do
         it "Relevant Update" relevantOutputUpdated
         it "Irrelevant Update" irrelevantOutputNotUpdated
-    describe "serialization of protocol types" $ do
-        it "encodes and decodes varint" $
-            property $ forAll arbitraryVarInt cerealID
-        it "encodes and decodes varstring" $
-            property $ forAll arbitraryVarString cerealID
-        it "encodes and decodes network address" $
-            property $ forAll arbitraryNetworkAddress cerealID
-        it "encodes and decodes invtype" $
-            property $ forAll arbitraryInvType cerealID
-        it "encodes and decodes invvector" $
-            property $ forAll arbitraryInvVector cerealID
-        it "encodes and decodes inv" $ property $ forAll arbitraryInv1 cerealID
-        it "encodes and decodes version" $
-            property $ forAll arbitraryVersion cerealID
-        it "encodes and decodes addr" $ property $ forAll arbitraryAddr1 cerealID
-        it "encodes and decodes alert" $ property $ forAll arbitraryAlert cerealID
-        it "encodes and decodes reject" $
-            property $ forAll arbitraryReject cerealID
-        it "encodes and decodes getdata" $
-            property $ forAll arbitraryGetData cerealID
-        it "encodes and decodes notfound" $
-            property $ forAll arbitraryNotFound cerealID
-        it "encodes and decodes ping" $ property $ forAll arbitraryPing cerealID
-        it "encodes and decodes pong" $ property $ forAll arbitraryPong cerealID
-        it "encodes and decodes message command" $
-            property $ forAll arbitraryMessageCommand cerealID
-        it "encodes and decodes message header" $
-            property $ forAll arbitraryMessageHeader cerealID
-        it "encodes and decodes message" $
-            property $
-            forAll (arbitraryMessage net) $
-            customCerealID (getMessage net) (putMessage net)
-    describe "serialization of bloom types" $ do
-        it "encodes and decodes bloom flags" $
-            property $ forAll arbitraryBloomFlags cerealID
-        it "encodes and decodes bloom filter" $
-            property $ forAll arbitraryBloomFilter $ cerealID . lst3
-        it "encodes and decodes filterload" $
-            property $ forAll arbitraryFilterLoad cerealID
-        it "encodes and decodes filteradd" $
-            property $ forAll arbitraryFilterAdd cerealID
 
 bloomFilter :: Word32 -> Text -> Assertion
 bloomFilter n x = do

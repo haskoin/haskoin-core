@@ -19,6 +19,7 @@ import           Haskoin.Util
 import           Haskoin.Util.Arbitrary
 import           Test.Hspec
 import           Test.Hspec.QuickCheck
+import           Test.HUnit
 import           Test.QuickCheck
 
 serialVals :: [SerialBox]
@@ -58,17 +59,17 @@ spec =
                     fromString (cs $ encodeHex $ encode h) == h
         describe "Test Vectors" $ do
             it "Passes RIPEMD160 test vectors" $
-                all (testVector ripemd160 getHash160) ripemd160Vectors
+                mapM_ (testVector ripemd160 getHash160) ripemd160Vectors
             it "Passes SHA1 test vectors" $
-                all (testVector sha1 getHash160) sha1Vectors
+                mapM_ (testVector sha1 getHash160) sha1Vectors
             it "Passes SHA256 test vectors" $
-                all (testVector sha256 getHash256) sha256Vectors
+                mapM_ (testVector sha256 getHash256) sha256Vectors
             it "Passes SHA512 test vectors" $
-                all (testVector sha512 getHash512) sha512Vectors
+                mapM_ (testVector sha512 getHash512) sha512Vectors
             it "Passes HMAC_SHA256 test vectors" $
-                all (testHMACVector hmac256 getHash256) hmacSha256Vectors
+                mapM_ (testHMACVector hmac256 getHash256) hmacSha256Vectors
             it "Passes HMAC_SHA512 test vectors" $
-                all (testHMACVector hmac512 getHash512) hmacSha512Vectors
+                mapM_ (testHMACVector hmac512 getHash512) hmacSha512Vectors
 
 joinSplit512 :: Hash256 -> Hash256 -> Bool
 joinSplit512 a b = split512 (join512 (a, b)) == (a, b)
@@ -91,16 +92,17 @@ testVector ::
        (ByteString -> a)
     -> (a -> BSS.ShortByteString)
     -> (ByteString, Text)
-    -> Bool
-testVector f1 f2 (i, res) = encodeHex (BSS.fromShort $ f2 $ f1 i) == res
+    -> Assertion
+testVector f1 f2 (i, res) =
+    assertEqual "Hash matches" res (encodeHex (BSS.fromShort $ f2 $ f1 i))
 
 testHMACVector ::
        (ByteString -> ByteString -> a)
     -> (a -> BSS.ShortByteString)
     -> (Text, Text, Text)
-    -> Bool
+    -> Assertion
 testHMACVector f1 f2 (k, m, res) =
-    encodeHex (BSS.fromShort $ f2 $ f1 bsK bsM) == res
+    assertEqual "Hash matches" res (encodeHex (BSS.fromShort $ f2 $ f1 bsK bsM))
   where
     bsK = fromJust $ decodeHex k
     bsM = fromJust $ decodeHex m
@@ -331,7 +333,7 @@ hmacSha512Vectors =
     , ( "4a6566654a6566654a6566654a6566654a6566654a6566654a6566654a656665\
         \4a6566654a6566654a6566654a6566654a6566654a6566654a6566654a656665\
         \4a6566654a6566654a6566654a6566654a6566654a6566654a6566654a656665\
-        \4a6566654a6566654a6566654a6566654a6566654a6566654a6566654a656665\      
+        \4a6566654a6566654a6566654a6566654a6566654a6566654a6566654a656665\
         \4a"
       , "7768617420646f2079612077616e7420666f72206e6f7468696e673f"
       , "0b273325191cfc1b4b71d5075c8fcad67696309d292b1dad2cd23983a35feb8e\

@@ -303,7 +303,7 @@ bip44Addr :: DerivPath
 bip44Addr = Deriv :| 44 :| 0 :| 0 :/ 0 :/ 0
 
 vectorSpec :: TestKey -> [TestVector] -> Spec
-vectorSpec mTxt vecTxt = do
+vectorSpec mTxt vecTxt =
     forM_ (parseVector mTxt vecTxt) $ \(d,m,v) ->
         it ("chain " <> cs d) $ runVector m v
 

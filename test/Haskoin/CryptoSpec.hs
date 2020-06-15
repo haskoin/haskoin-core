@@ -2,11 +2,14 @@
 module Haskoin.CryptoSpec (spec) where
 
 import           Control.Monad
-import           Data.ByteString       (ByteString)
-import qualified Data.ByteString.Char8 as C (pack)
+import           Data.ByteString         (ByteString)
+import qualified Data.ByteString         as BS
+import qualified Data.ByteString.Char8   as C (pack)
 import           Data.Maybe
-import           Data.Maybe            (fromMaybe, isJust, isNothing)
-import           Data.Text             (Text)
+import           Data.Maybe              (fromMaybe, isJust, isNothing)
+import           Data.Serialize          (encode)
+import           Data.String.Conversions (cs)
+import           Data.Text               (Text)
 import           Haskoin.Address
 import           Haskoin.Constants
 import           Haskoin.Crypto
@@ -17,25 +20,22 @@ import           Test.HUnit
 
 spec :: Spec
 spec = do
-    describe "Passes bitcoin core vectors /src/test/key_tests.cpp" $ do
-        it "can decode valid wif" testPrivkey
-        it "check private key compression" testPrvKeyCompressed
-        it "check public key compression" testKeyCompressed
-        it "check matching address" testMatchingAddress
-        it "check various signatures" sigCheck
-    describe "Passes MiniKey vectors" $ do
-        it "decode minikey format" checkMiniKey
+    describe "Bitcoin core vectors /src/test/key_tests.cpp" $ do
+        it "Passes WIF decoding tests" testPrivkey
+        it "Passes SecKey compression tests" testPrvKeyCompressed
+        it "Passes PubKey compression tests" testKeyCompressed
+        it "Passes address matching tests" testMatchingAddress
+        it "Passes signature verification" testSigs
+        it "Passes deterministic signing tests" testDetSigning
+    describe "MiniKey vectors" $
+        it "Passes MiniKey decoding tests" testMiniKey
 
-checkMiniKey :: Assertion
-checkMiniKey =
-    assertBool "Bad mini key" $
-    isJust res && fromMiniKey "S6c56bnXQiBjk9mqSYE7ykVQ7NzrRy" == res
+testMiniKey :: Assertion
+testMiniKey =
+    assertEqual "fromMiniKey" (Just res) (go "S6c56bnXQiBjk9mqSYE7ykVQ7NzrRy")
   where
-    res = do
-        bs <-
-            decodeHex
-                "4c7a9640c72dc2099f23715d0c8a0d8a35f8906e3cab61dd3f78b67bf887c9ab"
-        wrapSecKey False <$> secKey bs
+    go = fmap (encodeHex . encode . secKeyData) . fromMiniKey
+    res = "4c7a9640c72dc2099f23715d0c8a0d8a35f8906e3cab61dd3f78b67bf887c9ab"
 
 -- Unit tests copied from bitcoind implementation
 -- https://github.com/bitcoin/bitcoin/blob/master/src/test/key_tests.cpp
@@ -69,8 +69,8 @@ testMatchingAddress = do
     assertEqual "Key 1C" (Just addr1C) $ addrToText btc (pubKeyAddr pub1C)
     assertEqual "Key 2C" (Just addr2C) $ addrToText btc (pubKeyAddr pub2C)
 
-sigCheck :: Assertion
-sigCheck = forM_ sigMsg $ checkSignatures . doubleSHA256
+testSigs :: Assertion
+testSigs = forM_ sigMsg $ testSignature . doubleSHA256
 
 sigMsg :: [ByteString]
 sigMsg =
@@ -78,8 +78,8 @@ sigMsg =
     | i <- [0..15]
     ]
 
-checkSignatures :: Hash256 -> Assertion
-checkSignatures h = do
+testSignature :: Hash256 -> Assertion
+testSignature h = do
     let sign1  = signHash (secKeyData sec1) h
         sign2  = signHash (secKeyData sec2) h
         sign1C = signHash (secKeyData sec1C) h
@@ -100,6 +100,18 @@ checkSignatures h = do
     assertBool "Key 2C, Sign2"  $ verifyHashSig h sign2 (pubKeyPoint pub2C)
     assertBool "Key 2C, Sign1C" $ not $ verifyHashSig h sign1C (pubKeyPoint pub2C)
     assertBool "Key 2C, Sign2C" $ verifyHashSig h sign2C (pubKeyPoint pub2C)
+
+testDetSigning :: Assertion
+testDetSigning = do
+    let m = doubleSHA256 ("Very deterministic message" :: ByteString)
+    assertEqual
+        "Det sig 1"
+        (signHash (secKeyData sec1) m)
+        (signHash (secKeyData sec1C) m)
+    assertEqual
+        "Det sig 2"
+        (signHash (secKeyData sec2) m)
+        (signHash (secKeyData sec2C) m)
 
 strSecret1, strSecret2, strSecret1C, strSecret2C :: Text
 strSecret1  = "5HxWvvfubhXpYYpS3tJkw6fq9jE9j18THftkZjHHfmFiWtmAbrj"

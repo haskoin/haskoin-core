@@ -78,4 +78,3 @@ readTestFile fp = do
     fileM <- A.decodeFileStrict $ "data/" <> fp
     maybe (error $ "Could not read test file " <> fp) return fileM
 
-

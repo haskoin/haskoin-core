@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 26dbdf73274ee98d645964af8eced9a7fa589a0e625153f6056626fc0d48a7cd
+-- hash: 120841e59ec5085754a2284627d108ebb78d8687d05b97857e953650de2471bc
 
 name:           haskoin-core
 version:        0.14.1
@@ -23,6 +23,10 @@ build-type:     Simple
 extra-source-files:
     data/forkid_script_tests.json
     data/forkid_sighash.json
+    data/rfc6979abc.json
+    data/rfc6979core.json
+    data/rfc6979DERabc.json
+    data/rfc6979DERcore.json
     data/script_tests.json
     data/sig_nonstrict.json
     data/sig_strict.json

@@ -21,6 +21,7 @@ import           Haskoin.Script
 import           Haskoin.Transaction
 import           Haskoin.Util
 import           Haskoin.Util.Arbitrary
+import           Haskoin.UtilSpec        (readTestFile)
 import           Test.Hspec
 import           Test.Hspec.QuickCheck
 import           Test.HUnit              as HUnit
@@ -108,7 +109,7 @@ scriptSpec :: Network -> Spec
 scriptSpec net =
     when (getNetworkName net == "btc") $
     it "can verify standard scripts from script_tests.json file" $ do
-        xs <- readTestFile "script_tests" :: IO [A.Value]
+        xs <- readTestFile "script_tests.json" :: IO [A.Value]
         let vectorsA =
                 mapMaybe (A.decode . A.encode) xs :: [( String
                                                       , String
@@ -152,7 +153,7 @@ forkIdScriptSpec :: Network -> Spec
 forkIdScriptSpec net =
     when (isJust (getSigHashForkId net)) $
     it "can verify scripts from forkid_script_tests.json file" $ do
-        xs <- readTestFile "forkid_script_tests" :: IO [A.Value]
+        xs <- readTestFile "forkid_script_tests.json" :: IO [A.Value]
         let vectors =
                 mapMaybe (A.decode . A.encode) xs :: [( [Word64]
                                                       , String
@@ -221,13 +222,13 @@ strictSigSpec :: Network -> Spec
 strictSigSpec net =
     when (getNetworkName net == "btc") $ do
         it "can decode strict signatures" $ do
-            xs <- readTestFile "sig_strict"
+            xs <- readTestFile "sig_strict.json"
             let vectors = mapMaybe decodeHex xs
             length vectors `shouldBe` 3
             forM_ vectors $ \sig ->
                 decodeTxSig net sig `shouldSatisfy` isRight
         it "can detect non-strict signatures" $ do
-            xs <- readTestFile "sig_nonstrict"
+            xs <- readTestFile "sig_nonstrict.json"
             let vectors = mapMaybe decodeHex xs
             length vectors `shouldBe` 17
             forM_ vectors $ \sig ->
@@ -237,7 +238,7 @@ txSigHashSpec :: Network -> Spec
 txSigHashSpec net =
     when (getNetworkName net == "btc") $
     it "can produce valid sighashes from sighash.json test vectors" $ do
-        xs <- readTestFile "sighash" :: IO [A.Value]
+        xs <- readTestFile "sighash.json" :: IO [A.Value]
         let vectors =
                 mapMaybe (A.decode . A.encode) xs :: [( String
                                                       , String
@@ -260,7 +261,7 @@ txSigHashForkIdSpec :: Network -> Spec
 txSigHashForkIdSpec net =
     when (getNetworkName net == "btc") $
     it "can produce valid sighashes from forkid_sighash.json test vectors" $ do
-        xs <- readTestFile "forkid_sighash" :: IO [A.Value]
+        xs <- readTestFile "forkid_sighash.json" :: IO [A.Value]
         let vectors =
                 mapMaybe (A.decode . A.encode) xs :: [( String
                                                       , String
@@ -343,13 +344,6 @@ testSigHashOne net tx s val acp =
         if acp
             then setAnyoneCanPayFlag
             else id
-
-{-- Test Utilities --}
-
-readTestFile :: A.FromJSON a => FilePath -> IO a
-readTestFile fp = do
-    bs <- L.readFile $ "data/" <> fp <> ".json"
-    maybe (error $ "Could not read test file " <> fp) return $ A.decode bs
 
 {- Parse tests from bitcoin-qt repository -}
 

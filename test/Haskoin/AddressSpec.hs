@@ -8,7 +8,7 @@ import           Data.Text              (Text)
 import qualified Data.Text              as T
 import           Haskoin.Address
 import           Haskoin.Constants
-import           Haskoin.Keys           (derivePubKeyI)
+import           Haskoin.Keys
 import           Haskoin.Util
 import           Haskoin.Util.Arbitrary
 import           Test.Hspec
@@ -42,11 +42,6 @@ spec = do
         prop "outputAddress . addressToOutput identity" $
             forAll arbitraryAddress $ \a ->
                 outputAddress (addressToOutput a) == Just a
-    describe "WIF key properties" $
-        prop "encode and decode wif private keys" $
-        forAll arbitraryNetwork $ \net ->
-            forAll arbitraryKeyPair $ \(pk, _) ->
-                fromWif net (toWif net pk) == Just pk
     describe "Address vectors" $ do
         it "Passes Base58 vectors 1" $
             mapM_ testVector vectors

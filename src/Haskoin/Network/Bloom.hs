@@ -46,8 +46,9 @@ import           Data.Serialize.Put         (putByteString, putWord32le,
 import           Data.Word
 import           GHC.Generics               (Generic)
 import           Haskoin.Network.Common
-import           Haskoin.Script.Common
+import           Haskoin.Script.Standard
 import           Haskoin.Transaction.Common
+
 -- | 20,000 items with fp rate < 0.1% or 10,000 items and <0.0001%
 maxBloomSize :: Int
 maxBloomSize = 36000
@@ -212,35 +213,36 @@ bloomRelevantUpdate :: BloomFilter
 bloomRelevantUpdate bfilter tx
     | isBloomFull bfilter || isBloomEmpty bfilter = Nothing
     | bloomFlags bfilter == BloomUpdateNone = Nothing
-    | length matchOuts > 0 = Just $ foldl' (addRelevant) bfilter matchOuts
+    | not (null matchOuts) = Just $ foldl' addRelevant bfilter matchOuts
     | otherwise = Nothing
-    where
         -- TxHash if we end up inserting an outpoint
-        h = txHash tx
+  where
+    h = txHash tx
         -- Decode the scriptOutpus and add vOuts in case we make them outpoints
-        decodedOutputScripts = traverse (decodeOutputBS . scriptOutput) $ txOut tx
-        err = error $ "Error Decoding output script"
-        idxOutputScripts = either (const err) (zip [0..]) decodedOutputScripts
+    decodedOutputScripts = traverse (decodeOutputBS . scriptOutput) $ txOut tx
+    err = error "Error Decoding output script"
+    idxOutputScripts = either (const err) (zip [0 ..]) decodedOutputScripts
         -- Check if any txOuts were contained in the bloom filter
-        matchFilter = filter (\(_,op) -> bloomContains bfilter $ encodeScriptOut op)
-        matchOuts = matchFilter idxOutputScripts
-
-        addRelevant :: BloomFilter -> (Word32,ScriptOutput) -> BloomFilter
-        addRelevant bfilter (id,scriptOut) = case (bloomFlags bfilter,scriptType) of
+    matchFilter =
+        filter (\(_, op) -> bloomContains bfilter $ encodeScriptOut op)
+    matchOuts = matchFilter idxOutputScripts
+    addRelevant :: BloomFilter -> (Word32, ScriptOutput) -> BloomFilter
+    addRelevant bf (id', scriptOut) =
+        case (bloomFlags bfilter, scriptType)
             -- We filtered out BloomUpdateNone so we insert any PayPk or PayMulSig
-            (_, True) -> bloomInsert bfilter outpoint
-            (BloomUpdateAll, _ ) -> bloomInsert bfilter outpoint
-            _ ->  error "Error Updating Bloom Filter with relevant outpoint"
-            where
-                outpoint = encode $ OutPoint{ outPointHash = h, outPointIndex = id}
-                scriptType = (\s -> isPayPK s ||isPayMulSig s) scriptOut
-
+              of
+            (_, True) -> bloomInsert bf outpoint
+            (BloomUpdateAll, _) -> bloomInsert bf outpoint
+            _ -> error "Error Updating Bloom Filter with relevant outpoint"
+      where
+        outpoint = encode $ OutPoint {outPointHash = h, outPointIndex = id'}
+        scriptType = (\s -> isPayPK s || isPayMulSig s) scriptOut
         -- Encodes a scriptOutput so it can be checked agains the Bloom Filter
-        encodeScriptOut :: ScriptOutput -> ByteString
-        encodeScriptOut (PayMulSig outputMuSig _) = encode outputMuSig
-        encodeScriptOut (PayWitnessScriptHash scriptHash) = encode scriptHash
-        encodeScriptOut (DataCarrier getOutputData) = encode getOutputData
-        encodeScriptOut outputHash = (encode . getOutputHash) outputHash
+    encodeScriptOut :: ScriptOutput -> ByteString
+    encodeScriptOut (PayMulSig outputMuSig _) = encode outputMuSig
+    encodeScriptOut (PayWitnessScriptHash scriptHash) = encode scriptHash
+    encodeScriptOut (DataCarrier getOutputDat) = encode getOutputDat
+    encodeScriptOut outputHash = (encode . getOutputHash) outputHash
 
 -- | Returns True if the filter is empty (all bytes set to 0x00)
 isBloomEmpty :: BloomFilter -> Bool

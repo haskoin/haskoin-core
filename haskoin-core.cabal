@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 120841e59ec5085754a2284627d108ebb78d8687d05b97857e953650de2471bc
+-- hash: 07609a517a02ac593f305ca50a68b153cc9ac8fc26adb9147a5338e217aa11be
 
 name:           haskoin-core
 version:        0.14.1
@@ -23,6 +23,8 @@ build-type:     Simple
 extra-source-files:
     data/forkid_script_tests.json
     data/forkid_sighash.json
+    data/key_io_invalid.json
+    data/key_io_valid.json
     data/rfc6979abc.json
     data/rfc6979core.json
     data/rfc6979DERabc.json
@@ -69,6 +71,7 @@ library
       Haskoin.Transaction.Builder
       Haskoin.Transaction.Builder.Sign
       Haskoin.Transaction.Common
+      Haskoin.Transaction.Genesis
       Haskoin.Transaction.Partial
       Haskoin.Transaction.Segwit
       Haskoin.Util
@@ -127,7 +130,6 @@ test-suite spec
       Haskoin.BlockSpec
       Haskoin.Crypto.HashSpec
       Haskoin.Crypto.SignatureSpec
-      Haskoin.CryptoSpec
       Haskoin.Keys.ExtendedSpec
       Haskoin.Keys.MnemonicSpec
       Haskoin.KeysSpec
@@ -156,6 +158,8 @@ test-suite spec
     , hashable >=1.3.0.0
     , haskoin-core ==0.14.1
     , hspec >=2.7.1
+    , lens >=4.18.1
+    , lens-aeson >=1.1
     , memory >=0.15.0
     , mtl >=2.2.2
     , murmur3 >=1.0.3

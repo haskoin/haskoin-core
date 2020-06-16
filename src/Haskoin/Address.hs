@@ -23,6 +23,9 @@ module Haskoin.Address
     , isWitnessScriptAddress
     , addrToText
     , textToAddr
+    , bech32ToAddr
+    , cashToAddr
+    , base58ToAddr
     , addrToJSON
     , addrToEncoding
     , addrFromJSON
@@ -43,15 +46,13 @@ module Haskoin.Address
     , payToNestedScriptAddress
     , scriptToAddress
     , scriptToAddressBS
-      -- ** Private Key Wallet Import Format (WIF)
-    , fromWif
-    , toWif
     , module Haskoin.Address.Base58
     , module Haskoin.Address.Bech32
     , module Haskoin.Address.CashAddr
     ) where
 
 import           Control.Applicative
+import           Control.Arrow            (second)
 import           Control.DeepSeq
 import           Control.Monad
 import           Data.Aeson               as A
@@ -153,33 +154,30 @@ addrToText net WitnessScriptAddress {getAddrHash256 = h} = do
 
 -- | Parse 'Base58', 'Bech32' or 'CashAddr' address, depending on network.
 textToAddr :: Network -> Text -> Maybe Address
-textToAddr net bs =
-    cash <|> segwit <|> b58
-  where
-    b58 = eitherToMaybe . runGet (base58get net) =<< decodeBase58Check bs
-    cash =
-        cashAddrDecode net bs >>= \(ver, bs') ->
-            case ver of
-                0 -> do
-                    h <- eitherToMaybe (S.decode bs')
-                    return $ PubKeyAddress h
-                1 -> do
-                    h <- eitherToMaybe (S.decode bs')
-                    return $ ScriptAddress h
-                _ -> Nothing
-    segwit = do
-        hrp <- getBech32Prefix net
-        (ver, bs') <- segwitDecode hrp bs
-        guard (ver == 0)
-        let bs'' = B.pack bs'
-        case B.length bs'' of
-            20 -> do
-                h <- eitherToMaybe (S.decode bs'')
-                return $ WitnessPubKeyAddress h
-            32 -> do
-                h <- eitherToMaybe (S.decode bs'')
-                return $ WitnessScriptAddress h
-            _ -> Nothing
+textToAddr net txt =
+    cashToAddr net txt <|> bech32ToAddr net txt <|> base58ToAddr net txt
+
+cashToAddr :: Network -> Text -> Maybe Address
+cashToAddr net txt = do
+    (ver, bs) <- cashAddrDecode net txt
+    case ver of
+        0 -> PubKeyAddress <$> eitherToMaybe (S.decode bs)
+        1 -> ScriptAddress <$> eitherToMaybe (S.decode bs)
+        _ -> Nothing
+
+bech32ToAddr :: Network -> Text -> Maybe Address
+bech32ToAddr net txt = do
+    hrp <- getBech32Prefix net
+    (ver, bs) <- second B.pack <$> segwitDecode hrp txt
+    guard (ver == 0) -- We only support version 0 for now
+    case B.length bs of
+        20 -> WitnessPubKeyAddress <$> eitherToMaybe (S.decode bs)
+        32 -> WitnessScriptAddress <$> eitherToMaybe (S.decode bs)
+        _  -> Nothing
+
+base58ToAddr :: Network -> Text -> Maybe Address
+base58ToAddr net txt =
+    eitherToMaybe . runGet (base58get net) =<< decodeBase58Check txt
 
 base58get :: Network -> Get Address
 base58get net = do
@@ -293,27 +291,3 @@ inputAddress =
         (RegularInput (SpendPKHash _ key)) -> Just $ pubKeyAddr key
         (ScriptHashInput _ rdm) -> Just $ payToScriptAddress rdm
         _ -> Nothing
-
--- | Decode private key from WIF (wallet import format) string.
-fromWif :: Network -> Base58 -> Maybe SecKeyI
-fromWif net wif = do
-    bs <- decodeBase58Check wif
-    -- Check that this is a private key
-    guard (B.head bs == getSecretPrefix net)
-    case B.length bs of
-        -- Uncompressed format
-        33 -> wrapSecKey False <$> secKey (B.tail bs)
-        -- Compressed format
-        34 -> do
-            guard $ B.last bs == 0x01
-            wrapSecKey True <$> secKey (B.tail $ B.init bs)
-        -- Bad length
-        _  -> Nothing
-
--- | Encode private key into a WIF string.
-toWif :: Network -> SecKeyI -> Base58
-toWif net (SecKeyI k c) =
-    encodeBase58Check . B.cons (getSecretPrefix net) $
-    if c
-        then getSecKey k `B.snoc` 0x01
-        else getSecKey k

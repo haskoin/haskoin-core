@@ -101,22 +101,32 @@ testKeyIOValidVector :: (Text, Text, A.Value) -> Assertion
 testKeyIOValidVector (a, payload, obj)
     | disabled = return () -- There are invalid version 1 bech32 addresses
     | isPrv = do
+        -- Test from WIF to SecKey
         let isComp = obj ^?! key "isCompressed" . _Bool
             prvKeyM = fromWif net a
             prvKeyHexM = encodeHex . S.encode . secKeyData <$> prvKeyM
         assertBool "Valid PrvKey" $ isJust prvKeyM
         assertEqual "Valid compression" (Just isComp) (secKeyCompressed <$> prvKeyM)
-        assertEqual "Payload match" (Just payload) prvKeyHexM
+        assertEqual "WIF matches payload" (Just payload) prvKeyHexM
         let prvAsPubM =
                 (eitherToMaybe . S.decode <=< decodeHex) a :: Maybe PubKeyI
         assertBool "PrvKey is invalid PubKey" $ isNothing prvAsPubM
+        -- Test from SecKey to WIF
+        let secM = eitherToMaybe . S.decode =<< decodeHex payload
+            wifM = toWif net . wrapSecKey isComp <$> secM
+        assertEqual "Payload matches WIF" (Just a) wifM
     | otherwise = do
+        -- Test Addr to Script
         let addrM = textToAddr net a
             scriptM = encodeHex . encodeOutputBS . addressToOutput <$> addrM
-            pubAsPrvM = fromWif net a
         assertBool ("Valid Address " <> cs a) $ isJust addrM
-        assertEqual "Valid Script" (Just payload) scriptM
+        assertEqual "Address matches payload" (Just payload) scriptM
+        let pubAsPrvM = fromWif net a
         assertBool "Address is invalid PrvKey" $ isNothing pubAsPrvM
+        -- Test Script to Addr
+        let outM = eitherToMaybe . decodeOutputBS =<< decodeHex payload
+            resM = addrToText net =<< outputAddress =<< outM
+        assertEqual "Payload matches address" (Just a) resM
   where
     isPrv = obj ^?! key "isPrivkey" . _Bool
     disabled = fromMaybe False $ obj ^? key "disabled" . _Bool

@@ -7,7 +7,6 @@ import           Data.Aeson              as A
 import           Data.Aeson.Lens
 import qualified Data.ByteString         as BS
 import qualified Data.ByteString.Char8   as C
-import           Data.Map.Strict         (singleton)
 import           Data.Maybe
 import           Data.Serialize          as S
 import           Data.String             (fromString)
@@ -65,12 +64,16 @@ spec = do
         it "Passes address matching tests" testMatchingAddress
         it "Passes signature verification" testSigs
         it "Passes deterministic signing tests" testDetSigning
+    describe "MiniKey vectors" $
+        it "Passes MiniKey decoding tests" testMiniKey
     describe "key_io_valid.json vectors" $ do
         vectors <- runIO (readTestFile "key_io_valid.json" :: IO [(Text, Text, A.Value)])
         it "Passes the key_io_valid.json vectors" $
             mapM_ testKeyIOValidVector vectors
-    describe "MiniKey vectors" $
-        it "Passes MiniKey decoding tests" testMiniKey
+    describe "key_io_invalid.json vectors" $ do
+        vectors <- runIO (readTestFile "key_io_invalid.json" :: IO [[Text]])
+        it "Passes the key_io_invalid.json vectors" $
+            mapM_ testKeyIOInvalidVector vectors
 
 -- github.com/bitcoin/bitcoin/blob/master/src/script.cpp
 -- from function IsCanonicalPubKey
@@ -108,9 +111,8 @@ testKeyIOValidVector (a, payload, obj)
         assertBool "Valid PrvKey" $ isJust prvKeyM
         assertEqual "Valid compression" (Just isComp) (secKeyCompressed <$> prvKeyM)
         assertEqual "WIF matches payload" (Just payload) prvKeyHexM
-        let prvAsPubM =
-                (eitherToMaybe . S.decode <=< decodeHex) a :: Maybe PubKeyI
-        assertBool "PrvKey is invalid PubKey" $ isNothing prvAsPubM
+        let prvAsPubM = (eitherToMaybe . decodeOutputBS <=< decodeHex) a
+        assertBool "PrvKey is invalid ScriptOutput" $ isNothing prvAsPubM
         -- Test from SecKey to WIF
         let secM = eitherToMaybe . S.decode =<< decodeHex payload
             wifM = toWif net . wrapSecKey isComp <$> secM
@@ -121,8 +123,10 @@ testKeyIOValidVector (a, payload, obj)
             scriptM = encodeHex . encodeOutputBS . addressToOutput <$> addrM
         assertBool ("Valid Address " <> cs a) $ isJust addrM
         assertEqual "Address matches payload" (Just payload) scriptM
-        let pubAsPrvM = fromWif net a
-        assertBool "Address is invalid PrvKey" $ isNothing pubAsPrvM
+        let pubAsWifM = fromWif net a
+            pubAsSecM = eitherToMaybe . S.decode =<< decodeHex a :: Maybe SecKey
+        assertBool "Address is invalid Wif" $ isNothing pubAsWifM
+        assertBool "Address is invalid PrvKey" $ isNothing pubAsSecM
         -- Test Script to Addr
         let outM = eitherToMaybe . decodeOutputBS =<< decodeHex payload
             resM = addrToText net =<< outputAddress =<< outM
@@ -137,6 +141,16 @@ testKeyIOValidVector (a, payload, obj)
             "test"    -> btcTest
             "regtest" -> btcRegTest
             _         -> error "Invalid chain key in key_io_valid.json"
+
+testKeyIOInvalidVector :: [Text] -> Assertion
+testKeyIOInvalidVector [a] = do
+    let wifMs = (`fromWif` a) <$> allNets
+        secKeyM = (eitherToMaybe . S.decode <=< decodeHex) a :: Maybe SecKey
+        scriptM = (eitherToMaybe . decodeOutputBS <=< decodeHex) a :: Maybe ScriptOutput
+    assertBool "Payload is invalid WIF" $ all isNothing wifMs
+    assertBool "Payload is invalid SecKey" $ isNothing secKeyM
+    assertBool "Payload is invalid Script" $ isNothing scriptM
+testKeyIOInvalidVector _ = assertFailure "Invalid test vector"
 
 -- Test vectors from:
 -- https://github.com/bitcoin/bitcoin/blob/master/src/test/key_tests.cpp

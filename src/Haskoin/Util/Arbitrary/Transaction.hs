@@ -71,16 +71,8 @@ arbitraryWitnessTx net = arbitraryWLTx net True
 -- | Arbitrary witness or legacy transaction.
 arbitraryWLTx :: Network -> Bool -> Gen Tx
 arbitraryWLTx net wit = do
-    ni <- choose (0, 5)
-    no <-
-        if wit
-            then choose (0, 5)
-            else choose
-                     ( if ni == 0
-                           then 2
-                           else 0
-                     , 5 -- avoid witness case
-                      )
+    ni <- choose (1, 5)
+    no <- choose (1, 5)
     inps <- vectorOf ni (arbitraryTxIn net)
     outs <- vectorOf no (arbitraryTxOut net)
     let uniqueInps = nubBy (\a b -> prevOutput a == prevOutput b) inps
@@ -95,8 +87,8 @@ arbitraryWLTx net wit = do
 -- Only compressed public keys are used.
 arbitraryAddrOnlyTx :: Network -> Gen Tx
 arbitraryAddrOnlyTx net = do
-    ni <- choose (0, 5)
-    no <- choose (0, 5)
+    ni <- choose (1, 5)
+    no <- choose (1, 5)
     inps <- vectorOf ni (arbitraryAddrOnlyTxIn net)
     outs <- vectorOf no (arbitraryAddrOnlyTxOut net)
     Tx <$> arbitrary <*> pure inps <*> pure outs <*> pure [] <*> arbitrary
@@ -104,8 +96,8 @@ arbitraryAddrOnlyTx net = do
 -- | Like 'arbitraryAddrOnlyTx' without empty signatures in the inputs.
 arbitraryAddrOnlyTxFull :: Network -> Gen Tx
 arbitraryAddrOnlyTxFull net = do
-    ni <- choose (0, 5)
-    no <- choose (0, 5)
+    ni <- choose (1, 5)
+    no <- choose (1, 5)
     inps <- vectorOf ni (arbitraryAddrOnlyTxInFull net)
     outs <- vectorOf no (arbitraryAddrOnlyTxOut net)
     Tx <$> arbitrary <*> pure inps <*> pure outs <*> pure [] <*> arbitrary

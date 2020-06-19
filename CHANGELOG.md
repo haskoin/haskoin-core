@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## Unreleased
 ### Added
 - Add more test vectors
+### Changed
+- stringToAddr renamed to textToAddr
+- Move ScriptOutput to Standard.hs
+- Move WIF encoding/decoding to Keys.hs
 
 ## 0.14.1
 ### Fixed

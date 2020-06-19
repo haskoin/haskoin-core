@@ -251,10 +251,10 @@ pubSubKey xKey child
         XPubKey (xPubDepth xKey + 1) (xPubFP xKey) child c pK
     | otherwise = error "Invalid child derivation index"
   where
-    m      = B.append (exportPubKey True (xPubKey xKey)) (encode child)
+    m = B.append (exportPubKey True (xPubKey xKey)) (encode child)
     (a, c) = split512 $ hmac512 (encode $ xPubChain xKey) m
-    pK     = fromMaybe err $ tweakPubKey (xPubKey xKey) a
-    err    = throw $ DerivationException "Invalid pubSubKey derivation"
+    pK = fromMaybe err $ tweakPubKey (xPubKey xKey) a
+    err = throw $ DerivationException "Invalid pubSubKey derivation"
 
 -- | Compute a hard child key derivation. Hard derivations can only be computed
 -- for private keys. Hard derivations do not allow the parent public key to
@@ -270,11 +270,11 @@ hardSubKey xkey child
         XPrvKey (xPrvDepth xkey + 1) (xPrvFP xkey) i c k
     | otherwise = error "Invalid child derivation index"
   where
-    i      = setBit child 31
-    m      = B.append (bsPadPrvKey $ xPrvKey xkey) (encode i)
+    i = setBit child 31
+    m = B.append (bsPadPrvKey $ xPrvKey xkey) (encode i)
     (a, c) = split512 $ hmac512 (encode $ xPrvChain xkey) m
-    k      = fromMaybe err $ tweakSecKey (xPrvKey xkey) a
-    err    = throw $ DerivationException "Invalid hardSubKey derivation"
+    k = fromMaybe err $ tweakSecKey (xPrvKey xkey) a
+    err = throw $ DerivationException "Invalid hardSubKey derivation"
 
 -- | Returns true if the extended private key was derived through a hard
 -- derivation.

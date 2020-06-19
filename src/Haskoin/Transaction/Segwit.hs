@@ -31,14 +31,10 @@ module Haskoin.Transaction.Segwit
 
 import           Data.ByteString            (ByteString)
 import qualified Data.Serialize             as S
-import           Haskoin.Constants          (Network)
-import           Haskoin.Keys.Common        (PubKeyI)
-import           Haskoin.Script.Common      (Script (..), ScriptOutput (..),
-                                             decodeOutput, encodeOutput)
-import           Haskoin.Script.SigHash     (TxSignature (..), decodeTxSig,
-                                             encodeTxSig)
-import           Haskoin.Script.Standard    (ScriptInput (..), SimpleInput (..))
-import           Haskoin.Transaction.Common (WitnessStack)
+import           Haskoin.Constants
+import           Haskoin.Keys.Common
+import           Haskoin.Script
+import           Haskoin.Transaction.Common
 
 -- | Test if a 'ScriptOutput' is P2WPKH or P2WSH
 --

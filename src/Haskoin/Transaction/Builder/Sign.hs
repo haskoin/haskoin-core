@@ -36,26 +36,15 @@ import           Data.Maybe                 (catMaybes, fromMaybe, mapMaybe,
 import qualified Data.Serialize             as S
 import           Data.Word                  (Word64)
 import           GHC.Generics               (Generic)
-
 import           Haskoin.Address            (getAddrHash160, pubKeyAddr)
 import           Haskoin.Constants          (Network)
 import           Haskoin.Crypto             (Hash256, SecKey)
 import           Haskoin.Crypto.Signature   (signHash, verifyHashSig)
 import           Haskoin.Keys.Common        (PubKeyI (..), SecKeyI (..),
                                              derivePubKeyI, wrapSecKey)
-import           Haskoin.Script.Common      (ScriptOutput (..), encodeOutput,
-                                             encodeOutputBS, opPushData)
-import           Haskoin.Script.SigHash     (SigHash, TxSignature (..),
-                                             decodeTxSig, txSigHash,
-                                             txSigHashForkId)
-import           Haskoin.Script.Standard    (RedeemScript, ScriptInput (..),
-                                             SimpleInput (..), decodeInputBS,
-                                             encodeInputBS)
-import           Haskoin.Transaction.Common (OutPoint, Tx (..), TxIn (..),
-                                             WitnessData)
-import           Haskoin.Transaction.Segwit (WitnessProgram (..),
-                                             calcWitnessProgram, isSegwit,
-                                             toWitnessStack)
+import           Haskoin.Script
+import           Haskoin.Transaction.Common
+import           Haskoin.Transaction.Segwit
 import           Haskoin.Util               (matchTemplate, updateIndex)
 
 -- | Data type used to specify the signing parameters of a transaction input.
@@ -279,3 +268,4 @@ makeSigHash net tx i so val sh rdmM = h net tx (encodeOutput so') val i sh
         _                   -> fromMaybe so rdmM
     h | isSegwit so = txSigHashForkId
       | otherwise   = txSigHash
+

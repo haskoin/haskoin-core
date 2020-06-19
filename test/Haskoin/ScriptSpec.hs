@@ -5,7 +5,6 @@ import           Control.Monad
 import           Data.Aeson              as A
 import           Data.ByteString         (ByteString)
 import qualified Data.ByteString         as B
-import qualified Data.ByteString.Lazy    as L
 import           Data.Either
 import           Data.List
 import           Data.Maybe
@@ -21,6 +20,7 @@ import           Haskoin.Script
 import           Haskoin.Transaction
 import           Haskoin.Util
 import           Haskoin.Util.Arbitrary
+import           Haskoin.UtilSpec        (readTestFile)
 import           Test.Hspec
 import           Test.Hspec.QuickCheck
 import           Test.HUnit              as HUnit
@@ -63,6 +63,8 @@ spec = do
     describe "SigHashFlag fromEnum/toEnum" $
         prop "fromEnum/toEnum" $
         forAll arbitrarySigHashFlag $ \f -> toEnum (fromEnum f) `shouldBe` f
+    describe "Script vectors" $
+        it "Can encode script vectors" encodeScriptVector
 
 props :: Network -> Spec
 props net = do
@@ -89,7 +91,7 @@ standardSpec net = do
         forAll arbitraryMSOutput $ \out ->
             map S.encode (getOutputMulSigKeys (sortMulSig out)) `shouldSatisfy` \xs ->
                 xs == sort xs
-    prop "can decode inputs with empty signatures" $ do
+    it "can decode inputs with empty signatures" $ do
         decodeInput net (Script [OP_0]) `shouldBe`
             Right (RegularInput (SpendPK TxSignatureEmpty))
         decodeInput net (Script [opPushData ""]) `shouldBe`
@@ -108,7 +110,7 @@ scriptSpec :: Network -> Spec
 scriptSpec net =
     when (getNetworkName net == "btc") $
     it "can verify standard scripts from script_tests.json file" $ do
-        xs <- readTestFile "script_tests" :: IO [A.Value]
+        xs <- readTestFile "script_tests.json" :: IO [A.Value]
         let vectorsA =
                 mapMaybe (A.decode . A.encode) xs :: [( String
                                                       , String
@@ -152,7 +154,7 @@ forkIdScriptSpec :: Network -> Spec
 forkIdScriptSpec net =
     when (isJust (getSigHashForkId net)) $
     it "can verify scripts from forkid_script_tests.json file" $ do
-        xs <- readTestFile "forkid_script_tests" :: IO [A.Value]
+        xs <- readTestFile "forkid_script_tests.json" :: IO [A.Value]
         let vectors =
                 mapMaybe (A.decode . A.encode) xs :: [( [Word64]
                                                       , String
@@ -221,13 +223,13 @@ strictSigSpec :: Network -> Spec
 strictSigSpec net =
     when (getNetworkName net == "btc") $ do
         it "can decode strict signatures" $ do
-            xs <- readTestFile "sig_strict"
+            xs <- readTestFile "sig_strict.json"
             let vectors = mapMaybe decodeHex xs
             length vectors `shouldBe` 3
             forM_ vectors $ \sig ->
                 decodeTxSig net sig `shouldSatisfy` isRight
         it "can detect non-strict signatures" $ do
-            xs <- readTestFile "sig_nonstrict"
+            xs <- readTestFile "sig_nonstrict.json"
             let vectors = mapMaybe decodeHex xs
             length vectors `shouldBe` 17
             forM_ vectors $ \sig ->
@@ -237,7 +239,7 @@ txSigHashSpec :: Network -> Spec
 txSigHashSpec net =
     when (getNetworkName net == "btc") $
     it "can produce valid sighashes from sighash.json test vectors" $ do
-        xs <- readTestFile "sighash" :: IO [A.Value]
+        xs <- readTestFile "sighash.json" :: IO [A.Value]
         let vectors =
                 mapMaybe (A.decode . A.encode) xs :: [( String
                                                       , String
@@ -260,7 +262,7 @@ txSigHashForkIdSpec :: Network -> Spec
 txSigHashForkIdSpec net =
     when (getNetworkName net == "btc") $
     it "can produce valid sighashes from forkid_sighash.json test vectors" $ do
-        xs <- readTestFile "forkid_sighash" :: IO [A.Value]
+        xs <- readTestFile "forkid_sighash.json" :: IO [A.Value]
         let vectors =
                 mapMaybe (A.decode . A.encode) xs :: [( String
                                                       , String
@@ -344,13 +346,6 @@ testSigHashOne net tx s val acp =
             then setAnyoneCanPayFlag
             else id
 
-{-- Test Utilities --}
-
-readTestFile :: A.FromJSON a => FilePath -> IO a
-readTestFile fp = do
-    bs <- L.readFile $ "data/" <> fp <> ".json"
-    maybe (error $ "Could not read test file " <> fp) return $ A.decode bs
-
 {- Parse tests from bitcoin-qt repository -}
 
 mapMulSigVector :: ((Text, Text), Int) -> Spec
@@ -368,7 +363,7 @@ runMulSigVector (a, ops) = assertBool "multisig vector" $ Just a == b
     b = do
         o <- s
         d <- eitherToMaybe $ decodeOutput o
-        addrToString btc $ payToScriptAddress d
+        addrToText btc $ payToScriptAddress d
 
 sigDecodeMap :: Network -> (Text, Int) -> Spec
 sigDecodeMap net (_, i) =
@@ -390,17 +385,55 @@ testSigDecode net str =
 mulSigVectors :: [(Text, Text)]
 mulSigVectors =
     [ ( "3QJmV3qfvL9SuYo34YihAf3sRCW3qSinyC"
-      , "52410491bba2510912a5bd37da1fb5b1673010e43d2c6d812c514e91bfa9f2eb129e1c183329db55bd868e209aac2fbc02cb33d98fe74bf23f0c235d6126b1d8334f864104865c40293a680cb9c020e7b1e106d8c1916d3cef99aa431a56d253e69256dac09ef122b1a986818a7cb624532f062c1d1f8722084861c5c3291ccffef4ec687441048d2455d2403e08708fc1f556002f1b6cd83f992d085097f9974ab08a28838f07896fbab08f39495e15fa6fad6edbfb1e754e35fa1c7844c41f322a1863d4621353ae"
+      , "52410491bba2510912a5bd37da1fb5b1673010e43d2c6d812c514e91bfa9f2eb\
+        \129e1c183329db55bd868e209aac2fbc02cb33d98fe74bf23f0c235d6126b1d8\
+        \334f864104865c40293a680cb9c020e7b1e106d8c1916d3cef99aa431a56d253\
+        \e69256dac09ef122b1a986818a7cb624532f062c1d1f8722084861c5c3291ccf\
+        \fef4ec687441048d2455d2403e08708fc1f556002f1b6cd83f992d085097f997\
+        \4ab08a28838f07896fbab08f39495e15fa6fad6edbfb1e754e35fa1c7844c41f\
+        \322a1863d4621353ae"
       )
     ]
 
 scriptSigSignatures :: [Text]
 scriptSigSignatures =
-     -- Signature in input of txid 1983a69265920c24f89aac81942b1a59f7eb30821a8b3fb258f88882b6336053
-    [ "304402205ca6249f43538908151fe67b26d020306c0e59fa206cf9f3ccf641f33357119d02206c82f244d04ac0a48024fb9cc246b66e58598acf206139bdb7b75a2941a2b1e401"
+     -- Signature in input of txid
+     -- 1983a69265920c24f89aac81942b1a59f7eb30821a8b3fb258f88882b6336053
+    [ "304402205ca6249f43538908151fe67b26d020306c0e59fa206cf9f3ccf641f333\
+      \57119d02206c82f244d04ac0a48024fb9cc246b66e58598acf206139bdb7b75a29\
+      \41a2b1e401"
       -- Signature in input of txid
       -- fb0a1d8d34fa5537e461ac384bac761125e1bfa7fec286fa72511240fa66864d.
       -- Strange DER sizes, but in Blockchain. Now invalid as Haskoin can only
       -- decode strict signatures.
-      -- "3048022200002b83d59c1d23c08efd82ee0662fec23309c3adbcbd1f0b8695378db4b14e736602220000334a96676e58b1bb01784cb7c556dd8ce1c220171904da22e18fe1e7d1510db501"
+      -- "3048022200002b83d59c1d23c08efd82ee0662fec23309c3adbcbd1f0b8695378d\
+      -- \b4b14e736602220000334a96676e58b1bb01784cb7c556dd8ce1c220171904da22\
+      -- \e18fe1e7d1510db501"
     ]
+
+encodeScriptVector :: Assertion
+encodeScriptVector =
+    assertEqual "Encode script" res (encodeHex $ S.encode s)
+  where
+    res =
+        "514104cc71eb30d653c0c3163990c47b976f3fb3f37cccdcbedb169a1dfef58b\
+        \bfbfaff7d8a473e7e2e6d317b87bafe8bde97e3cf8f065dec022b51d11fcdd0d\
+        \348ac4410461cbdcc5409fb4b4d42b51d33381354d80e550078cb532a34bfa2f\
+        \cfdeb7d76519aecc62770f5b0e4ef8551946d8a540911abe3e7854a26f39f58b\
+        \25c15342af52ae"
+    s =
+        Script
+            [ OP_1
+            , opPushData $ d
+              "04cc71eb30d653c0c3163990c47b976f3fb3f37cccdcbedb169a1dfef5\
+              \8bbfbfaff7d8a473e7e2e6d317b87bafe8bde97e3cf8f065dec022b51d\
+              \11fcdd0d348ac4"
+            , opPushData $ d
+              "0461cbdcc5409fb4b4d42b51d33381354d80e550078cb532a34bfa2fcf\
+              \deb7d76519aecc62770f5b0e4ef8551946d8a540911abe3e7854a26f39\
+              \f58b25c15342af"
+            , OP_2
+            , OP_CHECKMULTISIG
+            ]
+    d = fromJust . decodeHex
+

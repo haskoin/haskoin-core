@@ -1,6 +1,7 @@
 module Haskoin.UtilSpec
     ( spec
     , customCerealID
+    , readTestFile
     ) where
 
 import           Data.Aeson             (FromJSON, ToJSON)
@@ -67,6 +68,13 @@ testMaybeToEither :: Maybe Int -> String -> Bool
 testMaybeToEither (Just v) str = maybeToEither str (Just v) == Right v
 testMaybeToEither m str = maybeToEither str m == Left str
 
+{-- Test Utilities --}
+
 customCerealID :: Eq a => Get a -> Putter a -> a -> Bool
 customCerealID g p a = runGet g (runPut (p a)) == Right a
+
+readTestFile :: A.FromJSON a => FilePath -> IO a
+readTestFile fp = do
+    fileM <- A.decodeFileStrict $ "data/" <> fp
+    maybe (error $ "Could not read test file " <> fp) return fileM
 

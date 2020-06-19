@@ -13,7 +13,7 @@ Transaction signatures and related functions.
 -}
 module Haskoin.Script.SigHash
     ( -- * Script Signatures
-      SigHash
+      SigHash(..)
     , SigHashFlag(..)
     , sigHashAll
     , sigHashNone
@@ -38,10 +38,8 @@ module Haskoin.Script.SigHash
 
 import           Control.DeepSeq
 import           Control.Monad
-import           Crypto.Secp256k1
 import qualified Data.Aeson                 as J
 import           Data.Bits
-import           Data.ByteString            (ByteString)
 import qualified Data.ByteString            as BS
 import           Data.Hashable
 import           Data.Maybe
@@ -51,8 +49,8 @@ import           Data.Word
 import           GHC.Generics               (Generic)
 import           Haskoin.Constants
 import           Haskoin.Crypto.Hash
-import           Haskoin.Crypto.Signature
-import           Haskoin.Network
+import           Haskoin.Network.Common
+import           Haskoin.Crypto
 import           Haskoin.Script.Common
 import           Haskoin.Transaction.Common
 import           Haskoin.Util
@@ -291,22 +289,23 @@ txSigHashForkId net tx out v i sh =
 -- is serialized as one byte at the end of an ECDSA 'Sig'. All signatures in
 -- transaction inputs are of type 'TxSignature'.
 data TxSignature
-    = TxSignature { txSignature        :: !Sig
-                  , txSignatureSigHash :: !SigHash
-                  }
+    = TxSignature
+          { txSignature        :: !Sig
+          , txSignatureSigHash :: !SigHash
+          }
     | TxSignatureEmpty
     deriving (Eq, Show, Generic)
 
 instance NFData TxSignature
 
 -- | Serialize a 'TxSignature'.
-encodeTxSig :: TxSignature -> ByteString
+encodeTxSig :: TxSignature -> BS.ByteString
 encodeTxSig TxSignatureEmpty = error "Can not encode an empty signature"
 encodeTxSig (TxSignature sig (SigHash n)) =
     runPut $ putSig sig >> putWord8 (fromIntegral n)
 
 -- | Deserialize a 'TxSignature'.
-decodeTxSig :: Network -> ByteString -> Either String TxSignature
+decodeTxSig :: Network -> BS.ByteString -> Either String TxSignature
 decodeTxSig _   bs | BS.null bs = Left "Empty signature candidate"
 decodeTxSig net bs =
     case decodeStrictSig $ BS.init bs of

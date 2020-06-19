@@ -44,28 +44,26 @@ signHash k = signMsg k . hashToMsg
 
 -- | Verify an ECDSA signature for a 256-bit hash.
 verifyHashSig :: Hash256 -> Sig -> PubKey -> Bool
-verifyHashSig h s p =
-    verifySig p g m
-  where
-    (g, _) = normalizeSig s
-    m = hashToMsg h
+verifyHashSig h s p = verifySig p (fst $ normalizeSig s) (hashToMsg h)
 
 -- | Deserialize an ECDSA signature as commonly encoded in Bitcoin.
 getSig :: Get Sig
 getSig = do
-        l <- lookAhead $ do
+    l <-
+        lookAhead $ do
             t <- getWord8
             -- 0x30 is DER sequence type
-            unless (t == 0x30) $ fail $
+            unless (t == 0x30) $
+                fail $
                 "Bad DER identifier byte 0x" ++ showHex t ". Expecting 0x30"
             l <- getWord8
             when (l == 0x00) $ fail "Indeterminate form unsupported"
             when (l >= 0x80) $ fail "Multi-octect length not supported"
             return $ fromIntegral l
-        bs <- getByteString $ l + 2
-        case decodeStrictSig bs of
-            Just s  -> return s
-            Nothing -> fail "Invalid signature"
+    bs <- getByteString $ l + 2
+    case decodeStrictSig bs of
+        Just s -> return s
+        Nothing -> fail "Invalid signature"
 
 -- | Serialize an ECDSA signature for Bitcoin use.
 putSig :: Putter Sig

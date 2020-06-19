@@ -90,7 +90,7 @@ import           GHC.Generics               (Generic)
 import           Haskoin.Block.Common
 import           Haskoin.Constants
 import           Haskoin.Crypto
-import           Haskoin.Transaction.Common
+import           Haskoin.Transaction.Genesis
 import           Haskoin.Util
 
 -- | Short version of the block hash. Uses the good end of the hash (the part

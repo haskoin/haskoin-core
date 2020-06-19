@@ -28,6 +28,9 @@ module Haskoin.Keys.Common
     , tweakSecKey
     , getSecKey
     , secKey
+    -- ** Private Key Wallet Import Format (WIF)
+    , fromWif
+    , toWif
     ) where
 
 import           Control.Applicative     ((<|>))
@@ -48,6 +51,8 @@ import           Data.Serialize.Put      (putByteString)
 import           Data.String             (IsString, fromString)
 import           Data.String.Conversions (cs)
 import           GHC.Generics            (Generic)
+import           Haskoin.Address.Base58
+import           Haskoin.Constants
 import           Haskoin.Crypto.Hash
 import           Haskoin.Util
 
@@ -117,6 +122,10 @@ instance Serialize SecKey where
 wrapSecKey :: Bool -> SecKey -> SecKeyI
 wrapSecKey c d = SecKeyI d c
 
+-- | Tweak a private key.
+tweakSecKey :: SecKey -> Hash256 -> Maybe SecKey
+tweakSecKey key h = tweakAddSecKey key =<< tweak (encode h)
+
 -- | Decode Casascius mini private keys (22 or 30 characters).
 fromMiniKey :: ByteString -> Maybe SecKeyI
 fromMiniKey bs = do
@@ -126,6 +135,26 @@ fromMiniKey bs = do
     checkHash = encode $ sha256 $ bs `BS.append` "?"
     checkShortKey = BS.length bs `elem` [22, 30] && BS.head checkHash == 0x00
 
--- | Tweak a private key.
-tweakSecKey :: SecKey -> Hash256 -> Maybe SecKey
-tweakSecKey key h = tweakAddSecKey key =<< tweak (encode h)
+-- | Decode private key from WIF (wallet import format) string.
+fromWif :: Network -> Base58 -> Maybe SecKeyI
+fromWif net wif = do
+    bs <- decodeBase58Check wif
+    -- Check that this is a private key
+    guard (BS.head bs == getSecretPrefix net)
+    case BS.length bs of
+        -- Uncompressed format
+        33 -> wrapSecKey False <$> secKey (BS.tail bs)
+        -- Compressed format
+        34 -> do
+            guard $ BS.last bs == 0x01
+            wrapSecKey True <$> secKey (BS.tail $ BS.init bs)
+        -- Bad length
+        _  -> Nothing
+
+-- | Encode private key into a WIF string.
+toWif :: Network -> SecKeyI -> Base58
+toWif net (SecKeyI k c) =
+    encodeBase58Check . BS.cons (getSecretPrefix net) $
+    if c
+        then getSecKey k `BS.snoc` 0x01
+        else getSecKey k

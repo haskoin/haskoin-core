@@ -17,6 +17,7 @@ module Haskoin.Util.Arbitrary.Util
 , arbitraryBSSn
 , arbitraryMaybe
 , arbitraryNetwork
+, arbitraryUTCTime
 , SerialBox(..)
 , JsonBox(..)
 , NetBox(..)
@@ -31,22 +32,23 @@ module Haskoin.Util.Arbitrary.Util
 )
 where
 
-import           Control.Monad         (forM_, (<=<))
-import qualified Data.Aeson            as A
-import qualified Data.Aeson.Encoding   as A
-import qualified Data.Aeson.Types      as A
-import           Data.ByteString       (ByteString, pack)
-import qualified Data.ByteString.Short as BSS
-import qualified Data.Map.Strict       as Map
+import           Control.Monad           (forM_, (<=<))
+import qualified Data.Aeson              as A
+import qualified Data.Aeson.Encoding     as A
+import qualified Data.Aeson.Types        as A
+import           Data.ByteString         (ByteString, pack)
+import qualified Data.ByteString.Short   as BSS
+import qualified Data.Map.Strict         as Map
 import           Data.Proxy
-import qualified Data.Serialize        as S
-import           Data.Time.Clock       (UTCTime (..))
-import           Data.Time.Clock.POSIX (posixSecondsToUTCTime)
-import qualified Data.Typeable         as T
-import           Data.Word             (Word32)
+import qualified Data.Serialize          as S
+import           Data.Time.Clock         (UTCTime (..))
+import           Data.Time.Clock.POSIX   (posixSecondsToUTCTime)
+import qualified Data.Typeable           as T
+import           Data.Word               (Word32)
 import           Haskoin.Constants
-import           Test.Hspec            (Spec, describe, shouldBe, shouldSatisfy)
-import           Test.Hspec.QuickCheck (prop)
+import           Test.Hspec              (Spec, describe, shouldBe,
+                                          shouldSatisfy)
+import           Test.Hspec.QuickCheck   (prop)
 import           Test.QuickCheck
 
 -- | Arbitrary strict 'ByteString'.
@@ -125,9 +127,9 @@ testIdentity serialVals readVals jsonVals netVals = do
 -- | Generate Data.Serialize identity tests
 testSerial ::
        (Eq a, Show a, T.Typeable a, S.Serialize a) => Gen a -> Spec
-testSerial gen = do
+testSerial gen =
     prop ("Data.Serialize encoding/decoding identity for " <> name) $
-        forAll gen $ \x -> (S.decode . S.encode) x `shouldBe` Right x
+    forAll gen $ \x -> (S.decode . S.encode) x `shouldBe` Right x
   where
     name = show $ T.typeRep $ proxy gen
     proxy :: Gen a -> Proxy a
@@ -136,7 +138,7 @@ testSerial gen = do
 -- | Generate Read/Show identity tests
 testRead ::
        (Eq a, Read a, Show a, T.Typeable a) => Gen a -> Spec
-testRead gen = do
+testRead gen =
     prop ("read/show identity for " <> name) $
         forAll gen $ \x -> (read . show) x `shouldBe` x
   where

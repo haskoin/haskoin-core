@@ -4,7 +4,7 @@
 {-|
 Module      : Haskoin.Network.Common
 Copyright   : No rights reserved
-License     : UNLICENSE
+License     : MIT
 Maintainer  : jprupp@protonmail.ch
 Stability   : experimental
 Portability : POSIX

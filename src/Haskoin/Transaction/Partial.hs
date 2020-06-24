@@ -6,7 +6,7 @@
 {-|
 Module      : Haskoin.Transaction.Partial
 Copyright   : No rights reserved
-License     : UNLICENSE
+License     : MIT
 Maintainer  : matt@bitnomial.com
 Stability   : experimental
 Portability : POSIX

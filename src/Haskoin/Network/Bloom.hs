@@ -3,7 +3,7 @@
 {-|
 Module      : Haskoin.Network.Bloom
 Copyright   : No rights reserved
-License     : UNLICENSE
+License     : MIT
 Maintainer  : jprupp@protonmail.ch
 Stability   : experimental
 Portability : POSIX

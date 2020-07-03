@@ -140,8 +140,8 @@ arbitraryScriptOp =
         , return OP_CHECKMULTISIGVERIFY
         -- Expansion
         , return OP_NOP1
-        , return OP_NOP2
-        , return OP_NOP3
+        , return OP_CHECKLOCKTIMEVERIFY
+        , return OP_CHECKSEQUENCEVERIFY
         , return OP_NOP4
         , return OP_NOP5
         , return OP_NOP6

@@ -24,12 +24,12 @@ module Haskoin.Script.Common
 
 import           Control.DeepSeq
 import           Control.Monad
-import           Data.ByteString     (ByteString)
-import qualified Data.ByteString     as B
-import           Data.Serialize      as S
-import           Data.Word           (Word8)
-import           GHC.Generics        (Generic)
+import           Data.ByteString (ByteString)
+import qualified Data.ByteString as B
 import           Data.Hashable
+import           Data.Serialize  as S
+import           Data.Word       (Word8)
+import           GHC.Generics    (Generic)
 
 -- | Data type representing a transaction script. Scripts are defined as lists
 -- of script operators 'ScriptOp'. Scripts are used to:
@@ -183,8 +183,8 @@ data ScriptOp
     | OP_CHECKMULTISIGVERIFY
       -- Expansion
     | OP_NOP1
-    | OP_NOP2
-    | OP_NOP3
+    | OP_CHECKLOCKTIMEVERIFY
+    | OP_CHECKSEQUENCEVERIFY
     | OP_NOP4
     | OP_NOP5
     | OP_NOP6
@@ -336,8 +336,8 @@ instance Serialize ScriptOp where
 
             -- More NOPs
             | op == 0xb0 = return OP_NOP1
-            | op == 0xb1 = return OP_NOP2
-            | op == 0xb2 = return OP_NOP3
+            | op == 0xb1 = return OP_CHECKLOCKTIMEVERIFY
+            | op == 0xb2 = return OP_CHECKSEQUENCEVERIFY
             | op == 0xb3 = return OP_NOP4
             | op == 0xb4 = return OP_NOP5
             | op == 0xb5 = return OP_NOP6
@@ -493,31 +493,31 @@ instance Serialize ScriptOp where
         OP_WITHIN            -> putWord8 0xa5
 
         -- Crypto
-        OP_RIPEMD160         -> putWord8 0xa6
-        OP_SHA1              -> putWord8 0xa7
-        OP_SHA256            -> putWord8 0xa8
-        OP_HASH160           -> putWord8 0xa9
-        OP_HASH256           -> putWord8 0xaa
-        OP_CODESEPARATOR     -> putWord8 0xab
-        OP_CHECKSIG          -> putWord8 0xac
-        OP_CHECKSIGVERIFY    -> putWord8 0xad
-        OP_CHECKMULTISIG     -> putWord8 0xae
+        OP_RIPEMD160           -> putWord8 0xa6
+        OP_SHA1                -> putWord8 0xa7
+        OP_SHA256              -> putWord8 0xa8
+        OP_HASH160             -> putWord8 0xa9
+        OP_HASH256             -> putWord8 0xaa
+        OP_CODESEPARATOR       -> putWord8 0xab
+        OP_CHECKSIG            -> putWord8 0xac
+        OP_CHECKSIGVERIFY      -> putWord8 0xad
+        OP_CHECKMULTISIG       -> putWord8 0xae
         OP_CHECKMULTISIGVERIFY -> putWord8 0xaf
 
         -- More NOPs
-        OP_NOP1              -> putWord8 0xb0
-        OP_NOP2              -> putWord8 0xb1
-        OP_NOP3              -> putWord8 0xb2
-        OP_NOP4              -> putWord8 0xb3
-        OP_NOP5              -> putWord8 0xb4
-        OP_NOP6              -> putWord8 0xb5
-        OP_NOP7              -> putWord8 0xb6
-        OP_NOP8              -> putWord8 0xb7
-        OP_NOP9              -> putWord8 0xb8
-        OP_NOP10             -> putWord8 0xb9
+        OP_NOP1                -> putWord8 0xb0
+        OP_CHECKLOCKTIMEVERIFY -> putWord8 0xb1
+        OP_CHECKSEQUENCEVERIFY -> putWord8 0xb2
+        OP_NOP4                -> putWord8 0xb3
+        OP_NOP5                -> putWord8 0xb4
+        OP_NOP6                -> putWord8 0xb5
+        OP_NOP7                -> putWord8 0xb6
+        OP_NOP8                -> putWord8 0xb7
+        OP_NOP9                -> putWord8 0xb8
+        OP_NOP10               -> putWord8 0xb9
 
         -- Bitcoin Cash Nov 2018 hard fork
-        OP_CHECKDATASIG      -> putWord8 0xba
+        OP_CHECKDATASIG       -> putWord8 0xba
         OP_CHECKDATASIGVERIFY -> putWord8 0xbb
 
         -- Bitcoin Cash May 2020 hard fork
@@ -576,4 +576,3 @@ scriptOpToInt s
     | otherwise          = Left $ "scriptOpToInt: invalid opcode " ++ show s
   where
     res = fromIntegral (B.head $ S.encode s) - 0x50
-

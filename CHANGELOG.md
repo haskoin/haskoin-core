@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - stringToAddr renamed to textToAddr
 - Move ScriptOutput to Standard.hs
 - Move WIF encoding/decoding to Keys.hs
+- (breaking) rename `OP_NOP2` and `OP_NOP3` to `OP_CHECKLOCKTIMEVERIFY` and
+  `OP_CHECKSEQUENCEVERIFY` resp.
 
 ## 0.14.1
 ### Fixed

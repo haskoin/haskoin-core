@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Move WIF encoding/decoding to Keys.hs
 - (breaking) rename `OP_NOP2` and `OP_NOP3` to `OP_CHECKLOCKTIMEVERIFY` and
   `OP_CHECKSEQUENCEVERIFY` resp.
+- Update to latest secp256k1 bindings.
 
 ## 0.14.1
 ### Fixed

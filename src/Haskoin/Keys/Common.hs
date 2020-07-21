@@ -112,12 +112,6 @@ data SecKeyI = SecKeyI
     , secKeyCompressed :: !Bool
     } deriving (Eq, Show, Read, Generic, NFData)
 
-instance Serialize SecKey where
-    get = do
-        bs <- getByteString 32
-        maybe (fail "invalid private key") return (secKey bs)
-    put = putByteString . getSecKey
-
 -- | Wrap private key with corresponding public key compression flag.
 wrapSecKey :: Bool -> SecKey -> SecKeyI
 wrapSecKey c d = SecKeyI d c

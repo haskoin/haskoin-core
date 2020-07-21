@@ -21,15 +21,14 @@ module Haskoin.Crypto.Signature
     , exportSig
     ) where
 
-import           Control.Monad         (guard, unless, when)
+import           Control.Monad       (guard, unless, when)
 import           Crypto.Secp256k1
-import           Data.ByteString       (ByteString)
-import qualified Data.ByteString       as BS
-import           Data.ByteString.Short (toShort)
-import           Data.Maybe            (fromMaybe)
-import           Data.Serialize        as S
+import           Data.ByteString     (ByteString)
+import qualified Data.ByteString     as BS
+import           Data.Maybe          (fromMaybe, isNothing)
+import           Data.Serialize      as S
 import           Haskoin.Crypto.Hash
-import           Numeric               (showHex)
+import           Numeric             (showHex)
 
 -- | Convert 256-bit hash into a 'Msg' for signing or verification.
 hashToMsg :: Hash256 -> Msg
@@ -44,7 +43,9 @@ signHash k = signMsg k . hashToMsg
 
 -- | Verify an ECDSA signature for a 256-bit hash.
 verifyHashSig :: Hash256 -> Sig -> PubKey -> Bool
-verifyHashSig h s p = verifySig p (fst $ normalizeSig s) (hashToMsg h)
+verifyHashSig h s p = verifySig p norm (hashToMsg h)
+  where
+    norm = fromMaybe s (normalizeSig s)
 
 -- | Deserialize an ECDSA signature as commonly encoded in Bitcoin.
 getSig :: Get Sig
@@ -62,7 +63,7 @@ getSig = do
             return $ fromIntegral l
     bs <- getByteString $ l + 2
     case decodeStrictSig bs of
-        Just s -> return s
+        Just s  -> return s
         Nothing -> fail "Invalid signature"
 
 -- | Serialize an ECDSA signature for Bitcoin use.
@@ -71,18 +72,17 @@ putSig s = putByteString $ exportSig s
 
 -- | Is canonical half order.
 isCanonicalHalfOrder :: Sig -> Bool
-isCanonicalHalfOrder = not . snd . normalizeSig
+isCanonicalHalfOrder = isNothing . normalizeSig
 
 -- | Decode signature strictly.
 decodeStrictSig :: ByteString -> Maybe Sig
 decodeStrictSig bs = do
     g <- importSig bs
-    let compact = exportCompactSig g
     -- <http://www.secg.org/sec1-v2.pdf Section 4.1.4>
     -- 4.1.4.1 (r and s can not be zero)
-    guard $ getCompactSigR compact /= zero
-    guard $ getCompactSigS compact /= zero
+    let compact = exportCompactSig g
+    let zero = BS.replicate 32 0
+    guard $ BS.take 32 (getCompactSig compact) /= zero
+    guard $ BS.take 32 (BS.drop 32 (getCompactSig compact)) /= zero
     guard $ isCanonicalHalfOrder g
     return g
-  where
-    zero = toShort $ BS.replicate 32 0

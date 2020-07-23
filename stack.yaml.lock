@@ -5,16 +5,12 @@
 
 packages:
 - completed:
-    size: 12959
-    url: https://github.com/haskoin/secp256k1-haskell/archive/5430374aceca6726765fb80c3782b005482804ef.tar.gz
-    name: secp256k1-haskell
-    version: 0.4.0
-    sha256: e4f3838f50df224a93417c98d3dad5ad12710806607278e57f08e557792db727
+    hackage: secp256k1-haskell-0.4.0@sha256:696dff6f5f84c83041c290b198e872d39241dbe62eb206627264ebdff6fe7958,1930
     pantry-tree:
-      size: 858
-      sha256: 759710d0f76cba618c65b463ec43531a7f6f676a4e3c2a2f8a5737f3fe560ee9
+      size: 599
+      sha256: e7cb3888501fc5d1084a107488be3a6de59799ba95666d055c4acbabb66fcd69
   original:
-    url: https://github.com/haskoin/secp256k1-haskell/archive/5430374aceca6726765fb80c3782b005482804ef.tar.gz
+    hackage: secp256k1-haskell-0.4.0
 snapshots:
 - completed:
     size: 531237

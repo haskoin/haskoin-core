@@ -4,5 +4,4 @@ nix:
     - secp256k1
     - pkg-config
 extra-deps:
-  - github: haskoin/secp256k1-haskell
-    commit: 5430374aceca6726765fb80c3782b005482804ef
+  - secp256k1-haskell-0.4.0

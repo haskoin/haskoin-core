@@ -103,6 +103,9 @@ data Network = Network
     , getEdaBlockHeight           :: !(Maybe Word32)
       -- | DAA start block height
     , getDaaBlockHeight           :: !(Maybe Word32)
+      -- | asert3-2d algorithm activation time
+      -- TODO: Replace with block height after fork
+    , getAsertActivationTime      :: !(Maybe Word32)
       -- | segregated witness active
     , getSegWit                   :: !Bool
       -- | 'CashAddr' prefix (for Bitcoin Cash)
@@ -222,6 +225,7 @@ btc =
     , getSigHashForkId = Nothing
     , getEdaBlockHeight = Nothing
     , getDaaBlockHeight = Nothing
+    , getAsertActivationTime = Nothing
     , getSegWit = True
     , getCashAddrPrefix = Nothing
     , getBech32Prefix = Just "bc"
@@ -279,6 +283,7 @@ btcTest =
     , getSigHashForkId = Nothing
     , getEdaBlockHeight = Nothing
     , getDaaBlockHeight = Nothing
+    , getAsertActivationTime = Nothing
     , getSegWit = True
     , getCashAddrPrefix = Nothing
     , getBech32Prefix = Just "tb"
@@ -328,6 +333,7 @@ btcRegTest =
     , getSigHashForkId = Nothing
     , getEdaBlockHeight = Nothing
     , getDaaBlockHeight = Nothing
+    , getAsertActivationTime = Nothing
     , getSegWit = True
     , getCashAddrPrefix = Nothing
     , getBech32Prefix = Just "bcrt"
@@ -417,6 +423,7 @@ bch =
     , getSigHashForkId = Just 0
     , getEdaBlockHeight = Just 478559
     , getDaaBlockHeight = Just 404031
+    , getAsertActivationTime = Just 1605441600
     , getSegWit = False
     , getCashAddrPrefix = Just "bitcoincash"
     , getBech32Prefix = Nothing
@@ -481,6 +488,7 @@ bchTest =
     , getSigHashForkId = Just 0
     , getEdaBlockHeight = Just 1155876
     , getDaaBlockHeight = Just 1188697
+    , getAsertActivationTime = Just 1605441600
     , getSegWit = False
     , getCashAddrPrefix = Just "bchtest"
     , getBech32Prefix = Nothing
@@ -533,6 +541,7 @@ bchRegTest =
     , getSigHashForkId = Just 0
     , getEdaBlockHeight = Nothing
     , getDaaBlockHeight = Just 0
+    , getAsertActivationTime = Just 1605441600
     , getSegWit = False
     , getCashAddrPrefix = Just "bchreg"
     , getBech32Prefix = Nothing

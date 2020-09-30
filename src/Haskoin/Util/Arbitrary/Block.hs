@@ -74,13 +74,9 @@ arbitraryBlockNode =
     oneof
     [ BlockNode
         <$> arbitraryBlockHeader
-        <*> choose (1, maxBound)
+        <*> choose (0, maxBound)
         <*> arbitrarySizedNatural
         <*> arbitraryBlockHash
-    , GenesisNode
-        <$> arbitraryBlockHeader
-        <*> (return 0)
-        <*> arbitrarySizedNatural
     ]
 
 -- | Arbitrary 'HeaderMemory'

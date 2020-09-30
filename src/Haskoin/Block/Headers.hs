@@ -49,6 +49,7 @@ module Haskoin.Block.Headers
     , nextWorkRequired
     , nextEdaWorkRequired
     , nextDaaWorkRequired
+    , nextAsertWorkRequired
     , computeTarget
     , getSuitableBlock
     , nextPowWorkRequired
@@ -60,6 +61,9 @@ module Haskoin.Block.Headers
     , blockLocatorNodes
     , mineBlock
     , computeSubsidy
+    , median10
+    , firstGreaterOrEqual
+    , lastSmallerOrEqual
     , ) where
 
 import           Control.Applicative        ((<|>))
@@ -108,20 +112,13 @@ type BlockWork = Integer
 -- | Data structure representing a block header and its position in the
 -- block chain.
 data BlockNode
-    -- | non-Genesis block header
     = BlockNode
           { nodeHeader :: !BlockHeader
           , nodeHeight :: !BlockHeight
           -- | accumulated work so far
           , nodeWork   :: !BlockWork
-          -- | akip magic block hash
+          -- | skip magic block hash
           , nodeSkip   :: !BlockHash
-          }
-    -- | Genesis block header
-    | GenesisNode
-          { nodeHeader :: !BlockHeader
-          , nodeHeight :: !BlockHeight
-          , nodeWork   :: !BlockWork
           }
     deriving (Show, Read, Generic, Hashable, NFData)
 
@@ -131,7 +128,9 @@ instance Serialize BlockNode where
         nodeHeight <- getWord32le
         nodeWork <- S.get
         if nodeHeight == 0
-            then return GenesisNode {..}
+            then do
+                let nodeSkip = headerHash nodeHeader
+                return BlockNode {..}
             else do
                 nodeSkip <- S.get
                 return BlockNode {..}
@@ -139,9 +138,9 @@ instance Serialize BlockNode where
         put $ nodeHeader bn
         putWord32le $ nodeHeight bn
         put $ nodeWork bn
-        case bn of
-            GenesisNode {} -> return ()
-            BlockNode {}   -> put $ nodeSkip bn
+        case nodeHeight bn of
+            0 -> return ()
+            _ -> put $ nodeSkip bn
 
 instance Eq BlockNode where
     (==) = (==) `on` nodeHeader
@@ -248,16 +247,17 @@ getAncestor height node
 
 -- | Is the provided 'BlockNode' the Genesis block?
 isGenesis :: BlockNode -> Bool
-isGenesis GenesisNode{} = True
-isGenesis BlockNode{}   = False
+isGenesis BlockNode {nodeHeight = 0} = True
+isGenesis _                          = False
 
 -- | Build the genesis 'BlockNode' for the supplied 'Network'.
 genesisNode :: Network -> BlockNode
 genesisNode net =
-    GenesisNode
+    BlockNode
         { nodeHeader = getGenesisHeader net
         , nodeHeight = 0
         , nodeWork = headerWork (getGenesisHeader net)
+        , nodeSkip = headerHash (getGenesisHeader net)
         }
 
 -- | Validate a list of continuous block headers and import them to the
@@ -412,8 +412,9 @@ getParents :: BlockHeaders m
 getParents = getpars []
   where
     getpars acc 0 _ = return $ reverse acc
-    getpars acc _ GenesisNode{} = return $ reverse acc
-    getpars acc n BlockNode{..} = do
+    getpars acc n BlockNode{..}
+      | nodeHeight == 0 = return $ reverse acc
+      | otherwise = do
         parM <- getBlockHeader $ prevBlock nodeHeader
         case parM of
             Just bn -> getpars (bn : acc) (n - 1) bn
@@ -470,6 +471,7 @@ validVersion net height version
 -- | Find last block with normal, as opposed to minimum difficulty (for test
 -- networks).
 lastNoMinDiff :: BlockHeaders m => Network -> BlockNode -> m BlockNode
+lastNoMinDiff _ bn@BlockNode {nodeHeight = 0} = return bn
 lastNoMinDiff net bn@BlockNode {..} = do
     let i = nodeHeight `mod` diffInterval net /= 0
         c = encodeCompact (getPowLimit net)
@@ -484,8 +486,6 @@ lastNoMinDiff net bn@BlockNode {..} = do
             lastNoMinDiff net bn'
         else return bn
 
-lastNoMinDiff _ bn@GenesisNode{} = return bn
-
 -- | Returns the work required on a block header given the previous block. This
 -- coresponds to @bitcoind@ function @GetNextWorkRequired@ in @main.cpp@.
 nextWorkRequired :: BlockHeaders m
@@ -494,20 +494,24 @@ nextWorkRequired :: BlockHeaders m
                  -> BlockHeader
                  -> m Word32
 nextWorkRequired net par bh = do
-    let mf = daa <|> eda <|> pow
-    case mf of
-        Just f -> f net par bh
-        Nothing ->
-            error
-                "Could not get an appropriate difficulty calculation algorithm"
+    ma <- getAsertAnchor net
+    case asert ma <|> daa <|> eda <|> pow of
+        Just f -> f par bh
+        Nothing -> error "Could not determine difficulty algorithm"
   where
-    daa = getDaaBlockHeight net >>= \daaHeight -> do
-        guard (nodeHeight par + 1 >= daaHeight)
-        return nextDaaWorkRequired
-    eda = getEdaBlockHeight net >>= \edaHeight -> do
-        guard (nodeHeight par + 1 >= edaHeight)
-        return nextEdaWorkRequired
-    pow = return nextPowWorkRequired
+    asert ma = do
+        anchor <- ma
+        guard (nodeHeight par > nodeHeight anchor)
+        return $ nextAsertWorkRequired net anchor
+    daa = do
+        daa_height <- getDaaBlockHeight net
+        guard (nodeHeight par + 1 >= daa_height)
+        return $ nextDaaWorkRequired net
+    eda = do
+        eda_height <- getEdaBlockHeight net
+        guard (nodeHeight par + 1 >= eda_height)
+        return $ nextEdaWorkRequired net
+    pow = return $ nextPowWorkRequired net
 
 -- | Find out the next amount of work required according to the Emergency
 -- Difficulty Adjustment (EDA) algorithm from Bitcoin Cash.
@@ -548,7 +552,6 @@ nextDaaWorkRequired ::
 nextDaaWorkRequired net par bh
     | minDifficulty = return (encodeCompact (getPowLimit net))
     | otherwise = do
-        let height = nodeHeight par
         unless (height >= diffInterval net) $
             error "Block height below difficulty interval"
         l <- getSuitableBlock par
@@ -559,10 +562,145 @@ nextDaaWorkRequired net par bh
             then return $ encodeCompact (getPowLimit net)
             else return $ encodeCompact nextTarget
   where
+    height = nodeHeight par
     e1 = error "Cannot get ancestor at parent - 144 height"
     minDifficulty =
         blockTimestamp bh >
         blockTimestamp (nodeHeader par) + getTargetSpacing net * 2
+
+median10 :: BlockHeaders m => BlockNode -> m Timestamp
+median10 bn = do
+    pars <- getParents 10 bn
+    return $ medianTime . map (blockTimestamp . nodeHeader) $ bn : pars
+
+-- TODO: Test this
+firstGreaterOrEqual :: BlockHeaders m
+                    => (BlockNode -> m Ordering)
+                    -> m (Maybe BlockNode)
+firstGreaterOrEqual f = runMaybeT $ do
+    b <- lift getBestBlockHeader
+    a <- MaybeT $ getAncestor 0 b
+    go a b
+  where
+    go a b = do
+        a' <- lift $ f a
+        b' <- lift $ f b
+        guard $ b' /= LT
+        case a' of
+            EQ -> return a
+            GT -> return a
+            LT -> do
+                let h = nodeHeight a + (nodeHeight b - nodeHeight a) `div` 2
+                m <- g h b
+                m' <- lift $ f m
+                if m' == LT then go m b else go a m
+    g x b = MaybeT $ getAncestor x b
+
+-- TODO: Test this
+lastSmallerOrEqual :: BlockHeaders m
+                    => (BlockNode -> m Ordering)
+                    -> m (Maybe BlockNode)
+lastSmallerOrEqual f = runMaybeT $ do
+    b <- lift getBestBlockHeader
+    a <- MaybeT $ getAncestor 0 b
+    go a b
+  where
+    go a b = do
+        a' <- lift $ f a
+        b' <- lift $ f b
+        guard $ a' /= GT
+        case b' of
+            EQ -> return b
+            LT -> return b
+            GT -> do
+                let h = nodeHeight a + (nodeHeight b - nodeHeight a) `div` 2
+                m <- g h b
+                m' <- lift $ f m
+                if m' == GT then go a m else go m b
+    g x b = MaybeT $ getAncestor x b
+
+-- TODO: Use known anchor after fork
+getAsertAnchor :: BlockHeaders m => Network -> m (Maybe BlockNode)
+getAsertAnchor net =
+    case getAsertActivationTime net of
+        Nothing -> return Nothing
+        Just act -> firstGreaterOrEqual (f act)
+  where
+    f act bn = do
+        mtp <- median10 bn
+        return $ compare mtp act
+
+-- | Find the next amount of work required according to the aserti3-2d algorithm.
+nextAsertWorkRequired :: BlockHeaders m
+                      => Network
+                      -> BlockNode
+                      -> BlockNode
+                      -> BlockHeader
+                      -> m Word32
+nextAsertWorkRequired net anchor par bh
+  | min_diff = return (encodeCompact (getPowLimit net))
+  | otherwise = do
+      anchor_parent <- fromMaybe e_fork <$>
+                       getBlockHeader (prevBlock (nodeHeader anchor))
+      let anchor_parent_time = blockTimestamp $ nodeHeader anchor_parent
+      return $ computeAsertBits
+               anchor_height
+               anchor_parent_time
+               anchor_bits
+               current_height
+               current_time
+  where
+    anchor_height = nodeHeight anchor
+    anchor_bits = blockBits $ nodeHeader anchor
+    current_height = nodeHeight par + 1
+    current_time = blockTimestamp bh
+    e_fork = error "Could not get fork block header"
+    min_diff =
+        blockTimestamp bh >
+        blockTimestamp (nodeHeader par) + getTargetSpacing net * 2
+
+computeAsertBits
+    :: Word32
+    -> Word32
+    -> Word32
+    -> Word32
+    -> Word32
+    -> Word32
+computeAsertBits
+    anchor_height
+    anchor_parent_time
+    anchor_bits
+    current_height
+    current_time =
+    let ideal_block_time = 600
+        halflife = 172800
+        radix = 2 ^ (16 :: Int)
+        max_bits = 0x1d00ffff
+        max_target = fst $ decodeCompact max_bits
+        height_delta = toInteger $ current_height - anchor_height
+        time_delta = toInteger current_time - toInteger anchor_parent_time
+        anchor_target = fst $ decodeCompact anchor_bits
+        exponent' =
+            time_delta - ideal_block_time * (height_delta - 1) `div` halflife
+        num_shifts = exponent' `shiftR` 16
+        exponent'' = exponent' - num_shifts * radix
+        factor' = 195766423245049 * exponent''
+                + 971821376 * exponent'' ^ (2 :: Int)
+                + 5127 * exponent'' ^ (3 :: Int)
+                + 2 ^ (47 :: Int)
+        factor = (factor' `shiftR` 48) + radix
+        next_target' = anchor_target * factor
+        next_target'' = if num_shifts < 0
+                        then shiftR next_target'
+                                    (fromIntegral (negate num_shifts))
+                        else shiftL next_target'
+                                    (fromIntegral num_shifts)
+        next_target = next_target'' `shiftR` 16
+    in case next_target of
+        0 -> encodeCompact 1
+        _ | next_target > max_target -> max_bits
+          | otherwise -> encodeCompact next_target
+
 
 -- | Compute Bitcoin Cash DAA target for a new block.
 computeTarget :: Network -> BlockNode -> BlockNode -> Integer

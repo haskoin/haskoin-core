@@ -9,6 +9,7 @@ import           Data.Maybe                 (fromJust)
 import           Data.String                (fromString)
 import           Data.String.Conversions    (cs)
 import           Data.Text                  (Text)
+import           Data.Word                  (Word32)
 import           Haskoin.Block
 import           Haskoin.Constants
 import           Haskoin.Transaction
@@ -109,6 +110,8 @@ spec = do
     describe "helper functions" $ do
         it "computes bitcoin block subsidy correctly" (testSubsidy btc)
         it "computes regtest block subsidy correctly" (testSubsidy btcRegTest)
+        it "computes asert target (run01)" (asertTests asertRun01)
+        it "computes asert target (run02)" (asertTests asertRun02)
 
 -- 0 → → 2015 → → → → → → → 4031
 --       ↓
@@ -356,3 +359,65 @@ testSubsidy net = go (2 * 50 * 100 * 1000 * 1000) 0
             else do
                 subsidy `shouldBe` (previous_subsidy `div` 2)
                 go subsidy (halvings + 1)
+
+type AsertBlock = (Word32, Word32, Word32, Word32)
+type AsertVector = (Word32, Word32, Word32, [AsertBlock])
+
+asertTests :: AsertVector -> Assertion
+asertTests (anchor_height, anchor_parent_time, anchor_bits, vectors) =
+    testAsertBits anchor_height anchor_parent_time anchor_bits vectors
+
+testAsertBits :: Word32
+              -> Word32
+              -> Word32
+              -> [AsertBlock]
+              -> Assertion
+testAsertBits anchor_height anchor_parent_time anchor_bits =
+    mapM_ (\(a, b, c, d) -> f a b c d)
+  where
+    f _iteration
+      current_height
+      current_time
+      target = computeAsertBits
+               (2 * 24 * 60 * 60)
+               anchor_bits
+               (current_time - anchor_parent_time)
+               (current_height - anchor_height)
+               `shouldBe`
+               target
+
+asertRun01 :: AsertVector
+asertRun01 =
+    ( 1                            -- anchor height
+    , 0                            -- anchor parent time
+    , 0x1d00ffff                   -- anchor bits
+    , [ (1,  2,  1200, 0x1d00ffff) -- (iteration, height, time, target)
+      , (2,  3,  1800, 0x1d00ffff)
+      , (3,  4,  2400, 0x1d00ffff)
+      , (4,  5,  3000, 0x1d00ffff)
+      , (5,  6,  3600, 0x1d00ffff)
+      , (6,  7,  4200, 0x1d00ffff)
+      , (7,  8,  4800, 0x1d00ffff)
+      , (8,  9,  5400, 0x1d00ffff)
+      , (9,  10, 6000, 0x1d00ffff)
+      , (10, 11, 6600, 0x1d00ffff)
+      ]
+    )
+
+asertRun02 :: AsertVector
+asertRun02 =
+    ( 1                            -- anchor height
+    , 0                            -- anchor parent time
+    , 0x1a2b3c4d                   -- anchor bits
+    , [ (1,  2,  1200, 0x1a2b3c4d)
+      , (2,  3,  1800, 0x1a2b3c4d)
+      , (3,  4,  2400, 0x1a2b3c4d)
+      , (4,  5,  3000, 0x1a2b3c4d)
+      , (5,  6,  3600, 0x1a2b3c4d)
+      , (6,  7,  4200, 0x1a2b3c4d)
+      , (7,  8,  4800, 0x1a2b3c4d)
+      , (8,  9,  5400, 0x1a2b3c4d)
+      , (9,  10, 6000, 0x1a2b3c4d)
+      , (10, 11, 6600, 0x1a2b3c4d)
+      ]
+    )

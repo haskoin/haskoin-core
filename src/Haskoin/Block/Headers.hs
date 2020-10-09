@@ -50,6 +50,7 @@ module Haskoin.Block.Headers
     , nextEdaWorkRequired
     , nextDaaWorkRequired
     , nextAsertWorkRequired
+    , computeAsertBits
     , computeTarget
     , getSuitableBlock
     , nextPowWorkRequired
@@ -637,27 +638,35 @@ nextAsertWorkRequired :: BlockHeaders m
                       -> BlockNode
                       -> BlockHeader
                       -> m Word32
-nextAsertWorkRequired net anchor par bh
-  | min_diff = return (encodeCompact (getPowLimit net))
-  | otherwise = do
-      anchor_parent <- fromMaybe e_fork <$>
-                       getBlockHeader (prevBlock (nodeHeader anchor))
-      let anchor_parent_time = blockTimestamp $ nodeHeader anchor_parent
-      return $ computeAsertBits
-               anchor_height
-               anchor_parent_time
-               anchor_bits
-               current_height
-               current_time
+nextAsertWorkRequired net anchor par bh = do
+    anchor_parent <- fromMaybe e_fork <$>
+                      getBlockHeader (prevBlock (nodeHeader anchor))
+    let anchor_parent_time = blockTimestamp $ nodeHeader anchor_parent
+        time_diff = current_time - anchor_parent_time
+    return $ computeAsertBits halflife anchor_bits time_diff height_diff
   where
+    halflife = getAsertHalfLife net
     anchor_height = nodeHeight anchor
     anchor_bits = blockBits $ nodeHeader anchor
     current_height = nodeHeight par + 1
+    height_diff = current_height - anchor_height
     current_time = blockTimestamp bh
     e_fork = error "Could not get fork block header"
-    min_diff =
-        blockTimestamp bh >
-        blockTimestamp (nodeHeader par) + getTargetSpacing net * 2
+
+idealBlockTime :: Integer
+idealBlockTime = 10 * 60
+
+rBits :: Int
+rBits = 16
+
+radix :: Integer
+radix = 1 `shiftL` rBits
+
+maxBits :: Word32
+maxBits = 0x1d00ffff
+
+maxTarget :: Integer
+maxTarget = fst $ decodeCompact maxBits
 
 computeAsertBits
     :: Word32
@@ -665,41 +674,30 @@ computeAsertBits
     -> Word32
     -> Word32
     -> Word32
-    -> Word32
-computeAsertBits
-    anchor_height
-    anchor_parent_time
-    anchor_bits
-    current_height
-    current_time =
-    let ideal_block_time = 600
-        halflife = 172800
-        radix = 2 ^ (16 :: Int)
-        max_bits = 0x1d00ffff
-        max_target = fst $ decodeCompact max_bits
-        height_delta = toInteger $ current_height - anchor_height
-        time_delta = toInteger current_time - toInteger anchor_parent_time
-        anchor_target = fst $ decodeCompact anchor_bits
-        exponent' =
-            time_delta - ideal_block_time * (height_delta - 1) `div` halflife
-        num_shifts = exponent' `shiftR` 16
-        exponent'' = exponent' - num_shifts * radix
-        factor' = 195766423245049 * exponent''
-                + 971821376 * exponent'' ^ (2 :: Int)
-                + 5127 * exponent'' ^ (3 :: Int)
-                + 2 ^ (47 :: Int)
-        factor = (factor' `shiftR` 48) + radix
-        next_target' = anchor_target * factor
-        next_target'' = if num_shifts < 0
-                        then shiftR next_target'
-                                    (fromIntegral (negate num_shifts))
-                        else shiftL next_target'
-                                    (fromIntegral num_shifts)
-        next_target = next_target'' `shiftR` 16
-    in case next_target of
-        0 -> encodeCompact 1
-        _ | next_target > max_target -> max_bits
-          | otherwise -> encodeCompact next_target
+computeAsertBits halflife anchor_bits time_diff height_diff =
+    if e2 >= 0 && e2 < 65536
+    then if g4 == 0
+         then encodeCompact 1
+         else if g4 > maxTarget
+              then maxBits
+              else encodeCompact g4
+    else error $ "Exponent not in range: " ++ show e2
+  where
+    t = toInteger time_diff
+    h = toInteger height_diff
+    l = toInteger halflife
+    g1 = fst (decodeCompact anchor_bits)
+    e1 = ((t - idealBlockTime * (h + 1)) * radix) `div` l
+    s = e1 `shiftR` rBits
+    e2 = e1 - s * radix
+    g2 = g1 * (radix +
+               ((195766423245049*e2 + 971821376*e2^2 + 5127*e2^3 + 2^47)
+                `shiftR`
+                (rBits*3)))
+    g3 = if s < 0
+         then g2 `shiftR` negate (fromIntegral s)
+         else g2 `shiftL` fromIntegral s
+    g4 = g3 `shiftR` rBits
 
 
 -- | Compute Bitcoin Cash DAA target for a new block.

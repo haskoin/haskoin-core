@@ -29,11 +29,11 @@ arbitraryBlock net = do
 arbitraryBlockHeader :: Gen BlockHeader
 arbitraryBlockHeader =
     BlockHeader <$> arbitrary
-                      <*> arbitraryBlockHash
-                      <*> arbitraryHash256
-                      <*> arbitrary
-                      <*> arbitrary
-                      <*> arbitrary
+                <*> arbitraryBlockHash
+                <*> arbitraryHash256
+                <*> arbitrary
+                <*> arbitrary
+                <*> arbitrary
 
 -- | Arbitrary block hash.
 arbitraryBlockHash :: Gen BlockHash

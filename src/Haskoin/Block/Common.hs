@@ -319,8 +319,7 @@ decodeCompact nCompact = (if neg then res * (-1) else res, over)
 
 -- | Encode an 'Integer' to the compact number format used in the difficulty
 -- target of a block.
-encodeCompact :: Integer
-              -> Word32
+encodeCompact :: Integer -> Word32
 encodeCompact i = nCompact
   where
     i' = abs i

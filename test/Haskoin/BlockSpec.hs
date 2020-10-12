@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+
 module Haskoin.BlockSpec
     ( spec
     ) where
@@ -107,11 +108,22 @@ spec = do
     describe "compact number" $ do
         it "compact number local vectors" testCompact
         it "compact number imported vectors" testCompactBitcoinCore
+    describe "asert" $ do
+        it "computes asert target (run01)" (asertTests "test_vectors_aserti3-2d_run01.txt")
+        it "computes asert target (run02)" (asertTests "test_vectors_aserti3-2d_run02.txt")
+        it "computes asert target (run03)" (asertTests "test_vectors_aserti3-2d_run03.txt")
+        it "computes asert target (run04)" (asertTests "test_vectors_aserti3-2d_run04.txt")
+        it "computes asert target (run05)" (asertTests "test_vectors_aserti3-2d_run05.txt")
+        it "computes asert target (run06)" (asertTests "test_vectors_aserti3-2d_run06.txt")
+        it "computes asert target (run07)" (asertTests "test_vectors_aserti3-2d_run07.txt")
+        it "computes asert target (run08)" (asertTests "test_vectors_aserti3-2d_run08.txt")
+        it "computes asert target (run09)" (asertTests "test_vectors_aserti3-2d_run09.txt")
+        it "computes asert target (run10)" (asertTests "test_vectors_aserti3-2d_run10.txt")
+        it "computes asert target (run11)" (asertTests "test_vectors_aserti3-2d_run11.txt")
+        it "computes asert target (run12)" (asertTests "test_vectors_aserti3-2d_run12.txt")
     describe "helper functions" $ do
         it "computes bitcoin block subsidy correctly" (testSubsidy btc)
         it "computes regtest block subsidy correctly" (testSubsidy btcRegTest)
-        it "computes asert target (run01)" (asertTests asertRun01)
-        it "computes asert target (run02)" (asertTests asertRun02)
 
 -- 0 → → 2015 → → → → → → → 4031
 --       ↓
@@ -360,64 +372,43 @@ testSubsidy net = go (2 * 50 * 100 * 1000 * 1000) 0
                 subsidy `shouldBe` (previous_subsidy `div` 2)
                 go subsidy (halvings + 1)
 
-type AsertBlock = (Word32, Word32, Word32, Word32)
-type AsertVector = (Word32, Word32, Word32, [AsertBlock])
+data AsertBlock =
+    AsertBlock { iteration :: !Int
+               , height    :: !Integer
+               , time      :: !Integer
+               , target    :: !Word32
+               }
 
-asertTests :: AsertVector -> Assertion
-asertTests (anchor_height, anchor_parent_time, anchor_bits, vectors) =
-    testAsertBits anchor_height anchor_parent_time anchor_bits vectors
+data AsertVector =
+    AsertVector { anchorHeight     :: !Integer
+                , anchorParentTime :: !Integer
+                , anchorBits       :: !Word32
+                , asertBlocks      :: ![AsertBlock]
+                }
 
-testAsertBits :: Word32
-              -> Word32
-              -> Word32
-              -> [AsertBlock]
-              -> Assertion
-testAsertBits anchor_height anchor_parent_time anchor_bits =
-    mapM_ (\(a, b, c, d) -> f a b c d)
+readAsertVector :: FilePath -> IO AsertVector
+readAsertVector path = do
+    (d:ah:apt:ab:sh:st:it:h:xs) <- lines <$> readFile ("data/" ++ path)
+    let anchor_height = read (words ah !! 3)
+        anchor_parent_time = read (words apt !! 4)
+        anchor_nbits = read (words ab !! 3)
+        blocks = map (f . words) (init xs)
+    return $ AsertVector anchor_height anchor_parent_time anchor_nbits blocks
   where
-    f _iteration
-      current_height
-      current_time
-      target = computeAsertBits
-               (2 * 24 * 60 * 60)
-               anchor_bits
-               (current_time - anchor_parent_time)
-               (current_height - anchor_height)
-               `shouldBe`
-               target
+    f [i,h,t,g] = AsertBlock (read i) (read h) (read t) (read g)
 
-asertRun01 :: AsertVector
-asertRun01 =
-    ( 1                            -- anchor height
-    , 0                            -- anchor parent time
-    , 0x1d00ffff                   -- anchor bits
-    , [ (1,  2,  1200, 0x1d00ffff) -- (iteration, height, time, target)
-      , (2,  3,  1800, 0x1d00ffff)
-      , (3,  4,  2400, 0x1d00ffff)
-      , (4,  5,  3000, 0x1d00ffff)
-      , (5,  6,  3600, 0x1d00ffff)
-      , (6,  7,  4200, 0x1d00ffff)
-      , (7,  8,  4800, 0x1d00ffff)
-      , (8,  9,  5400, 0x1d00ffff)
-      , (9,  10, 6000, 0x1d00ffff)
-      , (10, 11, 6600, 0x1d00ffff)
-      ]
-    )
+asertTests :: FilePath -> Assertion
+asertTests file = do
+    vector <- readAsertVector file
+    testAsertBits vector
 
-asertRun02 :: AsertVector
-asertRun02 =
-    ( 1                            -- anchor height
-    , 0                            -- anchor parent time
-    , 0x1a2b3c4d                   -- anchor bits
-    , [ (1,  2,  1200, 0x1a2b3c4d)
-      , (2,  3,  1800, 0x1a2b3c4d)
-      , (3,  4,  2400, 0x1a2b3c4d)
-      , (4,  5,  3000, 0x1a2b3c4d)
-      , (5,  6,  3600, 0x1a2b3c4d)
-      , (6,  7,  4200, 0x1a2b3c4d)
-      , (7,  8,  4800, 0x1a2b3c4d)
-      , (8,  9,  5400, 0x1a2b3c4d)
-      , (9,  10, 6000, 0x1a2b3c4d)
-      , (10, 11, 6600, 0x1a2b3c4d)
-      ]
-    )
+testAsertBits :: AsertVector -> Assertion
+testAsertBits (AsertVector anchor_height anchor_parent_time anchor_bits blocks) =
+    forM_ blocks $ \(AsertBlock _ height time target) ->
+        computeAsertBits
+            (2 * 24 * 60 * 60)
+            anchor_bits
+            (time - anchor_parent_time)
+            (height - anchor_height)
+        `shouldBe`
+            target

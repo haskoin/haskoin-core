@@ -641,16 +641,16 @@ nextAsertWorkRequired :: BlockHeaders m
 nextAsertWorkRequired net anchor par bh = do
     anchor_parent <- fromMaybe e_fork <$>
                       getBlockHeader (prevBlock (nodeHeader anchor))
-    let anchor_parent_time = blockTimestamp $ nodeHeader anchor_parent
+    let anchor_parent_time = toInteger $ blockTimestamp $ nodeHeader anchor_parent
         time_diff = current_time - anchor_parent_time
     return $ computeAsertBits halflife anchor_bits time_diff height_diff
   where
     halflife = getAsertHalfLife net
-    anchor_height = nodeHeight anchor
+    anchor_height = toInteger $ nodeHeight anchor
     anchor_bits = blockBits $ nodeHeader anchor
-    current_height = nodeHeight par + 1
+    current_height = toInteger (nodeHeight par) + 1
     height_diff = current_height - anchor_height
-    current_time = blockTimestamp bh
+    current_time = toInteger $ blockTimestamp bh
     e_fork = error "Could not get fork block header"
 
 idealBlockTime :: Integer
@@ -669,10 +669,10 @@ maxTarget :: Integer
 maxTarget = fst $ decodeCompact maxBits
 
 computeAsertBits
-    :: Word32
+    :: Integer
     -> Word32
-    -> Word32
-    -> Word32
+    -> Integer
+    -> Integer
     -> Word32
 computeAsertBits halflife anchor_bits time_diff height_diff =
     if e2 >= 0 && e2 < 65536
@@ -683,11 +683,10 @@ computeAsertBits halflife anchor_bits time_diff height_diff =
               else encodeCompact g4
     else error $ "Exponent not in range: " ++ show e2
   where
-    t = toInteger time_diff
-    h = toInteger height_diff
-    l = toInteger halflife
     g1 = fst (decodeCompact anchor_bits)
-    e1 = ((t - idealBlockTime * (h + 1)) * radix) `div` l
+    e1 = ((time_diff - idealBlockTime * (height_diff + 1)) * radix)
+         `quot`
+         halflife
     s = e1 `shiftR` rBits
     e2 = e1 - s * radix
     g2 = g1 * (radix +

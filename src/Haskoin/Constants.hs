@@ -107,7 +107,7 @@ data Network = Network
       -- TODO: Replace with block height after fork
     , getAsertActivationTime      :: !(Maybe Word32)
       -- | asert3-2d algorithm halflife (not used for non-BCH networks)
-    , getAsertHalfLife            :: !Word32
+    , getAsertHalfLife            :: !Integer
       -- | segregated witness active
     , getSegWit                   :: !Bool
       -- | 'CashAddr' prefix (for Bitcoin Cash)

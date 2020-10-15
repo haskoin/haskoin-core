@@ -67,31 +67,31 @@ module Haskoin.Block.Headers
     , lastSmallerOrEqual
     , ) where
 
-import           Control.Applicative        ((<|>))
+import           Control.Applicative         ((<|>))
 import           Control.DeepSeq
-import           Control.Monad              (guard, unless, when)
-import           Control.Monad.Except       (ExceptT (..), runExceptT,
-                                             throwError)
-import           Control.Monad.State.Strict as State (StateT, get, gets, lift,
-                                                      modify)
+import           Control.Monad               (guard, unless, when)
+import           Control.Monad.Except        (ExceptT (..), runExceptT,
+                                              throwError)
+import           Control.Monad.State.Strict  as State (StateT, get, gets, lift,
+                                                       modify)
 import           Control.Monad.Trans.Maybe
-import           Data.Bits                  (shiftL, shiftR, (.&.))
-import qualified Data.ByteString            as B
-import           Data.ByteString.Short      (ShortByteString, fromShort,
-                                             toShort)
-import           Data.Function              (on)
+import           Data.Bits                   (shiftL, shiftR, (.&.))
+import qualified Data.ByteString             as B
+import           Data.ByteString.Short       (ShortByteString, fromShort,
+                                              toShort)
+import           Data.Function               (on)
 import           Data.Hashable
-import           Data.HashMap.Strict        (HashMap)
-import qualified Data.HashMap.Strict        as HashMap
-import           Data.List                  (sort, sortBy)
-import           Data.Maybe                 (fromMaybe, listToMaybe)
-import           Data.Serialize             as S (Serialize (..), decode,
-                                                  encode, get, put)
-import           Data.Serialize.Get         as S
-import           Data.Serialize.Put         as S
-import           Data.Typeable              (Typeable)
-import           Data.Word                  (Word32, Word64)
-import           GHC.Generics               (Generic)
+import           Data.HashMap.Strict         (HashMap)
+import qualified Data.HashMap.Strict         as HashMap
+import           Data.List                   (sort, sortBy)
+import           Data.Maybe                  (fromMaybe, listToMaybe)
+import           Data.Serialize              as S (Serialize (..), decode,
+                                                   encode, get, put)
+import           Data.Serialize.Get          as S
+import           Data.Serialize.Put          as S
+import           Data.Typeable               (Typeable)
+import           Data.Word                   (Word32, Word64)
+import           GHC.Generics                (Generic)
 import           Haskoin.Block.Common
 import           Haskoin.Constants
 import           Haskoin.Crypto
@@ -497,7 +497,7 @@ nextWorkRequired :: BlockHeaders m
 nextWorkRequired net par bh = do
     ma <- getAsertAnchor net
     case asert ma <|> daa <|> eda <|> pow of
-        Just f -> f par bh
+        Just f  -> f par bh
         Nothing -> error "Could not determine difficulty algorithm"
   where
     asert ma = do
@@ -576,11 +576,11 @@ mtp bn = do
 
 -- TODO: Test this
 firstGreaterOrEqual :: BlockHeaders m
-                    => (BlockNode -> m Ordering)
+                    => Network
+                    -> (BlockNode -> m Ordering)
                     -> m (Maybe BlockNode)
-firstGreaterOrEqual f = runMaybeT $ do
-    b <- lift getBestBlockHeader
-    a <- MaybeT $ getAncestor 0 b
+firstGreaterOrEqual net f = runMaybeT $ do
+    (a, b) <- lift $ extremes net
     go a b
   where
     go a b = do
@@ -591,19 +591,19 @@ firstGreaterOrEqual f = runMaybeT $ do
             EQ -> return a
             GT -> return a
             LT -> do
-                let h = nodeHeight a + (nodeHeight b - nodeHeight a) `div` 2
-                m <- g h b
+                m <- MaybeT $ middleBlock a b
                 m' <- lift $ f m
-                if m' == LT then go m b else go a m
-    g x b = MaybeT $ getAncestor x b
+                if m' == LT
+                    then go m b
+                    else go a m
 
 -- TODO: Test this
 lastSmallerOrEqual :: BlockHeaders m
-                    => (BlockNode -> m Ordering)
-                    -> m (Maybe BlockNode)
-lastSmallerOrEqual f = runMaybeT $ do
-    b <- lift getBestBlockHeader
-    a <- MaybeT $ getAncestor 0 b
+                   => Network
+                   -> (BlockNode -> m Ordering)
+                   -> m (Maybe BlockNode)
+lastSmallerOrEqual net f = runMaybeT $ do
+    (a, b) <- lift $ extremes net
     go a b
   where
     go a b = do
@@ -614,18 +614,35 @@ lastSmallerOrEqual f = runMaybeT $ do
             EQ -> return b
             LT -> return b
             GT -> do
-                let h = nodeHeight a + (nodeHeight b - nodeHeight a) `div` 2
-                m <- g h b
-                m' <- lift $ f m
-                if m' == GT then go a m else go m b
-    g x b = MaybeT $ getAncestor x b
+                  m <- MaybeT $ middleBlock a b
+                  m' <- lift $ f m
+                  if m' == GT
+                      then go a m
+                      else go m b
+
+extremes :: BlockHeaders m => Network -> m (BlockNode, BlockNode)
+extremes net = do
+    b <- getBestBlockHeader
+    return (genesisNode net, b)
+
+middleBlock :: BlockHeaders m => BlockNode -> BlockNode -> m (Maybe BlockNode)
+middleBlock a b = runMaybeT $ do
+    h <- MaybeT $ return (middleOf (nodeHeight a) (nodeHeight b))
+    MaybeT $ getAncestor h b
+
+middleOf :: Integral a => a -> a -> Maybe a
+middleOf a b
+    | b - a <= 1 = Nothing
+    | otherwise = Just m
+  where
+    m = a + ((b - a) `div` 2)
 
 -- TODO: Use known anchor after fork
 getAsertAnchor :: BlockHeaders m => Network -> m (Maybe BlockNode)
 getAsertAnchor net =
     case getAsertActivationTime net of
-        Nothing -> return Nothing
-        Just act -> firstGreaterOrEqual (f act)
+        Nothing  -> return Nothing
+        Just act -> firstGreaterOrEqual net (f act)
   where
     f act bn = do
         m <- mtp bn

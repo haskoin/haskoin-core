@@ -570,9 +570,11 @@ nextDaaWorkRequired net par bh
         blockTimestamp (nodeHeader par) + getTargetSpacing net * 2
 
 mtp :: BlockHeaders m => BlockNode -> m Timestamp
-mtp bn = do
-    pars <- getParents 11 bn
-    return $ medianTime (map (blockTimestamp . nodeHeader) pars)
+mtp bn
+    | nodeHeight bn == 0 = return 0
+    | otherwise = do
+        pars <- getParents 11 bn
+        return $ medianTime (map (blockTimestamp . nodeHeader) pars)
 
 -- TODO: Test this
 firstGreaterOrEqual :: BlockHeaders m

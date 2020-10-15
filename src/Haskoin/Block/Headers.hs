@@ -571,8 +571,8 @@ nextDaaWorkRequired net par bh
 
 mtp :: BlockHeaders m => BlockNode -> m Timestamp
 mtp bn = do
-    pars <- getParents 10 bn
-    return $ medianTime . map (blockTimestamp . nodeHeader) $ bn : pars
+    pars <- getParents 11 bn
+    return $ medianTime (map (blockTimestamp . nodeHeader) pars)
 
 -- TODO: Test this
 firstGreaterOrEqual :: BlockHeaders m

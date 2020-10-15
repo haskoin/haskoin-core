@@ -69,7 +69,7 @@ module Haskoin.Block.Headers
 
 import           Control.Applicative         ((<|>))
 import           Control.DeepSeq
-import           Control.Monad               (guard, unless, when)
+import           Control.Monad               (guard, mzero, unless, when)
 import           Control.Monad.Except        (ExceptT (..), runExceptT,
                                               throwError)
 import           Control.Monad.State.Strict  as State (StateT, get, gets, lift,
@@ -579,63 +579,59 @@ firstGreaterOrEqual :: BlockHeaders m
                     => Network
                     -> (BlockNode -> m Ordering)
                     -> m (Maybe BlockNode)
-firstGreaterOrEqual net f = runMaybeT $ do
-    (a, b) <- lift $ extremes net
-    go a b
-  where
-    go a b = do
-        a' <- lift $ f a
-        b' <- lift $ f b
-        guard $ b' /= LT
-        case a' of
-            EQ -> return a
-            GT -> return a
-            LT -> do
-                m <- MaybeT $ middleBlock a b
-                m' <- lift $ f m
-                if m' == LT
-                    then go m b
-                    else go a m
+firstGreaterOrEqual = binSearch False
 
 -- TODO: Test this
 lastSmallerOrEqual :: BlockHeaders m
                    => Network
                    -> (BlockNode -> m Ordering)
                    -> m (Maybe BlockNode)
-lastSmallerOrEqual net f = runMaybeT $ do
+lastSmallerOrEqual = binSearch True
+
+-- TODO: Test this
+binSearch :: BlockHeaders m
+          => Bool
+          -> Network
+          -> (BlockNode -> m Ordering)
+          -> m (Maybe BlockNode)
+binSearch top net f = runMaybeT $ do
     (a, b) <- lift $ extremes net
     go a b
   where
     go a b = do
+        m <- lift $ middleBlock a b
         a' <- lift $ f a
         b' <- lift $ f b
-        guard $ a' /= GT
-        case b' of
-            EQ -> return b
-            LT -> return b
-            GT -> do
-                  m <- MaybeT $ middleBlock a b
-                  m' <- lift $ f m
-                  if m' == GT
-                      then go a m
-                      else go m b
+        m' <- lift $ f m
+        r (a, a') (b, b') (m, m')
+    r (a, a') (b, b') (m, m')
+        | out_of_bounds a' b' = mzero
+        | no_middle a b = choose_one a b
+        | is_between a' m' = go a m
+        | is_between m' b' = go m b
+        | otherwise = mzero
+    out_of_bounds a' b' = a' == GT || b' == LT
+    no_middle a b = nodeHeight b - nodeHeight a <= 0
+    is_between x' y' = x' /= GT && y' /= LT
+    choose_one a b
+        | top = return b
+        | otherwise = return a
 
 extremes :: BlockHeaders m => Network -> m (BlockNode, BlockNode)
 extremes net = do
     b <- getBestBlockHeader
     return (genesisNode net, b)
 
-middleBlock :: BlockHeaders m => BlockNode -> BlockNode -> m (Maybe BlockNode)
-middleBlock a b = runMaybeT $ do
-    h <- MaybeT $ return (middleOf (nodeHeight a) (nodeHeight b))
-    MaybeT $ getAncestor h b
-
-middleOf :: Integral a => a -> a -> Maybe a
-middleOf a b
-    | b - a <= 1 = Nothing
-    | otherwise = Just m
+middleBlock :: BlockHeaders m => BlockNode -> BlockNode -> m BlockNode
+middleBlock a b =
+    getAncestor h b >>= \case
+        Nothing -> error "You fell into a pit full of mud and snakes"
+        Just x -> return x
   where
-    m = a + ((b - a) `div` 2)
+    h = middleOf (nodeHeight a) (nodeHeight b)
+
+middleOf :: Integral a => a -> a -> a
+middleOf a b = a + ((b - a) `div` 2)
 
 -- TODO: Use known anchor after fork
 getAsertAnchor :: BlockHeaders m => Network -> m (Maybe BlockNode)

@@ -62,7 +62,7 @@ module Haskoin.Block.Headers
     , blockLocatorNodes
     , mineBlock
     , computeSubsidy
-    , median10
+    , mtp
     , firstGreaterOrEqual
     , lastSmallerOrEqual
     , ) where
@@ -569,8 +569,8 @@ nextDaaWorkRequired net par bh
         blockTimestamp bh >
         blockTimestamp (nodeHeader par) + getTargetSpacing net * 2
 
-median10 :: BlockHeaders m => BlockNode -> m Timestamp
-median10 bn = do
+mtp :: BlockHeaders m => BlockNode -> m Timestamp
+mtp bn = do
     pars <- getParents 10 bn
     return $ medianTime . map (blockTimestamp . nodeHeader) $ bn : pars
 
@@ -628,8 +628,8 @@ getAsertAnchor net =
         Just act -> firstGreaterOrEqual (f act)
   where
     f act bn = do
-        mtp <- median10 bn
-        return $ compare mtp act
+        m <- mtp bn
+        return $ compare m act
 
 -- | Find the next amount of work required according to the aserti3-2d algorithm.
 nextAsertWorkRequired :: BlockHeaders m

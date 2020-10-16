@@ -576,21 +576,18 @@ mtp bn
         pars <- getParents 11 bn
         return $ medianTime (map (blockTimestamp . nodeHeader) pars)
 
--- TODO: Test this
 firstGreaterOrEqual :: BlockHeaders m
                     => Network
                     -> (BlockNode -> m Ordering)
                     -> m (Maybe BlockNode)
 firstGreaterOrEqual = binSearch False
 
--- TODO: Test this
 lastSmallerOrEqual :: BlockHeaders m
                    => Network
                    -> (BlockNode -> m Ordering)
                    -> m (Maybe BlockNode)
 lastSmallerOrEqual = binSearch True
 
--- TODO: Test this
 binSearch :: BlockHeaders m
           => Bool
           -> Network

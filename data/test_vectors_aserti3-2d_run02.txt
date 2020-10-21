@@ -1,0 +1,19 @@
+## description: run2 - steady 600s blocks at arbitrary non-limit target 0x1a2b3c4d
+##   anchor height: 1
+##   anchor parent time: 0
+##   anchor nBits: 0x1a2b3c4d
+##   start height: 2
+##   start time: 1200
+##   iterations: 10
+# iteration,height,time,target
+1 2 1200 0x1a2b3c4d
+2 3 1800 0x1a2b3c4d
+3 4 2400 0x1a2b3c4d
+4 5 3000 0x1a2b3c4d
+5 6 3600 0x1a2b3c4d
+6 7 4200 0x1a2b3c4d
+7 8 4800 0x1a2b3c4d
+8 9 5400 0x1a2b3c4d
+9 10 6000 0x1a2b3c4d
+10 11 6600 0x1a2b3c4d
+

@@ -29,11 +29,11 @@ arbitraryBlock net = do
 arbitraryBlockHeader :: Gen BlockHeader
 arbitraryBlockHeader =
     BlockHeader <$> arbitrary
-                      <*> arbitraryBlockHash
-                      <*> arbitraryHash256
-                      <*> arbitrary
-                      <*> arbitrary
-                      <*> arbitrary
+                <*> arbitraryBlockHash
+                <*> arbitraryHash256
+                <*> arbitrary
+                <*> arbitrary
+                <*> arbitrary
 
 -- | Arbitrary block hash.
 arbitraryBlockHash :: Gen BlockHash
@@ -74,13 +74,9 @@ arbitraryBlockNode =
     oneof
     [ BlockNode
         <$> arbitraryBlockHeader
-        <*> choose (1, maxBound)
+        <*> choose (0, maxBound)
         <*> arbitrarySizedNatural
         <*> arbitraryBlockHash
-    , GenesisNode
-        <$> arbitraryBlockHeader
-        <*> (return 0)
-        <*> arbitrarySizedNatural
     ]
 
 -- | Arbitrary 'HeaderMemory'

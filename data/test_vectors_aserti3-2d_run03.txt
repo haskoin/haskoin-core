@@ -1,0 +1,19 @@
+## description: run3 - steady 600s blocks at minimum limit target 0x01010000
+##   anchor height: 1
+##   anchor parent time: 0
+##   anchor nBits: 0x01010000
+##   start height: 2
+##   start time: 1200
+##   iterations: 10
+# iteration,height,time,target
+1 2 1200 0x01010000
+2 3 1800 0x01010000
+3 4 2400 0x01010000
+4 5 3000 0x01010000
+5 6 3600 0x01010000
+6 7 4200 0x01010000
+7 8 4800 0x01010000
+8 9 5400 0x01010000
+9 10 6000 0x01010000
+10 11 6600 0x01010000
+

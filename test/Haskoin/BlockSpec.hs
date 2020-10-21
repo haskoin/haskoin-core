@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+
 module Haskoin.BlockSpec
     ( spec
     ) where
@@ -9,6 +10,7 @@ import           Data.Maybe                 (fromJust)
 import           Data.String                (fromString)
 import           Data.String.Conversions    (cs)
 import           Data.Text                  (Text)
+import           Data.Word                  (Word32)
 import           Haskoin.Block
 import           Haskoin.Constants
 import           Haskoin.Transaction
@@ -17,6 +19,7 @@ import           Test.Hspec
 import           Test.Hspec.QuickCheck
 import           Test.HUnit                 hiding (State)
 import           Test.QuickCheck
+import           Text.Printf                (printf)
 
 
 serialVals :: [SerialBox]
@@ -106,6 +109,10 @@ spec = do
     describe "compact number" $ do
         it "compact number local vectors" testCompact
         it "compact number imported vectors" testCompactBitcoinCore
+    describe "asert" $
+        mapM_ (\x -> asertTests $
+                "test_vectors_aserti3-2d_run" ++ printf "%02d" x ++ ".txt"
+            ) [(1 :: Int) .. 12]
     describe "helper functions" $ do
         it "computes bitcoin block subsidy correctly" (testSubsidy btc)
         it "computes regtest block subsidy correctly" (testSubsidy btcRegTest)
@@ -356,3 +363,42 @@ testSubsidy net = go (2 * 50 * 100 * 1000 * 1000) 0
             else do
                 subsidy `shouldBe` (previous_subsidy `div` 2)
                 go subsidy (halvings + 1)
+
+data AsertBlock = AsertBlock Int Integer Integer Word32
+
+data AsertVector = AsertVector String Integer Integer Word32 [AsertBlock]
+
+readAsertVector :: FilePath -> IO AsertVector
+readAsertVector p = do
+    (d:ah:apt:ab:_:_:_:_:xs) <- lines <$> readFile ("data/" ++ p)
+    let desc = drop 16 d
+        anchor_height = read (words ah !! 3)
+        anchor_parent_time = read (words apt !! 4)
+        anchor_nbits = read (words ab !! 3)
+        blocks = map (f . words) (init xs)
+    return $
+        AsertVector
+        desc
+        anchor_height
+        anchor_parent_time
+        anchor_nbits
+        blocks
+  where
+    f [i,h,t,g] = AsertBlock (read i) (read h) (read t) (read g)
+    f _ = undefined
+
+asertTests :: FilePath -> SpecWith ()
+asertTests file = do
+    v@(AsertVector d _ _ _ _) <- runIO $ readAsertVector file
+    it d $ testAsertBits v
+
+testAsertBits :: AsertVector -> Assertion
+testAsertBits (AsertVector _ anchor_height anchor_parent_time anchor_bits blocks) =
+    forM_ blocks $ \(AsertBlock _ h t g) ->
+        computeAsertBits
+            (2 * 24 * 60 * 60)
+            anchor_bits
+            (t - anchor_parent_time)
+            (h - anchor_height)
+        `shouldBe`
+            g

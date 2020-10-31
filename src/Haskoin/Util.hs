@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                   #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-|
 Module      : Haskoin.Util
@@ -84,9 +85,13 @@ encodeHex = E.decodeUtf8 . BL.toStrict . toLazyByteString . byteStringHex
 
 -- | Decode string of human-readable hex characters.
 decodeHex :: Text -> Maybe ByteString
+# if MIN_VERSION_base16_bytestring(1,0,0)
+decodeHex = eitherToMaybe . B16.decode . E.encodeUtf8
+# else
 decodeHex text =
     let (x, b) = B16.decode (E.encodeUtf8 text)
     in guard (b == BS.empty) >> return x
+# endif
 
 -- | Obtain 'Int' bits from beginning of 'ByteString'. Resulting 'ByteString'
 -- will be smallest required to hold that many bits, padded with zeroes to the

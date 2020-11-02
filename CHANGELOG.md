@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## 0.17.1
+## Changed
+- Use the C-preprocessor to handle versions of `base16-bytestring` including 1.0
+  (with a breaking API change)
+
 ## 0.17.0
 ### Added
 - Support for Bitcoin Cash November 2020 hard fork.

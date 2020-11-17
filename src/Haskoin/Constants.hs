@@ -222,6 +222,7 @@ btc =
           , "seed.btc.petertodd.org" -- Peter Todd
           , "seed.bitcoin.sprovoost.nl" -- Sjors Provoost
           , "dnsseed.emzy.de" -- Stephan Oeste
+          , "seed.bitcoin.wiz.biz" -- Jason Maurice
           ]
     , getBip44Coin = 0
     , getSigHashForkId = Nothing
@@ -418,11 +419,11 @@ bch =
           ]
     , getSeeds =
           [ "seed.bitcoinabc.org"
-          , "seed-abc.bitcoinforks.org"
+          , "seed-bch.bitcoinforks.org"
           , "btccash-seeder.bitcoinunlimited.info"
-          , "seeder.jasonbcox.com"
-          , "seed.deadalnix.me"
           , "seed.bchd.cash"
+          , "seed.bch.loping.net"
+          , "dnsseed.electroncash.de"
           ]
     , getBip44Coin = 145
     , getSigHashForkId = Just 0
@@ -486,9 +487,8 @@ bchTest =
     , getSeeds =
           [ "testnet-seed.bitcoinabc.org"
           , "testnet-seed-bch.bitcoinforks.org"
-          , "testnet-seed.deadalnix.me"
           , "testnet-seed.bchd.cash"
-          , "testnet-seed.bitcoinunlimited.info"
+          , "seed.tbch.loping.net"
           ]
     , getBip44Coin = 1
     , getSigHashForkId = Just 0

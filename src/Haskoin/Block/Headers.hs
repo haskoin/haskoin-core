@@ -605,10 +605,18 @@ binSearch top net f = runMaybeT $ do
         r (a, a') (b, b') (m, m')
     r (a, a') (b, b') (m, m')
         | out_of_bounds a' b' = mzero
+        | select_first a' = return a
+        | select_last b' = return b
         | no_middle a b = choose_one a b
         | is_between a' m' = go a m
         | is_between m' b' = go m b
         | otherwise = mzero
+    select_first a'
+        | not top = a' /= LT
+        | otherwise = False
+    select_last b'
+        | top = b' /= GT
+        | otherwise = False
     out_of_bounds a' b'
         | top = a' == GT
         | otherwise = b' == LT

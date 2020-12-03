@@ -1,5 +1,7 @@
-resolver: nightly-2020-11-17
+resolver: lts-16.24
 nix:
   packages:
     - secp256k1
     - pkg-config
+extra-deps:
+  - secp256k1-haskell-0.5.0

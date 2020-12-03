@@ -609,7 +609,9 @@ binSearch top net f = runMaybeT $ do
         | is_between a' m' = go a m
         | is_between m' b' = go m b
         | otherwise = mzero
-    out_of_bounds a' b' = a' == GT || b' == LT
+    out_of_bounds a' b'
+        | top = a' == GT
+        | otherwise = b' == LT
     no_middle a b = nodeHeight b - nodeHeight a <= 1
     is_between a' b' = a' /= GT && b' /= LT
     choose_one a b

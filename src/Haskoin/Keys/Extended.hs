@@ -164,6 +164,20 @@ data XPrvKey = XPrvKey
     , xPrvKey    :: !SecKey      -- ^ private key of this node
     } deriving (Generic, Eq, Show, Read, NFData)
 
+instance Serialize XPrvKey where
+    put k = do
+        putWord8 $ xPrvDepth k
+        putWord32be $ xPrvParent k
+        putWord32be $ xPrvIndex k
+        put $ xPrvChain k
+        putPadPrvKey $ xPrvKey k
+    get =
+        XPrvKey <$> getWord8
+                <*> getWord32be
+                <*> getWord32be
+                <*> S.get
+                <*> getPadPrvKey
+
 xPrvToJSON :: Network -> XPrvKey -> Value
 xPrvToJSON net = A.String . xPrvExport net
 
@@ -186,6 +200,20 @@ data XPubKey = XPubKey
     , xPubChain  :: !ChainCode -- ^ chain code
     , xPubKey    :: !PubKey    -- ^ public key of this node
     } deriving (Generic, Eq, Show, Read, NFData)
+
+instance Serialize XPubKey where
+    put k = do
+        putWord8 $ xPubDepth k
+        putWord32be $ xPubParent k
+        putWord32be $ xPubIndex k
+        put $ xPubChain k
+        put $ wrapPubKey True (xPubKey k)
+    get =
+        XPubKey <$> getWord8
+                <*> getWord32be
+                <*> getWord32be
+                <*> S.get
+                <*> (pubKeyPoint <$> S.get)
 
 -- | Decode an extended public key from a JSON string
 xPubFromJSON :: Network -> Value -> Parser XPubKey
@@ -360,21 +388,13 @@ getXPrvKey net = do
     ver <- getWord32be
     unless (ver == getExtSecretPrefix net) $ fail
         "Get: Invalid version for extended private key"
-    XPrvKey <$> getWord8
-            <*> getWord32be
-            <*> getWord32be
-            <*> S.get
-            <*> getPadPrvKey
+    S.get
 
 -- | Serialize an extended private key.
 putXPrvKey :: Network -> Putter XPrvKey
 putXPrvKey net k = do
     putWord32be $ getExtSecretPrefix net
-    putWord8 $ xPrvDepth k
-    putWord32be $ xPrvParent k
-    putWord32be $ xPrvIndex k
-    put $ xPrvChain k
-    putPadPrvKey $ xPrvKey k
+    put k
 
 -- | Parse a binary extended public key.
 getXPubKey :: Network -> Get XPubKey
@@ -382,21 +402,13 @@ getXPubKey net = do
     ver <- getWord32be
     unless (ver == getExtPubKeyPrefix net) $ fail
         "Get: Invalid version for extended public key"
-    XPubKey <$> getWord8
-            <*> getWord32be
-            <*> getWord32be
-            <*> S.get
-            <*> (pubKeyPoint <$> S.get)
+    S.get
 
 -- | Serialize an extended public key.
 putXPubKey :: Network -> Putter XPubKey
 putXPubKey net k = do
     putWord32be $ getExtPubKeyPrefix net
-    putWord8 $ xPubDepth k
-    putWord32be $ xPubParent k
-    putWord32be $ xPubIndex k
-    put $ xPubChain k
-    put $ wrapPubKey True (xPubKey k)
+    put k
 
 {- Derivation helpers -}
 

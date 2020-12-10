@@ -9,6 +9,7 @@ Portability : POSIX
 -}
 module Haskoin.Util.Arbitrary.Address where
 
+import qualified Data.ByteString as B
 import           Haskoin.Address
 import           Haskoin.Constants
 import           Haskoin.Util.Arbitrary.Crypto
@@ -26,6 +27,7 @@ arbitraryAddressAll =
           , arbitraryScriptAddress
           , arbitraryWitnessPubKeyAddress
           , arbitraryWitnessScriptAddress
+          , arbitraryWitnessAddress
           ]
 
 -- | Arbitrary valid combination of (Network, Address)
@@ -51,3 +53,11 @@ arbitraryWitnessPubKeyAddress = WitnessPubKeyAddress <$> arbitraryHash160
 -- | Arbitrary pay-to-witness script hash
 arbitraryWitnessScriptAddress :: Gen Address
 arbitraryWitnessScriptAddress = WitnessPubKeyAddress <$> arbitraryHash160
+
+arbitraryWitnessAddress :: Gen Address
+arbitraryWitnessAddress = do
+    ver <- choose (0, 16)
+    len <- choose (2, 40)
+    ws <- vectorOf len arbitrary
+    let bs = B.pack ws
+    return $ WitnessAddress ver bs

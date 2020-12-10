@@ -10,6 +10,7 @@ Portability : POSIX
 module Haskoin.Util.Arbitrary.Script where
 
 import           Crypto.Secp256k1
+import qualified Data.ByteString                as B
 import           Data.Maybe
 import           Data.Word
 import           Haskoin.Address
@@ -239,7 +240,10 @@ arbitraryScriptOutput net =
     , arbitraryDCOutput
     ] ++
     if getSegWit net
-        then [arbitraryWPKHashOutput, arbitraryWSHOutput]
+        then [ arbitraryWPKHashOutput
+             , arbitraryWSHOutput
+             , arbitraryWitOutput
+             ]
         else []
 
 -- | Arbitrary 'ScriptOutput' of type 'PayPK', 'PayPKHash' or 'PayMS'
@@ -267,6 +271,14 @@ arbitraryWPKHashOutput = PayWitnessPKHash <$> arbitraryHash160
 -- | Arbitrary 'PayWitnessScriptHash' output.
 arbitraryWSHOutput :: Gen ScriptOutput
 arbitraryWSHOutput = PayWitnessScriptHash <$> arbitraryHash256
+
+arbitraryWitOutput :: Gen ScriptOutput
+arbitraryWitOutput = do
+    ver <- choose (0, 16)
+    len <- choose (2, 40)
+    ws <- vectorOf len arbitrary
+    let bs = B.pack ws
+    return $ PayWitness ver bs
 
 -- | Arbitrary 'ScriptOutput' of type 'PayMS'.
 arbitraryMSOutput :: Gen ScriptOutput

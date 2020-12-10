@@ -53,7 +53,9 @@ import qualified Data.ByteString        as BS
 import           Data.Function          (on)
 import           Data.Hashable
 import           Data.List              (sortBy)
+import           Data.Maybe             (fromJust, isJust)
 import           Data.Serialize         as S
+import           Data.Word              (Word8)
 import           GHC.Generics           (Generic)
 import           Haskoin.Constants
 import           Haskoin.Crypto
@@ -79,6 +81,10 @@ data ScriptOutput
     | PayWitnessPKHash { getOutputHash :: !Hash160 }
       -- | pay to witness script hash
     | PayWitnessScriptHash { getScriptHash :: !Hash256 }
+      -- | another pay to witness address
+    | PayWitness { getWitnessVersion :: !Word8
+                 , getWitnessData    :: !ByteString
+                 }
       -- | provably unspendable data carrier
     | DataCarrier { getOutputData :: !ByteString }
     deriving (Eq, Show, Read, Generic, Hashable, NFData)
@@ -124,6 +130,11 @@ isPayWitnessScriptHash :: ScriptOutput -> Bool
 isPayWitnessScriptHash (PayWitnessScriptHash _) = True
 isPayWitnessScriptHash _                        = False
 
+-- | Is script paying to a different type of witness address?
+isPayWitness :: ScriptOutput -> Bool
+isPayWitness (PayWitness _ _) = True
+isPayWitness _                = False
+
 -- | Is script a data carrier output?
 isDataCarrier :: ScriptOutput -> Bool
 isDataCarrier (DataCarrier _) = True
@@ -145,10 +156,56 @@ decodeOutput s = case scriptOps s of
     [OP_0, OP_PUSHDATA bs OPCODE]
       | BS.length bs == 20 -> PayWitnessPKHash     <$> S.decode bs
       | BS.length bs == 32 -> PayWitnessScriptHash <$> S.decode bs
+    -- Other Witness
+    [ver, OP_PUSHDATA bs _]
+      | isJust (opWitnessVersion ver)
+        && BS.length bs >= 2
+        && BS.length bs <= 40 ->
+            Right $ PayWitness (fromJust (opWitnessVersion ver)) bs
     -- Provably unspendable data carrier output
     [OP_RETURN, OP_PUSHDATA bs _] -> Right $ DataCarrier bs
     -- Pay to MultiSig Keys
     _ -> matchPayMulSig s
+
+witnessVersionOp :: Word8 -> Maybe ScriptOp
+witnessVersionOp 0  = Just OP_0
+witnessVersionOp 1  = Just OP_1
+witnessVersionOp 2  = Just OP_2
+witnessVersionOp 3  = Just OP_3
+witnessVersionOp 4  = Just OP_4
+witnessVersionOp 5  = Just OP_5
+witnessVersionOp 6  = Just OP_6
+witnessVersionOp 7  = Just OP_7
+witnessVersionOp 8  = Just OP_8
+witnessVersionOp 9  = Just OP_9
+witnessVersionOp 10 = Just OP_10
+witnessVersionOp 11 = Just OP_11
+witnessVersionOp 12 = Just OP_12
+witnessVersionOp 13 = Just OP_13
+witnessVersionOp 14 = Just OP_14
+witnessVersionOp 15 = Just OP_15
+witnessVersionOp 16 = Just OP_16
+
+opWitnessVersion :: ScriptOp -> Maybe Word8
+opWitnessVersion OP_0  = Just 0
+opWitnessVersion OP_1  = Just 1
+opWitnessVersion OP_2  = Just 2
+opWitnessVersion OP_3  = Just 3
+opWitnessVersion OP_4  = Just 4
+opWitnessVersion OP_5  = Just 5
+opWitnessVersion OP_6  = Just 6
+opWitnessVersion OP_7  = Just 7
+opWitnessVersion OP_8  = Just 8
+opWitnessVersion OP_9  = Just 9
+opWitnessVersion OP_10 = Just 10
+opWitnessVersion OP_11 = Just 11
+opWitnessVersion OP_12 = Just 12
+opWitnessVersion OP_13 = Just 13
+opWitnessVersion OP_14 = Just 14
+opWitnessVersion OP_15 = Just 15
+opWitnessVersion OP_16 = Just 16
+opWitnessVersion _ = Nothing
+
 
 -- | Similar to 'decodeOutput' but decodes from a 'ByteString'.
 decodeOutputBS :: ByteString -> Either String ScriptOutput
@@ -161,7 +218,11 @@ encodeOutput s = Script $ case s of
     (PayPK k) -> [opPushData $ S.encode k, OP_CHECKSIG]
     -- Pay to PubKey Hash Address
     (PayPKHash h) ->
-        [ OP_DUP, OP_HASH160, opPushData $ S.encode h, OP_EQUALVERIFY, OP_CHECKSIG]
+        [ OP_DUP
+        , OP_HASH160
+        , opPushData $ S.encode h
+        , OP_EQUALVERIFY, OP_CHECKSIG
+        ]
     -- Pay to MultiSig Keys
     (PayMulSig ps r)
       | r <= length ps ->
@@ -178,6 +239,11 @@ encodeOutput s = Script $ case s of
         [ OP_0, opPushData $ S.encode h ]
     (PayWitnessScriptHash h) ->
         [ OP_0, opPushData $ S.encode h ]
+    (PayWitness v h) ->
+        [ case witnessVersionOp v of
+              Nothing -> error "encodeOutput: invalid witness version"
+              Just c  -> c
+        , opPushData h ]
     -- Provably unspendable output
     (DataCarrier d) -> [OP_RETURN, opPushData d]
 

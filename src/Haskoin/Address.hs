@@ -64,6 +64,7 @@ import           Data.Hashable
 import           Data.Maybe
 import           Data.Serialize           as S
 import           Data.Text                (Text)
+import           Data.Word                (Word8)
 import           GHC.Generics             (Generic)
 import           Haskoin.Address.Base58
 import           Haskoin.Address.Bech32
@@ -96,6 +97,11 @@ data Address
           { getAddrHash256 :: !Hash256
           -- ^ HASH256 hash of script
           }
+    -- | other witness address
+    | WitnessAddress
+         { getAddrVersion :: !Word8
+         , getAddrData    :: !ByteString
+         }
     deriving (Eq, Ord, Generic, Show, Read, Serialize, Hashable, NFData)
 
 -- | 'Address' pays to a public key hash.
@@ -117,6 +123,10 @@ isWitnessPubKeyAddress _                       = False
 isWitnessScriptAddress :: Address -> Bool
 isWitnessScriptAddress WitnessScriptAddress {} = True
 isWitnessScriptAddress _                       = False
+
+isWitnessAddress :: Address -> Bool
+isWitnessAddress WitnessAddress {} = True
+isWitnessAddress _                 = False
 
 addrToJSON :: Network -> Address -> Value
 addrToJSON net a = toJSON (addrToText net a)
@@ -151,6 +161,9 @@ addrToText net WitnessPubKeyAddress {getAddrHash160 = h} = do
 addrToText net WitnessScriptAddress {getAddrHash256 = h} = do
     hrp <- getBech32Prefix net
     segwitEncode hrp 0 (B.unpack (S.encode h))
+addrToText net WitnessAddress {getAddrVersion = v, getAddrData = d} = do
+    hrp <- getBech32Prefix net
+    segwitEncode hrp v (B.unpack d)
 
 -- | Parse 'Base58', 'Bech32' or 'CashAddr' address, depending on network.
 textToAddr :: Network -> Text -> Maybe Address
@@ -169,11 +182,12 @@ bech32ToAddr :: Network -> Text -> Maybe Address
 bech32ToAddr net txt = do
     hrp <- getBech32Prefix net
     (ver, bs) <- second B.pack <$> segwitDecode hrp txt
-    guard (ver == 0) -- We only support version 0 for now
-    case B.length bs of
-        20 -> WitnessPubKeyAddress <$> eitherToMaybe (S.decode bs)
-        32 -> WitnessScriptAddress <$> eitherToMaybe (S.decode bs)
-        _  -> Nothing
+    case ver of
+        0 -> case B.length bs of
+            20 -> WitnessPubKeyAddress <$> eitherToMaybe (S.decode bs)
+            32 -> WitnessScriptAddress <$> eitherToMaybe (S.decode bs)
+            _  -> Nothing
+        _ -> Just $ WitnessAddress ver bs
 
 base58ToAddr :: Network -> Text -> Maybe Address
 base58ToAddr net txt =
@@ -250,10 +264,11 @@ payToNestedScriptAddress =
 addressToOutput :: Address -> ScriptOutput
 addressToOutput =
     \case
-        (PubKeyAddress h) -> PayPKHash h
-        (ScriptAddress h) -> PayScriptHash h
-        (WitnessPubKeyAddress h) -> PayWitnessPKHash h
-        (WitnessScriptAddress h) -> PayWitnessScriptHash h
+        PubKeyAddress h -> PayPKHash h
+        ScriptAddress h -> PayScriptHash h
+        WitnessPubKeyAddress h -> PayWitnessPKHash h
+        WitnessScriptAddress h -> PayWitnessScriptHash h
+        WitnessAddress v d -> PayWitness v d
 
 -- | Get output script AST for an 'Address'.
 addressToScript :: Address -> Script
@@ -277,11 +292,12 @@ scriptToAddressBS =
 outputAddress :: ScriptOutput -> Maybe Address
 outputAddress =
     \case
-        (PayPKHash h) -> Just $ PubKeyAddress h
-        (PayScriptHash h) -> Just $ ScriptAddress h
-        (PayPK k) -> Just $ pubKeyAddr k
-        (PayWitnessPKHash h) -> Just $ WitnessPubKeyAddress h
-        (PayWitnessScriptHash h) -> Just $ WitnessScriptAddress h
+        PayPKHash h -> Just $ PubKeyAddress h
+        PayScriptHash h -> Just $ ScriptAddress h
+        PayPK k -> Just $ pubKeyAddr k
+        PayWitnessPKHash h -> Just $ WitnessPubKeyAddress h
+        PayWitnessScriptHash h -> Just $ WitnessScriptAddress h
+        PayWitness v d -> Just $ WitnessAddress v d
         _ -> Nothing
 
 -- | Infer the 'Address' of a 'ScriptInput'.

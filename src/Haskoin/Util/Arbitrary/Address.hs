@@ -56,7 +56,7 @@ arbitraryWitnessScriptAddress = WitnessPubKeyAddress <$> arbitraryHash160
 
 arbitraryWitnessAddress :: Gen Address
 arbitraryWitnessAddress = do
-    ver <- choose (0, 16)
+    ver <- choose (1, 16)
     len <- choose (2, 40)
     ws <- vectorOf len arbitrary
     let bs = B.pack ws

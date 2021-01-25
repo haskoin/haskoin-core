@@ -4,9 +4,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 0.19.0
+### Added
+- Hashable instances for extended keys.
+
+### Changed
+- Mnemonic passphrases now `Text` instead of `ByteString`.
+
 ### Fixed
-- Arbitrary instance for generic segwit address not to use use with version 0 addresses.
+- Tests now pass for witness addresses.
 
 ## 0.18.0
 ### Added

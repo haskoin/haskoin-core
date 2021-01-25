@@ -46,7 +46,7 @@ type Entropy = ByteString
 type Mnemonic = Text
 
 -- | Optional passphrase for mnemnoic sentence.
-type Passphrase = ByteString
+type Passphrase = Text
 
 -- | Seed for a private key from a mnemonic sentence.
 type Seed = ByteString
@@ -116,7 +116,10 @@ numCS len =
 -- perform NFKD normalization.
 anyToSeed :: Passphrase -> Mnemonic -> Seed
 anyToSeed pf ms =
-    fastPBKDF2_SHA512 pbkdfParams (E.encodeUtf8 ms) ("mnemonic" `mappend` pf)
+    fastPBKDF2_SHA512
+    pbkdfParams
+    (E.encodeUtf8 ms)
+    ("mnemonic" `mappend` E.encodeUtf8 pf)
 
 -- | Get a 512-bit 'Seed' from a 'Mnemonic' sentence. Will validate checksum.
 -- 'Passphrase' can be used to protect the 'Mnemonic'. Use an empty string as

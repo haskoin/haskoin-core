@@ -115,6 +115,7 @@ import           Data.Bits               (clearBit, setBit, testBit)
 import           Data.ByteString         (ByteString)
 import qualified Data.ByteString         as B
 import           Data.Either             (fromRight)
+import           Data.Hashable
 import           Data.List               (foldl')
 import           Data.List.Split         (splitOn)
 import           Data.Maybe              (fromMaybe)
@@ -162,7 +163,7 @@ data XPrvKey = XPrvKey
     , xPrvIndex  :: !KeyIndex    -- ^ derivation index
     , xPrvChain  :: !ChainCode   -- ^ chain code
     , xPrvKey    :: !SecKey      -- ^ private key of this node
-    } deriving (Generic, Eq, Show, Read, NFData)
+    } deriving (Generic, Eq, Show, Read, NFData, Hashable)
 
 instance Serialize XPrvKey where
     put k = do
@@ -199,7 +200,7 @@ data XPubKey = XPubKey
     , xPubIndex  :: !KeyIndex  -- ^ derivation index
     , xPubChain  :: !ChainCode -- ^ chain code
     , xPubKey    :: !PubKey    -- ^ public key of this node
-    } deriving (Generic, Eq, Show, Read, NFData)
+    } deriving (Generic, Eq, Show, Read, NFData, Hashable)
 
 instance Serialize XPubKey where
     put k = do

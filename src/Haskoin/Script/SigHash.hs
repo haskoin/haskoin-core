@@ -41,16 +41,18 @@ import           Control.Monad
 import qualified Data.Aeson                 as J
 import           Data.Bits
 import qualified Data.ByteString            as BS
+import           Data.Bytes.Get
+import           Data.Bytes.Put
+import           Data.Bytes.Serial
 import           Data.Hashable
 import           Data.Maybe
 import           Data.Scientific
-import           Data.Serialize
 import           Data.Word
 import           GHC.Generics               (Generic)
 import           Haskoin.Constants
+import           Haskoin.Crypto
 import           Haskoin.Crypto.Hash
 import           Haskoin.Network.Common
-import           Haskoin.Crypto
 import           Haskoin.Script.Common
 import           Haskoin.Transaction.Common
 import           Haskoin.Util
@@ -207,8 +209,8 @@ txSigHash net tx out v i sh
             let newTx = Tx (txVersion tx) newIn newOut [] (txLockTime tx)
             return $
                 doubleSHA256 $
-                runPut $ do
-                    put newTx
+                runPutS $ do
+                    serialize newTx
                     putWord32le $ fromIntegral sh
   where
     fout = Script $ filter (/= OP_CODESEPARATOR) $ scriptOps out
@@ -218,13 +220,13 @@ txSigHash net tx out v i sh
 buildInputs :: [TxIn] -> Script -> Int -> SigHash -> [TxIn]
 buildInputs txins out i sh
     | hasAnyoneCanPayFlag sh =
-        [ (txins !! i) { scriptInput = encode out } ]
+        [ (txins !! i) { scriptInput = runPutS $ serialize out } ]
     | isSigHashAll sh || isSigHashUnknown sh = single
     | otherwise = zipWith noSeq single [0 ..]
   where
     emptyIn = map (\ti -> ti { scriptInput = BS.empty }) txins
     single =
-        updateIndex i emptyIn $ \ti -> ti { scriptInput = encode out }
+        updateIndex i emptyIn $ \ti -> ti { scriptInput = runPutS $ serialize out }
     noSeq ti j =
         if i == j
         then ti
@@ -251,35 +253,35 @@ txSigHashForkId
     -> SigHash -- ^ what to sign
     -> Hash256 -- ^ hash to be signed
 txSigHashForkId net tx out v i sh =
-    doubleSHA256 . runPut $ do
+    doubleSHA256 . runPutS $ do
         putWord32le $ txVersion tx
-        put hashPrevouts
-        put hashSequence
-        put $ prevOutput $ txIn tx !! i
+        serialize hashPrevouts
+        serialize hashSequence
+        serialize $ prevOutput $ txIn tx !! i
         putScript out
         putWord64le v
         putWord32le $ txInSequence $ txIn tx !! i
-        put hashOutputs
+        serialize hashOutputs
         putWord32le $ txLockTime tx
         putWord32le $ fromIntegral $ sigHashAddNetworkId net sh
   where
     hashPrevouts
         | not $ hasAnyoneCanPayFlag sh =
-            doubleSHA256 $ runPut $ mapM_ (put . prevOutput) $ txIn tx
+            doubleSHA256 $ runPutS $ mapM_ (serialize . prevOutput) $ txIn tx
         | otherwise = zeros
     hashSequence
         | not (hasAnyoneCanPayFlag sh) &&
               not (isSigHashSingle sh) && not (isSigHashNone sh) =
-            doubleSHA256 $ runPut $ mapM_ (putWord32le . txInSequence) $ txIn tx
+            doubleSHA256 $ runPutS $ mapM_ (putWord32le . txInSequence) $ txIn tx
         | otherwise = zeros
     hashOutputs
         | not (isSigHashSingle sh) && not (isSigHashNone sh) =
-            doubleSHA256 $ runPut $ mapM_ put $ txOut tx
+            doubleSHA256 $ runPutS $ mapM_ serialize $ txOut tx
         | isSigHashSingle sh && i < length (txOut tx) =
-            doubleSHA256 $ encode $ txOut tx !! i
+            doubleSHA256 $ runPutS $ serialize $ txOut tx !! i
         | otherwise = zeros
     putScript s = do
-        let encodedScript = encode s
+        let encodedScript = runPutS $ serialize s
         putVarInt $ BS.length encodedScript
         putByteString encodedScript
     zeros :: Hash256
@@ -302,7 +304,7 @@ instance NFData TxSignature
 encodeTxSig :: TxSignature -> BS.ByteString
 encodeTxSig TxSignatureEmpty = error "Can not encode an empty signature"
 encodeTxSig (TxSignature sig (SigHash n)) =
-    runPut $ putSig sig >> putWord8 (fromIntegral n)
+    runPutS $ putSig sig >> putWord8 (fromIntegral n)
 
 -- | Deserialize a 'TxSignature'.
 decodeTxSig :: Network -> BS.ByteString -> Either String TxSignature

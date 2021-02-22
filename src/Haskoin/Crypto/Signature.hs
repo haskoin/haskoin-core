@@ -23,17 +23,21 @@ module Haskoin.Crypto.Signature
 
 import           Control.Monad       (guard, unless, when)
 import           Crypto.Secp256k1
+import           Data.Binary         (Binary (..))
 import           Data.ByteString     (ByteString)
 import qualified Data.ByteString     as BS
+import           Data.Bytes.Get
+import           Data.Bytes.Put
+import           Data.Bytes.Serial
 import           Data.Maybe          (fromMaybe, isNothing)
-import           Data.Serialize      as S
+import           Data.Serialize      (Serialize (..))
 import           Haskoin.Crypto.Hash
 import           Numeric             (showHex)
 
 -- | Convert 256-bit hash into a 'Msg' for signing or verification.
 hashToMsg :: Hash256 -> Msg
 hashToMsg =
-    fromMaybe e . msg . encode
+    fromMaybe e . msg . runPutS . serialize
   where
     e = error "Could not convert 32-byte hash to secp256k1 message"
 
@@ -48,7 +52,7 @@ verifyHashSig h s p = verifySig p norm (hashToMsg h)
     norm = fromMaybe s (normalizeSig s)
 
 -- | Deserialize an ECDSA signature as commonly encoded in Bitcoin.
-getSig :: Get Sig
+getSig :: MonadGet m => m Sig
 getSig = do
     l <-
         lookAhead $ do
@@ -67,7 +71,7 @@ getSig = do
         Nothing -> fail "Invalid signature"
 
 -- | Serialize an ECDSA signature for Bitcoin use.
-putSig :: Putter Sig
+putSig :: MonadPut m => Sig -> m ()
 putSig s = putByteString $ exportSig s
 
 -- | Is canonical half order.

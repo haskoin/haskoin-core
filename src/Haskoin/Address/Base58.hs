@@ -23,8 +23,10 @@ import           Control.Monad
 import           Data.ByteString         (ByteString)
 import qualified Data.ByteString         as BS
 import qualified Data.ByteString.Char8   as C
+import           Data.Bytes.Get
+import           Data.Bytes.Put
+import           Data.Bytes.Serial
 import           Data.Maybe              (fromMaybe, isJust, listToMaybe)
-import           Data.Serialize          as S
 import           Data.String.Conversions (cs)
 import           Data.Text               (Text)
 import qualified Data.Text               as T
@@ -90,7 +92,7 @@ decodeBase58 t =
 -- the checksum as 'Base58'.
 encodeBase58Check :: ByteString -> Base58
 encodeBase58Check bs =
-    encodeBase58 $ BS.append bs $ encode $ checkSum32 bs
+    encodeBase58 $ BS.append bs $ runPutS $ serialize $ checkSum32 bs
 
 -- | Decode a 'Base58'-encoded string that contains a checksum. This function
 -- returns 'Nothing' if the input string contains invalid 'Base58' characters or
@@ -99,5 +101,5 @@ decodeBase58Check :: Base58 -> Maybe ByteString
 decodeBase58Check bs = do
     rs <- decodeBase58 bs
     let (res, chk) = BS.splitAt (BS.length rs - 4) rs
-    guard $ chk == encode (checkSum32 res)
+    guard $ chk == runPutS (serialize (checkSum32 res))
     return res

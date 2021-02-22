@@ -28,12 +28,14 @@ import           Control.Monad              (foldM, when)
 import           Data.Aeson                 (FromJSON, ToJSON (..), object,
                                              pairs, parseJSON, withObject, (.:),
                                              (.:?), (.=))
+import           Data.Bytes.Get
+import           Data.Bytes.Put
+import           Data.Bytes.Serial
 import           Data.Either                (rights)
 import           Data.Hashable              (Hashable)
 import           Data.List                  (find, nub)
 import           Data.Maybe                 (catMaybes, fromMaybe, mapMaybe,
                                              maybeToList)
-import qualified Data.Serialize             as S
 import           Data.Word                  (Word64)
 import           GHC.Generics               (Generic)
 import           Haskoin.Address            (getAddrHash160, pubKeyAddr)
@@ -125,7 +127,7 @@ signInput net tx i (sigIn@(SigInput so val _ _ rdmM), nest) key = do
               }
   where
     f si x = x {scriptInput = encodeInputBS si}
-    g so' x = x {scriptInput = S.encode . opPushData $ encodeOutputBS so'}
+    g so' x = x {scriptInput = runPutS . serialize . opPushData $ encodeOutputBS so'}
     txis = txIn tx
     nextTxIn so' si
         | isSegwit so' && nest = updateIndex i txis (g so')

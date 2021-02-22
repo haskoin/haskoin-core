@@ -36,15 +36,19 @@ import           Data.Aeson                 (FromJSON (..), ToJSON (..),
                                              Value (..), object, toJSON,
                                              withObject, withText, (.:), (.=))
 import           Data.Aeson.Encoding        (pairs, unsafeToEncoding)
+import           Data.Binary                (Binary (..))
 import           Data.Bits                  (shiftL, shiftR, (.&.), (.|.))
 import qualified Data.ByteString            as B
 import           Data.ByteString.Builder    (char7)
+import qualified Data.ByteString.Lazy       as BL
+import           Data.Bytes.Get             (MonadGet, getWord32le, runGetL,
+                                             runGetS)
+import           Data.Bytes.Put             (MonadPut, putWord32le, runPutL,
+                                             runPutS)
+import           Data.Bytes.Serial          (Serial (..))
 import           Data.Hashable              (Hashable)
 import           Data.Maybe                 (fromMaybe)
-import           Data.Serialize             (Serialize, decode, encode, get,
-                                             put)
-import           Data.Serialize.Get         (getWord32le)
-import           Data.Serialize.Put         (Put, putWord32le)
+import           Data.Serialize             (Serialize (..))
 import           Data.String                (IsString, fromString)
 import           Data.String.Conversions    (cs)
 import           Data.Text                  (Text)
@@ -69,16 +73,24 @@ data Block = Block
     }
     deriving (Eq, Show, Read, Generic, Hashable, NFData)
 
-instance Serialize Block where
-    get = do
-        header <- get
-        (VarInt c) <- get
-        txs <- replicateM (fromIntegral c) get
+instance Serial Block where
+    deserialize = do
+        header <- deserialize
+        (VarInt c) <- deserialize
+        txs <- replicateM (fromIntegral c) deserialize
         return $ Block header txs
-    put (Block h txs) = do
-        put h
+    serialize (Block h txs) = do
+        serialize h
         putVarInt $ length txs
-        forM_ txs put
+        forM_ txs serialize
+
+instance Serialize Block where
+    get = deserialize
+    put = serialize
+
+instance Binary Block where
+    get = deserialize
+    put = serialize
 
 instance ToJSON Block where
     toJSON (Block h t) = object ["header" .= h, "transactions" .= t]
@@ -92,7 +104,15 @@ instance FromJSON Block where
 -- | Block header hash. To be serialized reversed for display purposes.
 newtype BlockHash = BlockHash
     { getBlockHash :: Hash256
-    } deriving (Eq, Ord, Generic, Hashable, Serialize, NFData)
+    } deriving (Eq, Ord, Generic, Hashable, Serial, NFData)
+
+instance Serialize BlockHash where
+    put = serialize
+    get = deserialize
+
+instance Binary BlockHash where
+    put = serialize
+    get = deserialize
 
 instance Show BlockHash where
     showsPrec _ = shows . blockHashToHex
@@ -115,19 +135,21 @@ instance ToJSON BlockHash where
     toJSON = String . blockHashToHex
     toEncoding h =
         unsafeToEncoding $
-        char7 '"' <> hexBuilder (B.reverse (encode h)) <> char7 '"'
+        char7 '"' <>
+        hexBuilder (BL.reverse (runPutL (serialize h))) <>
+        char7 '"'
 
 -- | Block hashes are reversed with respect to the in-memory byte order in a
 -- block hash when displayed.
 blockHashToHex :: BlockHash -> Text
-blockHashToHex (BlockHash h) = encodeHex (B.reverse (encode h))
+blockHashToHex (BlockHash h) = encodeHex (B.reverse (runPutS (serialize h)))
 
 -- | Convert a human-readable hex block hash into a 'BlockHash'. Bytes are
 -- reversed as normal.
 hexToBlockHash :: Text -> Maybe BlockHash
 hexToBlockHash hex = do
     bs <- B.reverse <$> decodeHex hex
-    h <- eitherToMaybe (decode bs)
+    h <- eitherToMaybe (runGetS deserialize bs)
     return $ BlockHash h
 
 -- | Data type recording information of a 'Block'. The hash of a block is
@@ -157,7 +179,7 @@ instance ToJSON BlockHeader where
         object
             [ "version" .= v
             , "prevblock" .= p
-            , "merkleroot" .= encodeHex (encode m)
+            , "merkleroot" .= encodeHex (runPutS (serialize m))
             , "timestamp" .= t
             , "bits" .= b
             , "nonce" .= n
@@ -166,7 +188,7 @@ instance ToJSON BlockHeader where
         pairs
             ( "version" .= v
            <> "prevblock" .= p
-           <> "merkleroot" .= encodeHex (encode m)
+           <> "merkleroot" .= encodeHex (runPutS (serialize m))
            <> "timestamp" .= t
            <> "bits" .= b
            <> "nonce" .= n
@@ -182,13 +204,17 @@ instance FromJSON BlockHeader where
                         <*> o .: "bits"
                         <*> o .: "nonce"
       where
-        f = maybe mzero return . (eitherToMaybe . decode =<<) . decodeHex
+        f = maybe
+            mzero
+            return .
+            (eitherToMaybe . runGetS deserialize =<<) .
+            decodeHex
 
-instance Serialize BlockHeader where
-    get = do
+instance Serial BlockHeader where
+    deserialize = do
         v <- getWord32le
-        p <- get
-        m <- get
+        p <- deserialize
+        m <- deserialize
         t <- getWord32le
         b <- getWord32le
         n <- getWord32le
@@ -201,17 +227,25 @@ instance Serialize BlockHeader where
                 , blockBits = b
                 , bhNonce = n
                 }
-    put (BlockHeader v p m bt bb n) = do
+    serialize (BlockHeader v p m bt bb n) = do
         putWord32le v
-        put p
-        put m
+        serialize p
+        serialize m
         putWord32le bt
         putWord32le bb
         putWord32le n
 
+instance Binary BlockHeader where
+    put = serialize
+    get = deserialize
+
+instance Serialize BlockHeader where
+    put = serialize
+    get = deserialize
+
 -- | Compute hash of 'BlockHeader'.
 headerHash :: BlockHeader -> BlockHash
-headerHash = BlockHash . doubleSHA256 . encode
+headerHash = BlockHash . doubleSHA256 . runPutS . serialize
 
 -- | A block locator is a set of block headers, denser towards the best block
 -- and sparser towards the genesis block. It starts at the highest block known.
@@ -236,18 +270,26 @@ data GetBlocks = GetBlocks
     }
     deriving (Eq, Show, Read, Generic, NFData)
 
-instance Serialize GetBlocks where
-    get = GetBlocks <$> getWord32le <*> (repList =<< get) <*> get
+instance Serial GetBlocks where
+    deserialize =
+        GetBlocks
+        <$> getWord32le
+        <*> (repList =<< deserialize)
+        <*> deserialize
       where
-        repList (VarInt c) = replicateM (fromIntegral c) get
-    put (GetBlocks v xs h) = putGetBlockMsg v xs h
+        repList (VarInt c) = replicateM (fromIntegral c) deserialize
+    serialize (GetBlocks v xs h) = putGetBlockMsg v xs h
 
-putGetBlockMsg :: Word32 -> BlockLocator -> BlockHash -> Put
+instance Serialize GetBlocks where
+    put = serialize
+    get = deserialize
+
+putGetBlockMsg :: MonadPut m => Word32 -> BlockLocator -> BlockHash -> m ()
 putGetBlockMsg v xs h = do
     putWord32le v
     putVarInt $ length xs
-    forM_ xs put
-    put h
+    forM_ xs serialize
+    serialize h
 
 -- | Similar to the 'GetBlocks' message type but for retrieving block headers
 -- only. The response to a 'GetHeaders' request is a 'Headers' message
@@ -263,11 +305,23 @@ data GetHeaders = GetHeaders
     }
     deriving (Eq, Show, Read, Generic, NFData)
 
-instance Serialize GetHeaders where
-    get = GetHeaders <$> getWord32le <*> (repList =<< get) <*> get
+instance Serial GetHeaders where
+    deserialize =
+        GetHeaders
+        <$> getWord32le
+        <*> (repList =<< deserialize)
+        <*> deserialize
       where
-        repList (VarInt c) = replicateM (fromIntegral c) get
-    put (GetHeaders v xs h) = putGetBlockMsg v xs h
+        repList (VarInt c) = replicateM (fromIntegral c) deserialize
+    serialize (GetHeaders v xs h) = putGetBlockMsg v xs h
+
+instance Serialize GetHeaders where
+    put = serialize
+    get = deserialize
+
+instance Binary GetHeaders where
+    put = serialize
+    get = deserialize
 
 -- | 'BlockHeader' type with a transaction count as 'VarInt'
 type BlockHeaderCount = (BlockHeader, VarInt)
@@ -279,14 +333,22 @@ newtype Headers = Headers
       headersList :: [BlockHeaderCount]
     } deriving (Eq, Show, Read, Generic, NFData)
 
-instance Serialize Headers where
-    get = Headers <$> (repList =<< get)
+instance Serial Headers where
+    deserialize = Headers <$> (repList =<< deserialize)
       where
         repList (VarInt c) = replicateM (fromIntegral c) action
-        action = liftM2 (,) get get
-    put (Headers xs) = do
+        action = liftM2 (,) deserialize deserialize
+    serialize (Headers xs) = do
         putVarInt $ length xs
-        forM_ xs $ \(a, b) -> put a >> put b
+        forM_ xs $ \(a, b) -> serialize a >> serialize b
+
+instance Serialize Headers where
+    put = serialize
+    get = deserialize
+
+instance Binary Headers where
+    put = serialize
+    get = deserialize
 
 -- | Decode the compact number used in the difficulty target of a block.
 --

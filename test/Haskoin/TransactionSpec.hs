@@ -2,14 +2,16 @@
 
 module Haskoin.TransactionSpec (spec) where
 
-import qualified Data.ByteString            as B
+import qualified Data.ByteString         as B
+import           Data.Bytes.Get
+import           Data.Bytes.Put
+import           Data.Bytes.Serial
 import           Data.Either
 import           Data.Maybe
-import           Data.Serialize             as S
-import           Data.String                (fromString)
+import           Data.String             (fromString)
 import           Data.String.Conversions
-import           Data.Text                  (Text)
-import           Data.Word                  (Word32, Word64)
+import           Data.Text               (Text)
+import           Data.Word               (Word32, Word64)
 import           Haskoin.Address
 import           Haskoin.Constants
 import           Haskoin.Keys
@@ -17,9 +19,9 @@ import           Haskoin.Script
 import           Haskoin.Transaction
 import           Haskoin.Util
 import           Haskoin.Util.Arbitrary
+import           Test.HUnit
 import           Test.Hspec
 import           Test.Hspec.QuickCheck
-import           Test.HUnit
 import           Test.QuickCheck
 
 serialVals :: [SerialBox]
@@ -94,7 +96,7 @@ testTxidVector :: (Text, Text) -> Assertion
 testTxidVector (tid, tx) =
     assertEqual "txid" (Just tid) (txHashToHex . txHash <$> txM)
   where
-    txM = eitherToMaybe . S.decode =<< decodeHex tx
+    txM = eitherToMaybe . runGetS deserialize =<< decodeHex tx
 
 txidVectors :: [(Text, Text)]
 txidVectors =
@@ -156,7 +158,10 @@ txidVectors =
 
 testPKHashVector :: ([(Text, Word32)], [(Text, Word64)], Text) -> Assertion
 testPKHashVector (is, os, res) =
-    assertEqual "Build PKHash Tx" (Right res) (encodeHex . S.encode <$> txE)
+    assertEqual
+    "Build PKHash Tx"
+    (Right res)
+    (encodeHex . runPutS . serialize <$> txE)
   where
     txE = buildAddrTx btc (map f is) os
     f (tid, ix) = OutPoint (fromJust $ hexToTxHash tid) ix
@@ -223,7 +228,7 @@ testGuessSize net tx =
   where
     delta = pki + sum (map fst msi)
     guess = guessTxSize pki msi pkout msout
-    len = B.length $ S.encode tx
+    len = B.length $ runPutS $ serialize tx
     ins = map f $ txIn tx
     f i =
         fromRight (error "Could not decode input") $
@@ -231,7 +236,7 @@ testGuessSize net tx =
     pki = length $ filter isSpendPKHash ins
     msi = concatMap shData ins
     shData (ScriptHashInput _ (PayMulSig keys r)) = [(r, length keys)]
-    shData _ = []
+    shData _                                      = []
     out =
         map
             (fromRight (error "Could not decode transaction output") .

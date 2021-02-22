@@ -35,14 +35,16 @@ module Haskoin.Block.Merkle
 
 import           Control.DeepSeq
 import           Control.Monad              (forM_, replicateM, when)
+import           Data.Binary                (Binary (..))
 import           Data.Bits
 import qualified Data.ByteString            as BS
+import           Data.Bytes.Get
+import           Data.Bytes.Put
+import           Data.Bytes.Serial
 import           Data.Either                (isRight)
 import           Data.Hashable
 import           Data.Maybe
-import           Data.Serialize             (Serialize, encode, get, put)
-import           Data.Serialize.Get         (getWord32le, getWord8)
-import           Data.Serialize.Put         (putWord32le, putWord8)
+import           Data.Serialize             (Serialize (..))
 import           Data.Word                  (Word32, Word8)
 import           GHC.Generics
 import           Haskoin.Block.Common
@@ -74,25 +76,32 @@ data MerkleBlock =
                 , mFlags          :: !FlagBits
                 } deriving (Eq, Show, Read, Generic, Hashable, NFData)
 
-instance Serialize MerkleBlock where
-
-    get = do
-        header <- get
+instance Serial MerkleBlock where
+    deserialize = do
+        header <- deserialize
         ntx    <- getWord32le
-        (VarInt matchLen) <- get
-        hashes <- replicateM (fromIntegral matchLen) get
-        (VarInt flagLen)  <- get
+        (VarInt matchLen) <- deserialize
+        hashes <- replicateM (fromIntegral matchLen) deserialize
+        (VarInt flagLen)  <- deserialize
         ws <- replicateM (fromIntegral flagLen) getWord8
         return $ MerkleBlock header ntx hashes (decodeMerkleFlags ws)
 
-    put (MerkleBlock h ntx hashes flags) = do
-        put h
+    serialize (MerkleBlock h ntx hashes flags) = do
+        serialize h
         putWord32le ntx
         putVarInt $ length hashes
-        forM_ hashes put
+        forM_ hashes serialize
         let ws = encodeMerkleFlags flags
         putVarInt $ length ws
         forM_ ws putWord8
+
+instance Binary MerkleBlock where
+    put = serialize
+    get = deserialize
+
+instance Serialize MerkleBlock where
+    put = serialize
+    get = deserialize
 
 -- | Unpack Merkle flags into 'FlagBits' structure.
 decodeMerkleFlags :: [Word8] -> FlagBits
@@ -126,7 +135,7 @@ buildMerkleRoot txs = calcHash (calcTreeHeight $ length txs) 0 txs
 
 -- | Concatenate and compute double SHA256.
 hash2 :: Hash256 -> Hash256 -> Hash256
-hash2 a b = doubleSHA256 $ encode a `BS.append` encode b
+hash2 a b = doubleSHA256 $ runPutS (serialize a) <> runPutS (serialize b)
 
 -- | Computes the hash of a specific node in a Merkle tree.
 calcHash :: Int       -- ^ height of the node

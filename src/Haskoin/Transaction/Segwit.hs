@@ -30,7 +30,9 @@ module Haskoin.Transaction.Segwit
     ) where
 
 import           Data.ByteString            (ByteString)
-import qualified Data.Serialize             as S
+import           Data.Bytes.Get
+import           Data.Bytes.Put
+import           Data.Bytes.Serial
 import           Haskoin.Constants
 import           Haskoin.Keys.Common
 import           Haskoin.Script
@@ -59,8 +61,8 @@ data WitnessProgram
 -- @since 0.11.0.0
 toWitnessStack :: WitnessProgram -> WitnessStack
 toWitnessStack = \case
-    P2WPKH (WitnessProgramPKH sig key) -> [encodeTxSig sig, S.encode key]
-    P2WSH (WitnessProgramSH stack scr) -> stack <> [S.encode scr]
+    P2WPKH (WitnessProgramPKH sig key) -> [encodeTxSig sig, runPutS (serialize key)]
+    P2WSH (WitnessProgramSH stack scr) -> stack <> [runPutS (serialize scr)]
     EmptyWitnessProgram                -> mempty
 
 -- | High level representation of a P2WPKH witness
@@ -89,10 +91,10 @@ viewWitnessProgram ::
 viewWitnessProgram net so witness = case so of
     PayWitnessPKHash _ | length witness == 2 -> do
         sig    <- decodeTxSig net $ head witness
-        pubkey <- S.decode $ witness !! 1
+        pubkey <- runGetS deserialize $ witness !! 1
         return . P2WPKH $ WitnessProgramPKH sig pubkey
     PayWitnessScriptHash _ | not (null witness) -> do
-        redeemScript <- S.decode $ last witness
+        redeemScript <- runGetS deserialize $ last witness
         return . P2WSH $ WitnessProgramSH (init witness) redeemScript
     _ | null witness -> return EmptyWitnessProgram
       | otherwise    -> Left "viewWitnessProgram: Invalid witness program"
@@ -112,7 +114,7 @@ decodeWitnessInput net = \case
             (PayPK _, [sigBS]) ->
                 SpendPK <$> decodeTxSig net sigBS
             (PayPKHash _, [sigBS, keyBS]) ->
-                SpendPKHash <$> decodeTxSig net sigBS <*> S.decode keyBS
+                SpendPKHash <$> decodeTxSig net sigBS <*> runGetS deserialize keyBS
             (PayMulSig _ _, "" : sigsBS) ->
                 SpendMulSig <$> traverse (decodeTxSig net) sigsBS
             _ -> Left "decodeWitnessInput: Non-standard script output"
@@ -138,7 +140,7 @@ calcWitnessProgram so si = case (so, si) of
 simpleInputStack :: SimpleInput -> [ByteString]
 simpleInputStack = \case
     SpendPK sig       -> [f sig]
-    SpendPKHash sig k -> [f sig, S.encode k]
+    SpendPKHash sig k -> [f sig, runPutS (serialize k)]
     SpendMulSig sigs  -> "" : fmap f sigs
   where
     f TxSignatureEmpty = ""

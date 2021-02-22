@@ -1,8 +1,10 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Haskoin.NetworkSpec (spec) where
 
+import           Data.Bytes.Get
+import           Data.Bytes.Put
+import           Data.Bytes.Serial
 import           Data.Maybe             (fromJust)
-import           Data.Serialize         as S
 import           Data.Text              (Text)
 import           Data.Word              (Word32)
 import           Haskoin.Address
@@ -13,9 +15,9 @@ import           Haskoin.Transaction
 import           Haskoin.Util
 import           Haskoin.Util.Arbitrary
 import           Haskoin.UtilSpec       (customCerealID)
+import           Test.HUnit             (Assertion, assertBool, assertEqual)
 import           Test.Hspec
 import           Test.Hspec.QuickCheck
-import           Test.HUnit             (Assertion, assertBool, assertEqual)
 import           Test.QuickCheck
 
 serialVals :: [SerialBox]
@@ -67,7 +69,7 @@ bloomFilter n x = do
     assertBool "Bloom filter doesn't contain vector 3" $ bloomContains f3 v3
     assertBool "Bloom filter doesn't contain vector 4" $ bloomContains f4 v4
     assertBool "Bloom filter serialization is incorrect" $
-        S.encode f4 == bs
+        runPutS (serialize f4) == bs
   where
     f0 = bloomCreate 3 0.01 n BloomUpdateAll
     f1 = bloomInsert f0 v1
@@ -88,11 +90,11 @@ bloomFilter2 = bloomFilter 2147483649 "03ce4299050000000100008001"
 bloomFilter3 :: Assertion
 bloomFilter3 =
     assertBool "Bloom filter serialization is incorrect" $
-        S.encode f2 == bs
+        runPutS (serialize f2) == bs
   where
     f0 = bloomCreate 2 0.001 0 BloomUpdateAll
-    f1 = bloomInsert f0 $ S.encode p
-    f2 = bloomInsert f1 $ S.encode $ getAddrHash160 $ pubKeyAddr p
+    f1 = bloomInsert f0 $ runPutS $ serialize p
+    f2 = bloomInsert f1 $ runPutS $ serialize $ getAddrHash160 $ pubKeyAddr p
     k = fromJust $ fromWif btc "5Kg1gnAjaLfKiwhhPpGS3QfRg2m6awQvaj98JCZBZQ5SuS2F15C"
     p = derivePubKeyI k
     bs = fromJust $ decodeHex "038fc16b080000000000000001"
@@ -105,7 +107,7 @@ relevantOutputUpdated = assertBool "Bloom filter output updated" $
         relevantOutputHash = fromJust $ decodeHex"03f47604ea2736334151081e13265b4fe38e6fa8"
         bf1 = bloomInsert bf0 relevantOutputHash
         bf2 = fromJust $ bloomRelevantUpdate bf1 relevantTx
-        spendTxInput = encode .prevOutput <$> txIn spendRelevantTx
+        spendTxInput = runPutS . serialize . prevOutput <$> txIn spendRelevantTx
 
 irrelevantOutputNotUpdated :: Assertion
 irrelevantOutputNotUpdated = assertEqual "Bloom filter not updated" Nothing bf2

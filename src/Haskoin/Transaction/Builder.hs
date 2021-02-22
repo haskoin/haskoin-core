@@ -49,13 +49,15 @@ import           Control.Monad                    (foldM, unless)
 import           Control.Monad.Identity           (runIdentity)
 import           Crypto.Secp256k1
 import qualified Data.ByteString                  as B
+import           Data.Bytes.Get
+import           Data.Bytes.Put
+import           Data.Bytes.Serial
 import           Data.Conduit                     (ConduitT, Void, await,
                                                    runConduit, (.|))
 import           Data.Conduit.List                (sourceList)
 import           Data.Either                      (fromRight)
 import           Data.List                        (nub)
 import           Data.Maybe                       (catMaybes, fromJust, isJust)
-import           Data.Serialize                   (decode, encode)
 import           Data.String.Conversions          (cs)
 import           Data.Text                        (Text)
 import           Data.Word                        (Word64)
@@ -219,8 +221,20 @@ guessTxSize :: Int         -- ^ number of regular transaction inputs
 guessTxSize pki msi pkout msout =
     8 + inpLen + inp + outLen + out
   where
-    inpLen = B.length $ encode $ VarInt $ fromIntegral $ length msi + pki
-    outLen = B.length $ encode $ VarInt $ fromIntegral $ pkout + msout
+    inpLen =
+        B.length .
+        runPutS .
+        serialize .
+        VarInt .
+        fromIntegral $
+        length msi + pki
+    outLen =
+        B.length .
+        runPutS .
+        serialize .
+        VarInt .
+        fromIntegral $
+        pkout + msout
     inp = pki * 148 + sum (map guessMSSize msi)
              -- (20: hash160) + (5: opcodes) +
              -- (1: script len) + (8: Word64)
@@ -234,12 +248,14 @@ guessTxSize pki msi pkout msout =
 guessMSSize :: (Int,Int) -> Int
 guessMSSize (m, n)
     -- OutPoint (36) + Sequence (4) + Script
- = 40 + fromIntegral (B.length $ encode $ VarInt $ fromIntegral scp) + scp
+ = 40 +
+   fromIntegral (B.length $ runPutS . serialize $ VarInt $ fromIntegral scp) +
+   scp
     -- OP_M + n*PubKey + OP_N + OP_CHECKMULTISIG
   where
     rdm =
         fromIntegral $
-        B.length $ encode $ opPushData $ B.replicate (n * 34 + 3) 0
+        B.length $ runPutS $ serialize $ opPushData $ B.replicate (n * 34 + 3) 0
     -- Redeem + m*sig + OP_0
     scp = rdm + m * 73 + 1
 
@@ -414,9 +430,9 @@ verifyStdInput net tx i so0 val
     wp so = decodeWitnessInput net =<< viewWitnessProgram net so ws
 
     nestedScriptOutput :: Either String ScriptOutput
-    nestedScriptOutput = scriptOps <$> decode inp >>= \case
+    nestedScriptOutput = scriptOps <$> runGetS deserialize inp >>= \case
         [OP_PUSHDATA bs _] -> decodeOutputBS bs
-        _ -> Left "nestedScriptOutput: not a nested output"
+        _                  -> Left "nestedScriptOutput: not a nested output"
 
     verifyLegacyInput :: ScriptOutput -> ScriptInput -> Bool
     verifyLegacyInput so si = case (so, si) of
@@ -443,7 +459,7 @@ verifyStdInput net tx i so0 val
             verifyHashSig (theTxSigHash so sh $ Just rdm') sig (pubKeyPoint pub)
         (PayWitnessScriptHash h, Just rdm'@(PayPKHash kh), SpendPKHash (TxSignature sig sh) pub) ->
             payToWitnessScriptAddress rdm' == p2wshAddr h &&
-            addressHash (encode pub) == kh &&
+            addressHash (runPutS (serialize pub)) == kh &&
             verifyHashSig (theTxSigHash so sh $ Just rdm') sig (pubKeyPoint pub)
         (PayWitnessScriptHash h, Just rdm'@(PayMulSig pubs r), SpendMulSig sigs) ->
             payToWitnessScriptAddress rdm' == p2wshAddr h &&

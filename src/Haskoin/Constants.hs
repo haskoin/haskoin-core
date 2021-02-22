@@ -28,10 +28,14 @@ module Haskoin.Constants
     ) where
 
 import           Control.DeepSeq
+import           Data.Binary          (Binary (..))
 import           Data.ByteString      (ByteString)
+import           Data.Bytes.Get
+import           Data.Bytes.Put
+import           Data.Bytes.Serial
 import           Data.List
 import           Data.Maybe
-import           Data.Serialize
+import           Data.Serialize       (Serialize (..))
 import           Data.String
 import           Data.Text            (Text)
 import           Data.Word            (Word32, Word64, Word8)
@@ -120,14 +124,22 @@ data Network = Network
     , getHalvingInterval          :: !Word32
     } deriving (Eq, Generic, NFData)
 
-instance Serialize Network where
-    put net =
+instance Serial Network where
+    serialize net =
         putWord32be $ getNetworkMagic net
-    get = do
+    deserialize = do
         magic <- getWord32be
         case find ((== magic) . getNetworkMagic) allNets of
             Nothing  -> fail $ "Network magic unknown: " <> show magic
             Just net -> return net
+
+instance Binary Network where
+    put = serialize
+    get = deserialize
+
+instance Serialize Network where
+    put = serialize
+    get = deserialize
 
 instance Show Network where
     show = getNetworkIdent

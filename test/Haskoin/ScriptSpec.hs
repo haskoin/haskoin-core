@@ -5,10 +5,12 @@ import           Control.Monad
 import           Data.Aeson              as A
 import           Data.ByteString         (ByteString)
 import qualified Data.ByteString         as B
+import           Data.Bytes.Get
+import           Data.Bytes.Put
+import           Data.Bytes.Serial
 import           Data.Either
 import           Data.List
 import           Data.Maybe
-import           Data.Serialize          as S
 import           Data.String
 import           Data.String.Conversions (cs)
 import           Data.Text               (Text)
@@ -21,9 +23,9 @@ import           Haskoin.Transaction
 import           Haskoin.Util
 import           Haskoin.Util.Arbitrary
 import           Haskoin.UtilSpec        (readTestFile)
+import           Test.HUnit              as HUnit
 import           Test.Hspec
 import           Test.Hspec.QuickCheck
-import           Test.HUnit              as HUnit
 import           Test.QuickCheck
 import           Text.Read
 
@@ -89,21 +91,26 @@ standardSpec net = do
             decodeInput net (encodeInput si) `shouldBe` Right si
     prop "can sort multisig scripts" $
         forAll arbitraryMSOutput $ \out ->
-            map S.encode (getOutputMulSigKeys (sortMulSig out)) `shouldSatisfy` \xs ->
-                xs == sort xs
+            map
+            (runPutS . serialize)
+            (getOutputMulSigKeys (sortMulSig out))
+            `shouldSatisfy`
+            \xs -> xs == sort xs
     it "can decode inputs with empty signatures" $ do
         decodeInput net (Script [OP_0]) `shouldBe`
             Right (RegularInput (SpendPK TxSignatureEmpty))
         decodeInput net (Script [opPushData ""]) `shouldBe`
             Right (RegularInput (SpendPK TxSignatureEmpty))
-        let pk =
-                derivePubKeyI $
-                wrapSecKey True $ fromJust $ secKey $ B.replicate 32 1
-        decodeInput net (Script [OP_0, opPushData $ S.encode pk]) `shouldBe`
+        let pk = derivePubKeyI $
+                 wrapSecKey True $ fromJust $ secKey $ B.replicate 32 1
+        decodeInput net (Script [OP_0, opPushData $ runPutS $ serialize pk])
+            `shouldBe`
             Right (RegularInput (SpendPKHash TxSignatureEmpty pk))
-        decodeInput net (Script [OP_0, OP_0]) `shouldBe`
+        decodeInput net (Script [OP_0, OP_0])
+            `shouldBe`
             Right (RegularInput (SpendMulSig [TxSignatureEmpty]))
-        decodeInput net (Script [OP_0, OP_0, OP_0, OP_0]) `shouldBe`
+        decodeInput net (Script [OP_0, OP_0, OP_0, OP_0])
+            `shouldBe`
             Right (RegularInput (SpendMulSig $ replicate 3 TxSignatureEmpty))
 
 scriptSpec :: Network -> Spec
@@ -189,7 +196,7 @@ creditTx scriptPubKey val =
     txI =
         TxIn
         { prevOutput = nullOutPoint
-        , scriptInput = S.encode $ Script [OP_0, OP_0]
+        , scriptInput = runPutS $ serialize $ Script [OP_0, OP_0]
         , txInSequence = maxBound
         }
 
@@ -216,7 +223,7 @@ parseScript str =
 
 replaceToken :: String -> String
 replaceToken str = case readMaybe $ "OP_" <> str of
-    Just opcode -> "0x" <> cs (encodeHex $ S.encode (opcode :: ScriptOp))
+    Just opcode -> "0x" <> cs (encodeHex $ runPutS $ serialize (opcode :: ScriptOp))
     _           -> str
 
 strictSigSpec :: Network -> Spec
@@ -251,10 +258,10 @@ txSigHashSpec net =
             let tx = fromString txStr
                 s =
                     fromMaybe (error $ "Could not decode script: " <> cs scpStr) $
-                    eitherToMaybe . S.decode =<< decodeHex (cs scpStr)
+                    eitherToMaybe . runGetS deserialize =<< decodeHex (cs scpStr)
                 sh = fromIntegral shI
                 res =
-                    eitherToMaybe . S.decode . B.reverse =<<
+                    eitherToMaybe . runGetS deserialize . B.reverse =<<
                     decodeHex (cs resStr)
             Just (txSigHash net tx s 0 i sh) `shouldBe` res
 
@@ -275,9 +282,9 @@ txSigHashForkIdSpec net =
             let tx = fromString txStr
                 s =
                     fromMaybe (error $ "Could not decode script: " <> cs scpStr) $
-                    eitherToMaybe . S.decode =<< decodeHex (cs scpStr)
+                    eitherToMaybe . runGetS deserialize =<< decodeHex (cs scpStr)
                 sh = fromIntegral shI
-                res = eitherToMaybe . S.decode =<< decodeHex (cs resStr)
+                res = eitherToMaybe . runGetS deserialize =<< decodeHex (cs resStr)
             Just (txSigHashForkId net tx s val i sh) `shouldBe` res
 
 sigHashSpec :: Network -> Spec
@@ -359,7 +366,7 @@ runMulSigVector (a, ops) = assertBool "multisig vector" $ Just a == b
   where
     s = do
         s' <- decodeHex ops
-        eitherToMaybe $ S.decode s'
+        eitherToMaybe $ runGetS deserialize s'
     b = do
         o <- s
         d <- eitherToMaybe $ decodeOutput o
@@ -413,7 +420,7 @@ scriptSigSignatures =
 
 encodeScriptVector :: Assertion
 encodeScriptVector =
-    assertEqual "Encode script" res (encodeHex $ S.encode s)
+    assertEqual "Encode script" res (encodeHex $ runPutS $ serialize s)
   where
     res =
         "514104cc71eb30d653c0c3163990c47b976f3fb3f37cccdcbedb169a1dfef58b\

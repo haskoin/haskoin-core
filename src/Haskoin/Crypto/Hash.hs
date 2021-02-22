@@ -34,17 +34,19 @@ import           Control.DeepSeq
 import           Crypto.Hash             (RIPEMD160 (..), SHA1 (..),
                                           SHA256 (..), SHA512 (..), hashWith)
 import           Crypto.MAC.HMAC         (HMAC, hmac)
+import           Data.Binary             (Binary (..))
 import           Data.ByteArray          (ByteArrayAccess)
 import qualified Data.ByteArray          as BA
 import           Data.ByteString         (ByteString)
 import qualified Data.ByteString         as BS
 import           Data.ByteString.Short   (ShortByteString)
 import qualified Data.ByteString.Short   as BSS
+import qualified Data.Bytes.Get          as Get
+import qualified Data.Bytes.Put          as Put
+import           Data.Bytes.Serial       (Serial (..))
 import           Data.Either             (fromRight)
 import           Data.Hashable           (Hashable)
-import           Data.Serialize          (Serialize (..), decode)
-import qualified Data.Serialize.Get      as Get
-import qualified Data.Serialize.Put      as Put
+import           Data.Serialize          (Serialize (..))
 import           Data.String             (IsString, fromString)
 import           Data.String.Conversions (cs)
 import           Data.Word               (Word32)
@@ -55,7 +57,15 @@ import           Text.Read               as R
 -- | 'Word32' wrapped for type-safe 32-bit checksums.
 newtype CheckSum32 = CheckSum32
     { getCheckSum32 :: Word32
-    } deriving (Eq, Ord, Serialize, Show, Read, Hashable, Generic, NFData)
+    } deriving (Eq, Ord, Serial, Show, Read, Hashable, Generic, NFData)
+
+instance Serialize CheckSum32 where
+    put = serialize
+    get = deserialize
+
+instance Binary CheckSum32 where
+    put = serialize
+    get = deserialize
 
 -- | Type for 512-bit hashes.
 newtype Hash512 = Hash512 { getHash512 :: ShortByteString }
@@ -104,9 +114,17 @@ instance IsString Hash512 where
       where
         e = error "Could not decode hash from hex string"
 
+instance Serial Hash512 where
+    deserialize = Hash512 . BSS.toShort <$> Get.getByteString 64
+    serialize = Put.putByteString . BSS.fromShort . getHash512
+
 instance Serialize Hash512 where
-    get = Hash512 <$> Get.getShortByteString 64
-    put = Put.putShortByteString . getHash512
+    put = serialize
+    get = deserialize
+
+instance Binary Hash512 where
+    put = serialize
+    get = deserialize
 
 instance IsString Hash256 where
     fromString str =
@@ -119,9 +137,17 @@ instance IsString Hash256 where
       where
         e = error "Could not decode hash from hex string"
 
+instance Serial Hash256 where
+    deserialize = Hash256 . BSS.toShort <$> Get.getByteString 32
+    serialize = Put.putByteString . BSS.fromShort . getHash256
+
 instance Serialize Hash256 where
-    get = Hash256 <$> Get.getShortByteString 32
-    put = Put.putShortByteString . getHash256
+    put = serialize
+    get = deserialize
+
+instance Binary Hash256 where
+    put = serialize
+    get = deserialize
 
 instance IsString Hash160 where
     fromString str =
@@ -134,9 +160,17 @@ instance IsString Hash160 where
       where
         e = error "Could not decode hash from hex string"
 
+instance Serial Hash160 where
+    deserialize = Hash160 . BSS.toShort <$> Get.getByteString 20
+    serialize = Put.putByteString . BSS.fromShort . getHash160
+
 instance Serialize Hash160 where
-    get = Hash160 <$> Get.getShortByteString 20
-    put = Put.putShortByteString . getHash160
+    put = serialize
+    get = deserialize
+
+instance Binary Hash160 where
+    put = serialize
+    get = deserialize
 
 -- | Calculate SHA512 hash.
 sha512 :: ByteArrayAccess b => b -> Hash512
@@ -169,7 +203,7 @@ addressHash =
 -- | Computes a 32 bit checksum.
 checkSum32 :: ByteArrayAccess b => b -> CheckSum32
 checkSum32 = fromRight (error "Could not decode bytes as CheckSum32")
-             . decode
+             . Get.runGetS deserialize
              . BS.take 4
              . BA.convert
              . hashWith SHA256

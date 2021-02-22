@@ -7,8 +7,10 @@ import           Data.ByteString.Builder
 import qualified Data.ByteString.Char8   as C
 import qualified Data.ByteString.Lazy    as BL
 import qualified Data.ByteString.Short   as BSS
+import           Data.Bytes.Get
+import           Data.Bytes.Put
+import           Data.Bytes.Serial
 import           Data.Maybe              (fromJust)
-import           Data.Serialize          as S
 import           Data.String             (fromString)
 import           Data.String.Conversions
 import           Data.Text               (Text)
@@ -17,15 +19,14 @@ import           Haskoin.Block
 import           Haskoin.Crypto
 import           Haskoin.Util
 import           Haskoin.Util.Arbitrary
+import           Test.HUnit
 import           Test.Hspec
 import           Test.Hspec.QuickCheck
-import           Test.HUnit
 import           Test.QuickCheck
 
 serialVals :: [SerialBox]
 serialVals =
     [ SerialBox arbitraryBS
-    , SerialBox arbitraryBSS
     , SerialBox arbitraryHash160
     , SerialBox arbitraryHash256
     , SerialBox arbitraryHash512
@@ -50,13 +51,13 @@ spec =
             prop "decodeCompact . encodeCompact i == i" decEncCompact
             prop "from string Hash512" $
                 forAll arbitraryHash512 $ \h ->
-                    fromString (cs $ encodeHex $ encode h) == h
+                    fromString (cs $ encodeHex $ runPutS $ serialize h) == h
             prop "from string Hash256" $
                 forAll arbitraryHash256 $ \h ->
-                    fromString (cs $ encodeHex $ encode h) == h
+                    fromString (cs $ encodeHex $ runPutS $ serialize h) == h
             prop "from string Hash160" $
                 forAll arbitraryHash160 $ \h ->
-                    fromString (cs $ encodeHex $ encode h) == h
+                    fromString (cs $ encodeHex $ runPutS $ serialize h) == h
         describe "Test Vectors" $ do
             it "Passes RIPEMD160 test vectors" $
                 mapM_ (testVector ripemd160 getHash160) ripemd160Vectors

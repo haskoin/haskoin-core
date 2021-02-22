@@ -75,20 +75,21 @@ import           Control.Monad.Except        (ExceptT (..), runExceptT,
 import           Control.Monad.State.Strict  as State (StateT, get, gets, lift,
                                                        modify)
 import           Control.Monad.Trans.Maybe
+import           Data.Binary                 (Binary (..))
 import           Data.Bits                   (shiftL, shiftR, (.&.))
 import qualified Data.ByteString             as B
 import           Data.ByteString.Short       (ShortByteString, fromShort,
                                               toShort)
+import           Data.Bytes.Get
+import           Data.Bytes.Put
+import           Data.Bytes.Serial
 import           Data.Function               (on)
-import           Data.Hashable
 import           Data.HashMap.Strict         (HashMap)
 import qualified Data.HashMap.Strict         as HashMap
+import           Data.Hashable
 import           Data.List                   (sort, sortBy)
 import           Data.Maybe                  (fromMaybe, listToMaybe)
-import           Data.Serialize              as S (Serialize (..), decode,
-                                                   encode, get, put)
-import           Data.Serialize.Get          as S
-import           Data.Serialize.Put          as S
+import           Data.Serialize              (Serialize (..))
 import           Data.Typeable               (Typeable)
 import           Data.Word                   (Word32, Word64)
 import           GHC.Generics                (Generic)
@@ -123,25 +124,33 @@ data BlockNode
           }
     deriving (Show, Read, Generic, Hashable, NFData)
 
-instance Serialize BlockNode where
-    get = do
-        nodeHeader <- S.get
+instance Serial BlockNode where
+    deserialize = do
+        nodeHeader <- deserialize
         nodeHeight <- getWord32le
-        nodeWork <- S.get
+        nodeWork   <- getInteger
         if nodeHeight == 0
             then do
                 let nodeSkip = headerHash nodeHeader
                 return BlockNode {..}
             else do
-                nodeSkip <- S.get
+                nodeSkip <- deserialize
                 return BlockNode {..}
-    put bn = do
-        put $ nodeHeader bn
+    serialize bn = do
+        serialize $ nodeHeader bn
         putWord32le $ nodeHeight bn
-        put $ nodeWork bn
+        putInteger $ nodeWork bn
         case nodeHeight bn of
             0 -> return ()
-            _ -> put $ nodeSkip bn
+            _ -> serialize $ nodeSkip bn
+
+instance Serialize BlockNode where
+    put = serialize
+    get = deserialize
+
+instance Binary BlockNode where
+    put = serialize
+    get = deserialize
 
 instance Eq BlockNode where
     (==) = (==) `on` nodeHeader
@@ -187,7 +196,7 @@ genesisMap :: Network -> BlockMap
 genesisMap net =
     HashMap.singleton
         (shortBlockHash (headerHash (getGenesisHeader net)))
-        (toShort (encode (genesisNode net)))
+        (toShort (runPutS (serialize (genesisNode net))))
 
 -- | Add block header to memory block map.
 addBlockHeaderMemory :: BlockNode -> HeaderMemory -> HeaderMemory
@@ -199,20 +208,21 @@ addBlockHeaderMemory bn s@HeaderMemory{..} =
 getBlockHeaderMemory :: BlockHash -> HeaderMemory -> Maybe BlockNode
 getBlockHeaderMemory bh HeaderMemory {..} = do
     bs <- shortBlockHash bh `HashMap.lookup` memoryHeaderMap
-    eitherToMaybe . decode $ fromShort bs
+    eitherToMaybe . runGetS deserialize $ fromShort bs
 
 -- | Calculate short block hash taking eight non-zero bytes from the 16-byte
 -- hash. This function will take the bytes that are not on the zero-side of the
 -- hash, making colissions between short block hashes difficult.
 shortBlockHash :: BlockHash -> ShortBlockHash
-shortBlockHash = either error id . decode . B.take 8 . encode
+shortBlockHash =
+    either error id . runGetS deserialize . B.take 8 . runPutS . serialize
 
 -- | Add a block to memory-based block map.
 addBlockToMap :: BlockNode -> BlockMap -> BlockMap
 addBlockToMap node =
     HashMap.insert
     (shortBlockHash $ headerHash $ nodeHeader node)
-    (toShort $ encode node)
+    (toShort $ runPutS $ serialize node)
 
 -- | Get the ancestor of the provided 'BlockNode' at the specified
 -- 'BlockHeight'.
@@ -635,7 +645,7 @@ middleBlock :: BlockHeaders m => BlockNode -> BlockNode -> m BlockNode
 middleBlock a b =
     getAncestor h b >>= \case
         Nothing -> error "You fell into a pit full of mud and snakes"
-        Just x -> return x
+        Just x  -> return x
   where
     h = middleOf (nodeHeight a) (nodeHeight b)
 
@@ -797,7 +807,7 @@ isValidPOW net h
 
 -- | Returns the proof of work of a block header hash as an 'Integer' number.
 blockPOW :: BlockHash -> Integer
-blockPOW =  bsToInteger . B.reverse . encode
+blockPOW =  bsToInteger . B.reverse . runPutS . serialize
 
 -- | Returns the work represented by this block. Work is defined as the number
 -- of tries needed to solve a block in the average case with respect to the
@@ -867,7 +877,7 @@ appendBlocks net seed bh i =
     bh' = mineBlock net seed bh
         { prevBlock = headerHash bh
           -- Just to make it different in every header
-        , merkleRoot = sha256 $ encode seed
+        , merkleRoot = sha256 $ runPutS $ serialize seed
         }
 
 -- | Find the last common block ancestor between provided block headers.

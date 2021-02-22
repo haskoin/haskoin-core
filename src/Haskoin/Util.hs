@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP                   #-}
+{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-|
 Module      : Haskoin.Util
@@ -17,7 +18,9 @@ module Haskoin.Util
     , integerToBS
     , hexBuilder
     , encodeHex
+    , encodeHexLazy
     , decodeHex
+    , decodeHexLazy
     , getBits
 
       -- * Maybe & Either Helpers
@@ -40,23 +43,43 @@ module Haskoin.Util
     , dropFieldLabel
     , dropSumLabels
 
+      -- * Serialization Helpers
+    , putList, getList
+    , putMaybe, getMaybe
+    , putLengthBytes, getLengthBytes
+    , putInteger, getInteger
+    , putInt32be, getInt32be
+    , putInt64be, getInt64be
+    , getIntMap, putIntMap
+    , getTwo, putTwo
+
     ) where
 
-import           Control.Monad           (guard)
-import           Control.Monad.Except    (ExceptT (..), liftEither)
-import           Data.Aeson.Types        (Options (..), SumEncoding (..),
-                                          defaultOptions, defaultTaggedObject)
+import           Control.Monad
+import           Control.Monad.Except        (ExceptT (..), liftEither)
+import           Data.Aeson.Types            (Options (..), SumEncoding (..),
+                                              defaultOptions,
+                                              defaultTaggedObject)
 import           Data.Bits
-import           Data.ByteString         (ByteString)
-import qualified Data.ByteString         as BS
-import qualified Data.ByteString.Base16  as B16
+import           Data.ByteString             (ByteString)
+import qualified Data.ByteString             as BS
+import qualified Data.ByteString.Base16      as B16
 import           Data.ByteString.Builder
-import qualified Data.ByteString.Lazy    as BL
-import           Data.Char               (toLower)
+import qualified Data.ByteString.Lazy        as BL
+import qualified Data.ByteString.Lazy.Base16 as BL16
+import           Data.Bytes.Get
+import           Data.Bytes.Put
+import           Data.Bytes.Serial
+import           Data.Char                   (toLower)
+import           Data.Int
+import           Data.IntMap                 (IntMap)
+import qualified Data.IntMap                 as IntMap
 import           Data.List
-import           Data.Text               (Text)
-import qualified Data.Text.Encoding      as E
-import           Data.Word               (Word8)
+import           Data.Text                   (Text)
+import qualified Data.Text.Encoding          as E
+import qualified Data.Text.Lazy              as TL
+import qualified Data.Text.Lazy.Encoding     as EL
+import           Data.Word
 
 -- ByteString helpers
 
@@ -76,22 +99,22 @@ integerToBS i
     f 0 = Nothing
     f x = Just (fromInteger x :: Word8, x `shiftR` 8)
 
-hexBuilder :: ByteString -> Builder
-hexBuilder = byteStringHex
+hexBuilder :: BL.ByteString -> Builder
+hexBuilder = lazyByteStringHex
+
+encodeHex :: ByteString -> Text
+encodeHex = B16.encodeBase16
 
 -- | Encode as string of human-readable hex characters.
-encodeHex :: ByteString -> Text
-encodeHex = E.decodeUtf8 . BL.toStrict . toLazyByteString . byteStringHex
+encodeHexLazy :: BL.ByteString -> TL.Text
+encodeHexLazy = BL16.encodeBase16
+
+decodeHex :: Text -> Maybe ByteString
+decodeHex = eitherToMaybe . B16.decodeBase16 . E.encodeUtf8
 
 -- | Decode string of human-readable hex characters.
-decodeHex :: Text -> Maybe ByteString
-# if MIN_VERSION_base16_bytestring(1,0,0)
-decodeHex = eitherToMaybe . B16.decode . E.encodeUtf8
-# else
-decodeHex text =
-    let (x, b) = B16.decode (E.encodeUtf8 text)
-    in guard (b == BS.empty) >> return x
-# endif
+decodeHexLazy :: TL.Text -> Maybe BL.ByteString
+decodeHexLazy = eitherToMaybe . BL16.decodeBase16 . EL.encodeUtf8
 
 -- | Obtain 'Int' bits from beginning of 'ByteString'. Resulting 'ByteString'
 -- will be smallest required to hold that many bits, padded with zeroes to the
@@ -205,3 +228,125 @@ convertBits pad frombits tobits i = (reverse yout, rem')
                 out' = ((acc `shiftR` bits') .&. maxv) : out
             in inner acc out' bits'
         | otherwise = (out, bits)
+
+--
+-- Serialization helpers
+--
+
+putInt32be :: MonadPut m => Int32 -> m ()
+putInt32be n
+    | n < 0 = putWord32be (complement (fromIntegral (abs n)) + 1)
+    | otherwise = putWord32be (fromIntegral (abs n))
+
+getInt32be :: MonadGet m => m Int32
+getInt32be = do
+    n <- getWord32be
+    if testBit n 31
+        then return (negate (complement (fromIntegral n) + 1))
+        else return (fromIntegral n)
+
+putInt64be :: MonadPut m => Int64 -> m ()
+putInt64be n
+    | n < 0 = putWord64be (complement (fromIntegral (abs n)) + 1)
+    | otherwise = putWord64be (fromIntegral (abs n))
+
+getInt64be :: MonadGet m => m Int64
+getInt64be = do
+    n <- getWord64be
+    if testBit n 63
+        then return (negate (complement (fromIntegral n) + 1))
+        else return (fromIntegral n)
+
+putInteger :: MonadPut m => Integer -> m ()
+putInteger n
+    | n >= lo && n <= hi = do
+          putWord8 0x00
+          putInt32be (fromIntegral n)
+    | otherwise = do
+          putWord8 0x01
+          putWord8 (fromIntegral (signum n))
+          let len = (nrBits (abs n) + 7) `div` 8
+          putWord64be (fromIntegral len)
+          mapM_ putWord8 (unroll (abs n))
+  where
+    lo = fromIntegral (minBound :: Int32)
+    hi = fromIntegral (maxBound :: Int32)
+
+getInteger :: MonadGet m => m Integer
+getInteger =
+    getWord8 >>= \case
+    0 -> fromIntegral <$> getInt32be
+    _ -> do
+        sign  <- getWord8
+        bytes <- getList getWord8
+        let v = roll bytes
+        return $! if sign == 0x01 then v else - v
+
+putMaybe :: MonadPut m => (a -> m ()) -> Maybe a -> m ()
+putMaybe f Nothing  = putWord8 0x00
+putMaybe f (Just x) = putWord8 0x01 >> f x
+
+getMaybe :: MonadGet m => m a -> m (Maybe a)
+getMaybe f =
+    getWord8 >>= \case
+    0x00 -> return Nothing
+    0x01 -> Just <$> f
+    _    -> fail "Not a Maybe"
+
+putLengthBytes :: MonadPut m => ByteString -> m ()
+putLengthBytes bs = do
+    putWord64be (fromIntegral (BS.length bs))
+    putByteString bs
+
+getLengthBytes :: MonadGet m => m ByteString
+getLengthBytes = do
+    len <- fromIntegral <$> getWord64be
+    getByteString len
+
+--
+-- Fold and unfold an Integer to and from a list of its bytes
+--
+unroll :: (Integral a, Bits a) => a -> [Word8]
+unroll = unfoldr step
+  where
+    step 0 = Nothing
+    step i = Just (fromIntegral i, i `shiftR` 8)
+
+roll :: (Integral a, Bits a) => [Word8] -> a
+roll   = foldr unstep 0
+  where
+    unstep b a = a `shiftL` 8 .|. fromIntegral b
+
+nrBits :: (Ord a, Integral a) => a -> Int
+nrBits k =
+    let expMax = until (\e -> 2 ^ e > k) (* 2) 1
+        findNr :: Int -> Int -> Int
+        findNr lo hi
+            | mid == lo = hi
+            | 2 ^ mid <= k = findNr mid hi
+            | 2 ^ mid > k  = findNr lo mid
+         where mid = (lo + hi) `div` 2
+    in findNr (expMax `div` 2) expMax
+
+-- | Read as a list of pairs of int and element.
+getIntMap :: MonadGet m => m Int -> m a -> m (IntMap a)
+getIntMap i m = IntMap.fromList <$> getList (getTwo i m)
+
+putIntMap :: MonadPut m => (Int -> m ()) -> (a -> m ()) -> IntMap a -> m ()
+putIntMap f g = putList (putTwo f g) . IntMap.toAscList
+
+putTwo :: MonadPut m => (a -> m ()) -> (b -> m ()) -> (a, b) -> m ()
+putTwo f g (x, y) = f x >> g y
+
+getTwo :: MonadGet m => m a -> m b -> m (a, b)
+getTwo f g = (,) <$> f <*> g
+
+putList :: MonadPut m => (a -> m ()) -> [a] -> m ()
+putList f ls = do
+    putWord64be (fromIntegral (length ls))
+    mapM_ f ls
+
+getList :: MonadGet m => m a -> m [a]
+getList f = do
+    l <- fromIntegral <$> getWord64be
+    replicateM l f

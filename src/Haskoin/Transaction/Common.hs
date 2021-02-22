@@ -31,15 +31,20 @@ module Haskoin.Transaction.Common
 import           Control.Applicative     ((<|>))
 import           Control.DeepSeq
 import           Control.Monad           (forM_, guard, liftM2, mzero,
-                                          replicateM, (<=<))
+                                          replicateM, unless, when, (<=<))
 import           Data.Aeson              as A
 import           Data.Aeson.Encoding     (unsafeToEncoding)
+import           Data.Binary             (Binary (..))
 import           Data.ByteString         (ByteString)
 import qualified Data.ByteString         as B
 import           Data.ByteString.Builder (char7)
+import qualified Data.ByteString.Lazy    as BL
+import           Data.Bytes.Get
+import           Data.Bytes.Put
+import           Data.Bytes.Serial
 import           Data.Hashable           (Hashable)
 import           Data.Maybe              (fromMaybe)
-import           Data.Serialize          as S
+import           Data.Serialize          (Serialize (..))
 import           Data.String             (IsString, fromString)
 import           Data.String.Conversions (cs)
 import           Data.Text               (Text)
@@ -52,7 +57,15 @@ import           Text.Read               as R
 
 -- | Transaction id: hash of transaction excluding witness data.
 newtype TxHash = TxHash { getTxHash :: Hash256 }
-    deriving (Eq, Ord, Generic, Hashable, Serialize, NFData)
+    deriving (Eq, Ord, Generic, Hashable, Serial, NFData)
+
+instance Serialize TxHash where
+    put = serialize
+    get = deserialize
+
+instance Binary TxHash where
+    put = serialize
+    get = deserialize
 
 instance Show TxHash where
     showsPrec _ = shows . txHashToHex
@@ -74,24 +87,28 @@ instance FromJSON TxHash where
 instance ToJSON TxHash where
     toJSON = A.String . txHashToHex
     toEncoding h =
-        unsafeToEncoding $ char7 '"' <> hexBuilder (B.reverse (S.encode h)) <> char7 '"'
+        unsafeToEncoding $
+        char7 '"' <>
+        hexBuilder (BL.reverse (runPutL (serialize h))) <>
+        char7 '"'
 
 -- | Transaction hash excluding signatures.
 nosigTxHash :: Tx -> TxHash
 nosigTxHash tx =
-    TxHash $ doubleSHA256 $ S.encode tx { txIn = map clearInput $ txIn tx }
+    TxHash $ doubleSHA256 $ runPutS $
+    serialize tx { txIn = map clearInput $ txIn tx }
   where
     clearInput ti = ti { scriptInput = B.empty }
 
 -- | Convert transaction hash to hex form, reversing bytes.
 txHashToHex :: TxHash -> Text
-txHashToHex (TxHash h) = encodeHex (B.reverse (S.encode h))
+txHashToHex (TxHash h) = encodeHex (B.reverse (runPutS (serialize h)))
 
 -- | Convert transaction hash from hex, reversing bytes.
 hexToTxHash :: Text -> Maybe TxHash
 hexToTxHash hex = do
     bs <- B.reverse <$> decodeHex hex
-    h <- either (const Nothing) Just (S.decode bs)
+    h <- either (const Nothing) Just (runGetS deserialize bs)
     return $ TxHash h
 
 -- | Witness stack for SegWit transactions.
@@ -117,36 +134,45 @@ data Tx = Tx
 
 -- | Compute transaction hash.
 txHash :: Tx -> TxHash
-txHash tx = TxHash (doubleSHA256 (S.encode tx {txWitness = []}))
+txHash tx = TxHash . doubleSHA256 . runPutS $ serialize tx {txWitness = []}
 
 instance IsString Tx where
     fromString =
-        fromMaybe e . (eitherToMaybe . S.decode <=< decodeHex) . cs
+        fromMaybe e . (eitherToMaybe . runGetS deserialize <=< decodeHex) . cs
       where
         e = error "Could not read transaction from hex string"
 
-instance Serialize Tx where
-    get = parseWitnessTx <|> parseLegacyTx
-    put tx
+instance Serial Tx where
+    deserialize =
+        isWitnessTx >>= \w -> if w then parseWitnessTx else parseLegacyTx
+    serialize tx
         | null (txWitness tx) = putLegacyTx tx
         | otherwise = putWitnessTx tx
 
-putInOut :: Tx -> Put
+instance Binary Tx where
+    put = serialize
+    get = deserialize
+
+instance Serialize Tx where
+    put = serialize
+    get = deserialize
+
+putInOut :: MonadPut m => Tx -> m ()
 putInOut tx = do
     putVarInt $ length (txIn tx)
-    forM_ (txIn tx) put
+    forM_ (txIn tx) serialize
     putVarInt $ length (txOut tx)
-    forM_ (txOut tx) put
+    forM_ (txOut tx) serialize
 
 -- | Non-SegWit transaction serializer.
-putLegacyTx :: Tx -> Put
+putLegacyTx :: MonadPut m => Tx -> m ()
 putLegacyTx tx = do
     putWord32le (txVersion tx)
     putInOut tx
     putWord32le (txLockTime tx)
 
 -- | Witness transaciton serializer.
-putWitnessTx :: Tx -> Put
+putWitnessTx :: MonadPut m => Tx -> m ()
 putWitnessTx tx = do
     putWord32le (txVersion tx)
     putWord8 0x00
@@ -155,49 +181,61 @@ putWitnessTx tx = do
     putWitnessData (txWitness tx)
     putWord32le (txLockTime tx)
 
+isWitnessTx :: MonadGet m => m Bool
+isWitnessTx = lookAhead $ do
+    _ <- getWord32le
+    m <- getWord8
+    f <- getWord8
+    return (m == 0x00 && f == 0x01)
+
 -- | Non-SegWit transaction deseralizer.
-parseLegacyTx :: Get Tx
+parseLegacyTx :: MonadGet m => m Tx
 parseLegacyTx = do
     v <- getWord32le
-    is <- replicateList =<< S.get
-    os <- replicateList =<< S.get
+    is <- replicateList =<< deserialize
+    os <- replicateList =<< deserialize
+    when (length is == 0x00 && length os == 0x01) $ fail "Witness transaction"
     l <- getWord32le
     return
         Tx
-        {txVersion = v, txIn = is, txOut = os, txWitness = [], txLockTime = l}
+        { txVersion = v
+        , txIn = is
+        , txOut = os
+        , txWitness = []
+        , txLockTime = l
+        }
   where
-    replicateList (VarInt c) = replicateM (fromIntegral c) S.get
+    replicateList (VarInt c) = replicateM (fromIntegral c) deserialize
 
 -- | Witness transaction deserializer.
-parseWitnessTx :: Get Tx
+parseWitnessTx :: MonadGet m => m Tx
 parseWitnessTx = do
     v <- getWord32le
     m <- getWord8
     f <- getWord8
-    guard $ m == 0x00
-    guard $ f == 0x01
-    is <- replicateList =<< S.get
-    os <- replicateList =<< S.get
+    unless (m == 0x00 && f == 0x01) $ fail "Not a witness transaction"
+    is <- replicateList =<< deserialize
+    os <- replicateList =<< deserialize
     w <- parseWitnessData $ length is
     l <- getWord32le
     return
         Tx {txVersion = v, txIn = is, txOut = os, txWitness = w, txLockTime = l}
   where
-    replicateList (VarInt c) = replicateM (fromIntegral c) S.get
+    replicateList (VarInt c) = replicateM (fromIntegral c) deserialize
 
 -- | Witness data deserializer. Requires count of inputs.
-parseWitnessData :: Int -> Get WitnessData
+parseWitnessData :: MonadGet m => Int -> m WitnessData
 parseWitnessData n = replicateM n parseWitnessStack
   where
     parseWitnessStack = do
-        VarInt i <- S.get
+        VarInt i <- deserialize
         replicateM (fromIntegral i) parseWitnessStackItem
     parseWitnessStackItem = do
-        VarInt i <- S.get
+        VarInt i <- deserialize
         getByteString $ fromIntegral i
 
 -- | Witness data serializer.
-putWitnessData :: WitnessData -> Put
+putWitnessData :: MonadPut m => WitnessData -> m ()
 putWitnessData = mapM_ putWitnessStack
   where
     putWitnessStack ws = do
@@ -246,17 +284,25 @@ data TxIn =
          , txInSequence :: !Word32
          } deriving (Eq, Show, Read, Ord, Generic, Hashable, NFData)
 
-instance Serialize TxIn where
-    get =
-        TxIn <$> S.get <*> (readBS =<< S.get) <*> getWord32le
+instance Serial TxIn where
+    deserialize =
+        TxIn <$> deserialize <*> (readBS =<< deserialize) <*> getWord32le
       where
         readBS (VarInt len) = getByteString $ fromIntegral len
 
-    put (TxIn o s q) = do
-        put o
+    serialize (TxIn o s q) = do
+        serialize o
         putVarInt $ B.length s
         putByteString s
         putWord32le q
+
+instance Binary TxIn where
+    get = deserialize
+    put = serialize
+
+instance Serialize TxIn where
+    get = deserialize
+    put = serialize
 
 instance FromJSON TxIn where
     parseJSON =
@@ -288,16 +334,24 @@ data TxOut =
           , scriptOutput :: !ByteString
           } deriving (Eq, Show, Read, Ord, Generic, Hashable, NFData)
 
-instance Serialize TxOut where
-    get = do
+instance Serial TxOut where
+    deserialize = do
         val <- getWord64le
-        (VarInt len) <- S.get
+        VarInt len <- deserialize
         TxOut val <$> getByteString (fromIntegral len)
 
-    put (TxOut o s) = do
+    serialize (TxOut o s) = do
         putWord64le o
         putVarInt $ B.length s
         putByteString s
+
+instance Binary TxOut where
+    put = serialize
+    get = deserialize
+
+instance Serialize TxOut where
+    put = serialize
+    get = deserialize
 
 instance FromJSON TxOut where
     parseJSON =
@@ -319,11 +373,19 @@ data OutPoint = OutPoint
     , outPointIndex :: !Word32
     } deriving (Show, Read, Eq, Ord, Generic, Hashable, NFData)
 
-instance Serialize OutPoint where
-    get = do
-        (h,i) <- liftM2 (,) S.get getWord32le
+instance Serial OutPoint where
+    deserialize = do
+        (h,i) <- liftM2 (,) deserialize getWord32le
         return $ OutPoint h i
-    put (OutPoint h i) = put h >> putWord32le i
+    serialize (OutPoint h i) = serialize h >> putWord32le i
+
+instance Binary OutPoint where
+    put = serialize
+    get = deserialize
+
+instance Serialize OutPoint where
+    put = serialize
+    get = deserialize
 
 instance FromJSON OutPoint where
     parseJSON =

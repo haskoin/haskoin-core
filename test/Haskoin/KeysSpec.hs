@@ -7,8 +7,11 @@ import           Data.Aeson              as A
 import           Data.Aeson.Lens
 import qualified Data.ByteString         as BS
 import qualified Data.ByteString.Char8   as C
+import           Data.Bytes.Get
+import           Data.Bytes.Put
+import           Data.Bytes.Serial
 import           Data.Maybe
-import           Data.Serialize          as S
+import qualified Data.Serialize          as S
 import           Data.String             (fromString)
 import           Data.String.Conversions (cs)
 import           Data.Text               (Text)
@@ -20,15 +23,14 @@ import           Haskoin.Script
 import           Haskoin.Util
 import           Haskoin.Util.Arbitrary
 import           Haskoin.UtilSpec        (readTestFile)
+import           Test.HUnit
 import           Test.Hspec
 import           Test.Hspec.QuickCheck
-import           Test.HUnit
 import           Test.QuickCheck
 
 serialVals :: [SerialBox]
 serialVals =
-    [ SerialBox (arbitrary :: Gen SecKey)
-    , SerialBox (snd <$> arbitraryKeyPair) -- PubKeyI
+    [ SerialBox (snd <$> arbitraryKeyPair) -- PubKeyI
     ]
 
 readVals :: [ReadBox]
@@ -51,7 +53,7 @@ spec = do
             forAll arbitraryKeyPair (isCanonicalPubKey . snd)
         prop "Public key fromString identity" $
             forAll arbitraryKeyPair $ \(_, k) ->
-                fromString (cs . encodeHex $ S.encode k) == k
+                fromString (cs . encodeHex $ runPutS $ serialize k) == k
     describe "SecKey properties" $
         prop "fromWif . toWif identity" $
         forAll arbitraryNetwork $ \net ->
@@ -88,13 +90,13 @@ isCanonicalPubKey p = not $
     -- Non-canonical public key: compressed nor uncompressed
     (BS.index bs 0 `notElem` [2,3,4])
   where
-    bs = S.encode p
+    bs = runPutS $ serialize p
 
 testMiniKey :: Assertion
 testMiniKey =
     assertEqual "fromMiniKey" (Just res) (go "S6c56bnXQiBjk9mqSYE7ykVQ7NzrRy")
   where
-    go = fmap (encodeHex . S.encode . secKeyData) . fromMiniKey
+    go = fmap (encodeHex . runPutS . S.put . secKeyData) . fromMiniKey
     res = "4c7a9640c72dc2099f23715d0c8a0d8a35f8906e3cab61dd3f78b67bf887c9ab"
 
 -- Test vectors from:
@@ -107,14 +109,14 @@ testKeyIOValidVector (a, payload, obj)
         -- Test from WIF to SecKey
         let isComp = obj ^?! key "isCompressed" . _Bool
             prvKeyM = fromWif net a
-            prvKeyHexM = encodeHex . S.encode . secKeyData <$> prvKeyM
+            prvKeyHexM = encodeHex . runPutS . S.put . secKeyData <$> prvKeyM
         assertBool "Valid PrvKey" $ isJust prvKeyM
         assertEqual "Valid compression" (Just isComp) (secKeyCompressed <$> prvKeyM)
         assertEqual "WIF matches payload" (Just payload) prvKeyHexM
         let prvAsPubM = (eitherToMaybe . decodeOutputBS <=< decodeHex) a
         assertBool "PrvKey is invalid ScriptOutput" $ isNothing prvAsPubM
         -- Test from SecKey to WIF
-        let secM = eitherToMaybe . S.decode =<< decodeHex payload
+        let secM = eitherToMaybe . runGetS S.get =<< decodeHex payload
             wifM = toWif net . wrapSecKey isComp <$> secM
         assertEqual "Payload matches WIF" (Just a) wifM
     | otherwise = do
@@ -124,7 +126,9 @@ testKeyIOValidVector (a, payload, obj)
         assertBool ("Valid Address " <> cs a) $ isJust addrM
         assertEqual "Address matches payload" (Just payload) scriptM
         let pubAsWifM = fromWif net a
-            pubAsSecM = eitherToMaybe . S.decode =<< decodeHex a :: Maybe SecKey
+            pubAsSecM =
+                eitherToMaybe . runGetS S.get =<<
+                decodeHex a :: Maybe SecKey
         assertBool "Address is invalid Wif" $ isNothing pubAsWifM
         assertBool "Address is invalid PrvKey" $ isNothing pubAsSecM
         -- Test Script to Addr
@@ -145,7 +149,7 @@ testKeyIOValidVector (a, payload, obj)
 testKeyIOInvalidVector :: [Text] -> Assertion
 testKeyIOInvalidVector [a] = do
     let wifMs = (`fromWif` a) <$> allNets
-        secKeyM = (eitherToMaybe . S.decode <=< decodeHex) a :: Maybe SecKey
+        secKeyM = (eitherToMaybe . runGetS S.get <=< decodeHex) a :: Maybe SecKey
         scriptM = (eitherToMaybe . decodeOutputBS <=< decodeHex) a :: Maybe ScriptOutput
     assertBool "Payload is invalid WIF" $ all isNothing wifMs
     assertBool "Payload is invalid SecKey" $ isNothing secKeyM

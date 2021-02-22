@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 {-|
@@ -40,14 +41,16 @@ import           Crypto.Secp256k1
 import           Data.Aeson              (FromJSON, ToJSON (..), Value (String),
                                           parseJSON, withText)
 import           Data.Aeson.Encoding     (unsafeToEncoding)
+import           Data.Binary             (Binary (..))
 import           Data.ByteString         (ByteString)
 import qualified Data.ByteString         as BS
 import           Data.ByteString.Builder (char7)
+import           Data.Bytes.Get
+import           Data.Bytes.Put
+import           Data.Bytes.Serial
 import           Data.Hashable
 import           Data.Maybe              (fromMaybe)
-import           Data.Serialize          (Serialize, decode, encode, get, put)
-import           Data.Serialize.Get      (getByteString)
-import           Data.Serialize.Put      (putByteString)
+import           Data.Serialize          (Serialize (..))
 import           Data.String             (IsString, fromString)
 import           Data.String.Conversions (cs)
 import           GHC.Generics            (Generic)
@@ -64,31 +67,49 @@ data PubKeyI = PubKeyI
 
 instance IsString PubKeyI where
     fromString str =
-        fromMaybe e $ eitherToMaybe . decode <=< decodeHex $ cs str
+        fromMaybe e $ eitherToMaybe . runGetS deserialize <=< decodeHex $ cs str
       where
         e = error "Could not decode public key"
 
 instance ToJSON PubKeyI where
-    toJSON = String . encodeHex . encode
-    toEncoding s = unsafeToEncoding $ char7 '"' <> hexBuilder (encode s) <> char7 '"'
+    toJSON = String . encodeHex . runPutS . serialize
+    toEncoding s = unsafeToEncoding $
+        char7 '"' <>
+        hexBuilder (runPutL (serialize s)) <>
+        char7 '"'
 
 instance FromJSON PubKeyI where
     parseJSON = withText "PubKeyI" $
-        maybe mzero return . (eitherToMaybe . decode =<<) . decodeHex
+        maybe mzero return . (eitherToMaybe . runGetS deserialize =<<) . decodeHex
 
-instance Serialize PubKeyI where
-    get = c <|> u
+instance Serial PubKeyI where
+    deserialize = s >>= \case
+        True  -> c
+        False -> u
       where
+        s = lookAhead $ getWord8 >>= \case
+            0x02 -> return True
+            0x03 -> return True
+            0x04 -> return False
+            _    -> fail "Not a public key"
         c = do
             bs <- getByteString 33
-            guard $ BS.head bs `BS.elem` BS.pack [0x02, 0x03]
-            maybe mzero return $ PubKeyI <$> importPubKey bs <*> pure True
+            maybe (fail "Could not decode public key") return $
+                PubKeyI <$> importPubKey bs <*> pure True
         u = do
             bs <- getByteString 65
-            guard $ BS.head bs == 0x04
-            maybe mzero return $ PubKeyI <$> importPubKey bs <*> pure False
+            maybe (fail "Could not decode public key") return $
+                PubKeyI <$> importPubKey bs <*> pure False
 
-    put pk = putByteString $ exportPubKey (pubKeyCompressed pk) (pubKeyPoint pk)
+    serialize pk = putByteString $ exportPubKey (pubKeyCompressed pk) (pubKeyPoint pk)
+
+instance Serialize PubKeyI where
+    put = serialize
+    get = deserialize
+
+instance Binary PubKeyI where
+    put = serialize
+    get = deserialize
 
 -- | Wrap a public key from secp256k1 library adding information about compression.
 wrapPubKey :: Bool -> PubKey -> PubKeyI
@@ -101,7 +122,7 @@ derivePubKeyI (SecKeyI d c) = PubKeyI (derivePubKey d) c
 
 -- | Tweak a public key.
 tweakPubKey :: PubKey -> Hash256 -> Maybe PubKey
-tweakPubKey p h = tweakAddPubKey p =<< tweak (encode h)
+tweakPubKey p h = tweakAddPubKey p =<< tweak (runPutS (serialize h))
 
 -- | Elliptic curve private key type with expected public key compression
 -- information. Compression information is stored in private key WIF formats and
@@ -118,15 +139,15 @@ wrapSecKey c d = SecKeyI d c
 
 -- | Tweak a private key.
 tweakSecKey :: SecKey -> Hash256 -> Maybe SecKey
-tweakSecKey key h = tweakAddSecKey key =<< tweak (encode h)
+tweakSecKey key h = tweakAddSecKey key =<< tweak (runPutS (serialize h))
 
 -- | Decode Casascius mini private keys (22 or 30 characters).
 fromMiniKey :: ByteString -> Maybe SecKeyI
 fromMiniKey bs = do
     guard checkShortKey
-    wrapSecKey False <$> secKey (encode (sha256 bs))
+    wrapSecKey False <$> secKey (runPutS (serialize (sha256 bs)))
   where
-    checkHash = encode $ sha256 $ bs `BS.append` "?"
+    checkHash = runPutS $ serialize $ sha256 $ bs `BS.append` "?"
     checkShortKey = BS.length bs `elem` [22, 30] && BS.head checkHash == 0x00
 
 -- | Decode private key from WIF (wallet import format) string.

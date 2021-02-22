@@ -6,9 +6,11 @@ import           Control.Monad              (forM_)
 import           Data.Aeson                 as A
 import           Data.Bits                  ((.&.))
 import qualified Data.ByteString.Lazy.Char8 as B8
+import           Data.Bytes.Get
+import           Data.Bytes.Put
+import           Data.Bytes.Serial
 import           Data.Either                (isLeft)
 import           Data.Maybe                 (fromJust, isJust, isNothing)
-import           Data.Serialize             as S
 import           Data.String                (fromString)
 import           Data.String.Conversions    (cs)
 import           Data.Text                  (Text)
@@ -19,9 +21,9 @@ import           Haskoin.Keys
 import           Haskoin.Util
 import           Haskoin.Util.Arbitrary
 import           Haskoin.UtilSpec           (customCerealID)
+import           Test.HUnit                 (Assertion, assertBool, assertEqual)
 import           Test.Hspec
 import           Test.Hspec.QuickCheck
-import           Test.HUnit                 (Assertion, assertBool, assertEqual)
 import           Test.QuickCheck            hiding ((.&.))
 
 serialVals :: [SerialBox]
@@ -309,8 +311,8 @@ vectorSpec mTxt vecTxt =
 
 runVector :: XPrvKey -> TestVector -> Assertion
 runVector m v = do
-    assertBool "xPrvID" $ encodeHex (S.encode $ xPrvID m) == v !! 0
-    assertBool "xPrvFP" $ encodeHex (S.encode $ xPrvFP m) == v !! 1
+    assertBool "xPrvID" $ encodeHex (runPutS . serialize $ xPrvID m) == v !! 0
+    assertBool "xPrvFP" $ encodeHex (runPutS . serialize $ xPrvFP m) == v !! 1
     assertBool "xPrvAddr" $
         addrToText btc (xPubAddr $ deriveXPubKey m) == Just (v !! 2)
     assertBool "bip44Addr" $
@@ -320,18 +322,18 @@ runVector m v = do
     assertBool "xPrvWIF" $ xPrvWif btc m == v !! 5
     assertBool "pubKey" $
         encodeHex (exportPubKey True $ xPubKey $ deriveXPubKey m) == v !! 6
-    assertBool "chain code" $ encodeHex (S.encode $ xPrvChain m) == v !! 7
+    assertBool "chain code" $ encodeHex (runPutS . serialize $ xPrvChain m) == v !! 7
     assertBool "Hex PubKey" $
-        encodeHex (runPut $ putXPubKey btc $ deriveXPubKey m) == v !! 8
-    assertBool "Hex PrvKey" $ encodeHex (runPut (putXPrvKey btc m)) == v !! 9
+        encodeHex (runPutS $ putXPubKey btc $ deriveXPubKey m) == v !! 8
+    assertBool "Hex PrvKey" $ encodeHex (runPutS (putXPrvKey btc m)) == v !! 9
     assertBool "Base58 PubKey" $ xPubExport btc (deriveXPubKey m) == v !! 10
     assertBool "Base58 PrvKey" $ xPrvExport btc m == v !! 11
 
 -- This function was used to generate addition data for the test vectors
 genVector :: XPrvKey -> [(Text, Text)]
 genVector m =
-    [ ("xPrvID", encodeHex (S.encode $ xPrvID m))
-    , ("xPrvFP", encodeHex (S.encode $ xPrvFP m))
+    [ ("xPrvID", encodeHex (runPutS . serialize $ xPrvID m))
+    , ("xPrvFP", encodeHex (runPutS . serialize $ xPrvFP m))
     , ("xPrvAddr", fromJust $ addrToText btc (xPubAddr $ deriveXPubKey m))
     , ( "bip44Addr"
       , fromJust $
@@ -339,9 +341,9 @@ genVector m =
     , ("prvKey", encodeHex (getSecKey $ xPrvKey m))
     , ("xPrvWIF", xPrvWif btc m)
     , ("pubKey", encodeHex (exportPubKey True $ xPubKey $ deriveXPubKey m))
-    , ("chain code", encodeHex (S.encode $ xPrvChain m))
-    , ("Hex PubKey", encodeHex (runPut $ putXPubKey btc $ deriveXPubKey m))
-    , ("Hex PrvKey", encodeHex (runPut (putXPrvKey btc m)))
+    , ("chain code", encodeHex (runPutS . serialize $ xPrvChain m))
+    , ("Hex PubKey", encodeHex (runPutS $ putXPubKey btc $ deriveXPubKey m))
+    , ("Hex PrvKey", encodeHex (runPutS (putXPrvKey btc m)))
     ]
 
 parseVector :: TestKey -> [TestVector] -> [(Text, XPrvKey, TestVector)]

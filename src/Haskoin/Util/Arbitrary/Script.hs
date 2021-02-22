@@ -274,7 +274,7 @@ arbitraryWSHOutput = PayWitnessScriptHash <$> arbitraryHash256
 
 arbitraryWitOutput :: Gen ScriptOutput
 arbitraryWitOutput = do
-    ver <- choose (0, 16)
+    ver <- choose (1, 16)
     len <- choose (2, 40)
     ws <- vectorOf len arbitrary
     let bs = B.pack ws

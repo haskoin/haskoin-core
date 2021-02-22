@@ -111,18 +111,20 @@ import           Data.Aeson              as A (FromJSON, ToJSON (..),
                                                toJSON, withText)
 import           Data.Aeson.Encoding     (Encoding, text)
 import           Data.Aeson.Types        (Parser)
+import           Data.Binary             (Binary (get, put))
 import           Data.Bits               (clearBit, setBit, testBit)
 import           Data.ByteString         (ByteString)
 import qualified Data.ByteString         as B
+import           Data.Bytes.Get
+import           Data.Bytes.Put
+import           Data.Bytes.Serial
 import           Data.Either             (fromRight)
 import           Data.Hashable
 import           Data.List               (foldl')
 import           Data.List.Split         (splitOn)
 import           Data.Maybe              (fromMaybe)
-import           Data.Serialize          as S (Serialize, decode, encode, get,
-                                               put)
-import           Data.Serialize.Get      (Get, getWord32be, getWord8, runGet)
-import           Data.Serialize.Put      (Putter, putWord32be, putWord8, runPut)
+import           Data.Serialize          (Serialize (..))
+import qualified Data.Serialize          as S
 import           Data.String             (IsString, fromString)
 import           Data.String.Conversions (cs)
 import           Data.Typeable           (Typeable)
@@ -165,19 +167,27 @@ data XPrvKey = XPrvKey
     , xPrvKey    :: !SecKey      -- ^ private key of this node
     } deriving (Generic, Eq, Show, Read, NFData, Hashable)
 
-instance Serialize XPrvKey where
-    put k = do
+instance Serial XPrvKey where
+    serialize k = do
         putWord8 $ xPrvDepth k
         putWord32be $ xPrvParent k
         putWord32be $ xPrvIndex k
-        put $ xPrvChain k
+        serialize $ xPrvChain k
         putPadPrvKey $ xPrvKey k
-    get =
+    deserialize =
         XPrvKey <$> getWord8
                 <*> getWord32be
                 <*> getWord32be
-                <*> S.get
+                <*> deserialize
                 <*> getPadPrvKey
+
+instance Binary XPrvKey where
+    put = serialize
+    get = deserialize
+
+instance Serialize XPrvKey where
+    put = serialize
+    get = deserialize
 
 xPrvToJSON :: Network -> XPrvKey -> Value
 xPrvToJSON net = A.String . xPrvExport net
@@ -202,19 +212,27 @@ data XPubKey = XPubKey
     , xPubKey    :: !PubKey    -- ^ public key of this node
     } deriving (Generic, Eq, Show, Read, NFData, Hashable)
 
-instance Serialize XPubKey where
-    put k = do
+instance Serial XPubKey where
+    serialize k = do
         putWord8 $ xPubDepth k
         putWord32be $ xPubParent k
         putWord32be $ xPubIndex k
-        put $ xPubChain k
-        put $ wrapPubKey True (xPubKey k)
-    get =
+        serialize $ xPubChain k
+        serialize $ wrapPubKey True (xPubKey k)
+    deserialize =
         XPubKey <$> getWord8
                 <*> getWord32be
                 <*> getWord32be
-                <*> S.get
-                <*> (pubKeyPoint <$> S.get)
+                <*> deserialize
+                <*> (pubKeyPoint <$> deserialize)
+
+instance Serialize XPubKey where
+    put = serialize
+    get = deserialize
+
+instance Binary XPubKey where
+    put = serialize
+    get = deserialize
 
 -- | Decode an extended public key from a JSON string
 xPubFromJSON :: Network -> Value -> Parser XPubKey
@@ -238,7 +256,7 @@ makeXPrvKey bs =
     XPrvKey 0 0 0 c k
   where
     (p, c) = split512 $ hmac512 "Bitcoin seed" bs
-    k     = fromMaybe err (secKey (encode p))
+    k     = fromMaybe err (secKey (runPutS (serialize p)))
     err   = throw $ DerivationException "Invalid seed"
 
 -- | Derive an extended public key from an extended private key. This function
@@ -265,8 +283,8 @@ prvSubKey xkey child
     | otherwise = error "Invalid child derivation index"
   where
     pK = xPubKey $ deriveXPubKey xkey
-    m = B.append (exportPubKey True pK) (encode child)
-    (a, c) = split512 $ hmac512 (encode $ xPrvChain xkey) m
+    m = B.append (exportPubKey True pK) (runPutS (serialize child))
+    (a, c) = split512 $ hmac512 (runPutS $ serialize $ xPrvChain xkey) m
     k = fromMaybe err $ tweakSecKey (xPrvKey xkey) a
     err = throw $ DerivationException "Invalid prvSubKey derivation"
 
@@ -280,8 +298,8 @@ pubSubKey xKey child
         XPubKey (xPubDepth xKey + 1) (xPubFP xKey) child c pK
     | otherwise = error "Invalid child derivation index"
   where
-    m = B.append (exportPubKey True (xPubKey xKey)) (encode child)
-    (a, c) = split512 $ hmac512 (encode $ xPubChain xKey) m
+    m = B.append (exportPubKey True (xPubKey xKey)) (runPutS $ serialize child)
+    (a, c) = split512 $ hmac512 (runPutS $ serialize $ xPubChain xKey) m
     pK = fromMaybe err $ tweakPubKey (xPubKey xKey) a
     err = throw $ DerivationException "Invalid pubSubKey derivation"
 
@@ -300,8 +318,8 @@ hardSubKey xkey child
     | otherwise = error "Invalid child derivation index"
   where
     i = setBit child 31
-    m = B.append (bsPadPrvKey $ xPrvKey xkey) (encode i)
-    (a, c) = split512 $ hmac512 (encode $ xPrvChain xkey) m
+    m = B.append (bsPadPrvKey $ xPrvKey xkey) (runPutS $ serialize i)
+    (a, c) = split512 $ hmac512 (runPutS $ serialize $ xPrvChain xkey) m
     k = fromMaybe err $ tweakSecKey (xPrvKey xkey) a
     err = throw $ DerivationException "Invalid hardSubKey derivation"
 
@@ -331,19 +349,19 @@ xPrvID = xPubID . deriveXPubKey
 
 -- | Computes the key identifier of an extended public key.
 xPubID :: XPubKey -> Hash160
-xPubID = ripemd160 . encode . sha256 . exportPubKey True . xPubKey
+xPubID = ripemd160 . runPutS . serialize . sha256 . exportPubKey True . xPubKey
 
 -- | Computes the key fingerprint of an extended private key.
 xPrvFP :: XPrvKey -> Fingerprint
 xPrvFP =
-    fromRight err . decode . B.take 4 . encode . xPrvID
+    fromRight err . runGetS deserialize . B.take 4 . runPutS . serialize . xPrvID
   where
     err = error "Could not decode xPrvFP"
 
 -- | Computes the key fingerprint of an extended public key.
 xPubFP :: XPubKey -> Fingerprint
 xPubFP =
-    fromRight err . decode . B.take 4 . encode . xPubID
+    fromRight err . runGetS deserialize . B.take 4 . runPutS . serialize . xPubID
   where
     err = error "Could not decode xPubFP"
 
@@ -363,53 +381,53 @@ xPubCompatWitnessAddr xkey =
 
 -- | Exports an extended private key to the BIP32 key export format ('Base58').
 xPrvExport :: Network -> XPrvKey -> Base58
-xPrvExport net = encodeBase58Check . runPut . putXPrvKey net
+xPrvExport net = encodeBase58Check . runPutS . putXPrvKey net
 
 -- | Exports an extended public key to the BIP32 key export format ('Base58').
 xPubExport :: Network -> XPubKey -> Base58
-xPubExport net = encodeBase58Check . runPut . putXPubKey net
+xPubExport net = encodeBase58Check . runPutS . putXPubKey net
 
 -- | Decodes a BIP32 encoded extended private key. This function will fail if
 -- invalid base 58 characters are detected or if the checksum fails.
 xPrvImport :: Network -> Base58 -> Maybe XPrvKey
-xPrvImport net = eitherToMaybe . runGet (getXPrvKey net) <=< decodeBase58Check
+xPrvImport net = eitherToMaybe . runGetS (getXPrvKey net) <=< decodeBase58Check
 
 -- | Decodes a BIP32 encoded extended public key. This function will fail if
 -- invalid base 58 characters are detected or if the checksum fails.
 xPubImport :: Network -> Base58 -> Maybe XPubKey
-xPubImport net = eitherToMaybe . runGet (getXPubKey net) <=< decodeBase58Check
+xPubImport net = eitherToMaybe . runGetS (getXPubKey net) <=< decodeBase58Check
 
 -- | Export an extended private key to WIF (Wallet Import Format).
 xPrvWif :: Network -> XPrvKey -> Base58
 xPrvWif net xkey = toWif net (wrapSecKey True (xPrvKey xkey))
 
 -- | Parse a binary extended private key.
-getXPrvKey :: Network -> Get XPrvKey
+getXPrvKey :: MonadGet m => Network -> m XPrvKey
 getXPrvKey net = do
     ver <- getWord32be
     unless (ver == getExtSecretPrefix net) $ fail
         "Get: Invalid version for extended private key"
-    S.get
+    deserialize
 
 -- | Serialize an extended private key.
-putXPrvKey :: Network -> Putter XPrvKey
+putXPrvKey :: MonadPut m => Network -> XPrvKey -> m ()
 putXPrvKey net k = do
     putWord32be $ getExtSecretPrefix net
-    put k
+    serialize k
 
 -- | Parse a binary extended public key.
-getXPubKey :: Network -> Get XPubKey
+getXPubKey :: MonadGet m => Network -> m XPubKey
 getXPubKey net = do
     ver <- getWord32be
     unless (ver == getExtPubKeyPrefix net) $ fail
         "Get: Invalid version for extended public key"
-    S.get
+    deserialize
 
 -- | Serialize an extended public key.
-putXPubKey :: Network -> Putter XPubKey
+putXPubKey :: MonadPut m => Network -> XPubKey -> m ()
 putXPubKey net k = do
     putWord32be $ getExtPubKeyPrefix net
-    put k
+    serialize k
 
 {- Derivation helpers -}
 
@@ -580,17 +598,53 @@ instance Ord (DerivPathI t) where
     Deriv `compare` _      = LT
     _     `compare` Deriv  = GT
 
+instance Serial DerivPath where
+    deserialize = listToPath <$> getList getWord32be
+    serialize = putList putWord32be . pathToList
+
 instance Serialize DerivPath where
-    get = listToPath <$> S.get
-    put = put . pathToList
+    put = serialize
+    get = deserialize
+
+instance Binary DerivPath where
+    put = serialize
+    get = deserialize
+
+instance Serial HardPath where
+    deserialize =
+        maybe
+        (fail "Could not decode hard path")
+        return .
+        toHard .
+        listToPath =<<
+        getList getWord32be
+    serialize = putList putWord32be . pathToList
 
 instance Serialize HardPath where
-    get = maybe mzero return . toHard . listToPath =<< S.get
-    put = put . pathToList
+    put = serialize
+    get = deserialize
+
+instance Binary HardPath where
+    put = serialize
+    get = deserialize
+
+instance Serial SoftPath where
+    deserialize =
+        maybe
+        (fail "Could not decode soft path")
+        return .
+        toSoft .
+        listToPath =<<
+        getList getWord32be
+    serialize = putList putWord32be . pathToList
 
 instance Serialize SoftPath where
-    get = maybe mzero return . toSoft . listToPath =<< S.get
-    put = put . pathToList
+    put = serialize
+    get = deserialize
+
+instance Binary SoftPath where
+    put = serialize
+    get = deserialize
 
 -- | Get a list of derivation indices from a derivation path.
 pathToList :: DerivPathI t -> [KeyIndex]
@@ -927,15 +981,18 @@ derivePathMSAddrs keys path =
 {- Utilities for extended keys -}
 
 -- | De-serialize HDW-specific private key.
-getPadPrvKey :: Get SecKey
+getPadPrvKey :: MonadGet m => m SecKey
 getPadPrvKey = do
     pad <- getWord8
     unless (pad == 0x00) $ fail "Private key must be padded with 0x00"
-    S.get
+    bs <- getByteString 32
+    case runGetS S.get bs of
+        Left e  -> fail e
+        Right x -> return x
 
 -- | Serialize HDW-specific private key.
-putPadPrvKey :: Putter SecKey
-putPadPrvKey p = putWord8 0x00 >> S.put p
+putPadPrvKey :: MonadPut m => SecKey -> m ()
+putPadPrvKey p = putWord8 0x00 >> putByteString (runPutS (S.put p))
 
 bsPadPrvKey :: SecKey -> ByteString
-bsPadPrvKey = runPut . putPadPrvKey
+bsPadPrvKey = runPutS . putPadPrvKey

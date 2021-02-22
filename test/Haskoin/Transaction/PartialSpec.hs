@@ -4,14 +4,17 @@ module Haskoin.Transaction.PartialSpec (spec) where
 
 import           Control.Monad.Fail          (MonadFail)
 import           Data.ByteString             (ByteString)
+import           Data.Bytes.Get
+import           Data.Bytes.Put
+import           Data.Bytes.Serial
 import           Data.Either                 (fromRight, isLeft, isRight)
 import           Data.HashMap.Strict         (fromList, singleton)
 import           Data.Maybe                  (fromJust, isJust)
 import           Data.Serialize              as S
 import           Data.Text                   (Text)
-import           Test.Hspec
 import           Test.HUnit                  (Assertion, assertBool,
                                               assertEqual)
+import           Test.Hspec
 import           Test.QuickCheck
 
 import           Haskoin.Address
@@ -150,10 +153,11 @@ decodeHexPSBTM errMsg = either (fail . (errMsg <>) . (": " <>)) return . decodeH
 
 hexScript :: Text -> ByteString
 hexScript =
-    either (error "Could not decode script") encodeScript . S.decode . fromJust . decodeHex
+    either (error "Could not decode script") encodeScript .
+    runGetS deserialize . fromJust . decodeHex
   where
     encodeScript :: Script -> ByteString
-    encodeScript = S.encode
+    encodeScript = runPutS . serialize
 
 invalidVecTest :: Text -> Assertion
 invalidVecTest = assertBool "invalid psbt" . isLeft . decodeHexPSBT
@@ -194,7 +198,12 @@ unfinalizedPkhPSBT net (prvKey, pubKey) = (emptyPSBT currTx)
     currTx = unfinalizedTx (txHash prevTx)
     prevTx = testUtxo [prevOut]
     prevOutScript = addressToScript (pubKeyAddr pubKey)
-    prevOut = TxOut { outValue = 200000000, scriptOutput = S.encode prevOutScript }
+    prevOut =
+        TxOut
+        {
+            outValue = 200000000,
+            scriptOutput = runPutS (serialize prevOutScript)
+        }
     h = txSigHash net currTx prevOutScript (outValue prevOut) 0 sigHashAll
     sig = encodeTxSig $ TxSignature (signHash (secKeyData prvKey) h) sigHashAll
 

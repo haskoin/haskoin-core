@@ -32,23 +32,24 @@ module Haskoin.Util.Arbitrary.Util
 )
 where
 
-import           Control.Monad           (forM_, (<=<))
-import qualified Data.Aeson              as A
-import qualified Data.Aeson.Encoding     as A
-import qualified Data.Aeson.Types        as A
-import           Data.ByteString         (ByteString, pack)
-import qualified Data.ByteString.Short   as BSS
-import qualified Data.Map.Strict         as Map
+import           Control.Monad         (forM_, (<=<))
+import qualified Data.Aeson            as A
+import qualified Data.Aeson.Encoding   as A
+import qualified Data.Aeson.Types      as A
+import           Data.ByteString       (ByteString, pack)
+import qualified Data.ByteString.Short as BSS
+import           Data.Bytes.Get
+import           Data.Bytes.Put
+import           Data.Bytes.Serial
+import qualified Data.Map.Strict       as Map
 import           Data.Proxy
-import qualified Data.Serialize          as S
-import           Data.Time.Clock         (UTCTime (..))
-import           Data.Time.Clock.POSIX   (posixSecondsToUTCTime)
-import qualified Data.Typeable           as T
-import           Data.Word               (Word32)
+import           Data.Time.Clock       (UTCTime (..))
+import           Data.Time.Clock.POSIX (posixSecondsToUTCTime)
+import qualified Data.Typeable         as T
+import           Data.Word             (Word32)
 import           Haskoin.Constants
-import           Test.Hspec              (Spec, describe, shouldBe,
-                                          shouldSatisfy)
-import           Test.Hspec.QuickCheck   (prop)
+import           Test.Hspec            (Spec, describe, shouldBe, shouldSatisfy)
+import           Test.Hspec.QuickCheck (prop)
 import           Test.QuickCheck
 
 -- | Arbitrary strict 'ByteString'.
@@ -94,7 +95,7 @@ arbitraryNetwork = elements allNets
 -- Helpers for creating Serial and JSON Identity tests
 
 data SerialBox =
-    forall a. (Show a, Eq a, T.Typeable a, S.Serialize a) =>
+    forall a. (Show a, Eq a, T.Typeable a, Serial a) =>
               SerialBox (Gen a)
 
 data ReadBox =
@@ -115,7 +116,7 @@ data NetBox =
 
 testIdentity :: [SerialBox] -> [ReadBox] -> [JsonBox] -> [NetBox] -> Spec
 testIdentity serialVals readVals jsonVals netVals = do
-    describe "Data.Serialize Encoding" $
+    describe "Binary Encoding" $
         forM_ serialVals $ \(SerialBox g) -> testSerial g
     describe "Read/Show Encoding" $
         forM_ readVals $ \(ReadBox g) -> testRead g
@@ -124,12 +125,13 @@ testIdentity serialVals readVals jsonVals netVals = do
     describe "Data.Aeson Encoding with Network" $
         forM_ netVals $ \(NetBox (j,e,p,g)) -> testNetJson j e p g
 
--- | Generate Data.Serialize identity tests
+-- | Generate binary identity tests
 testSerial ::
-       (Eq a, Show a, T.Typeable a, S.Serialize a) => Gen a -> Spec
+       (Eq a, Show a, T.Typeable a, Serial a) => Gen a -> Spec
 testSerial gen =
-    prop ("Data.Serialize encoding/decoding identity for " <> name) $
-    forAll gen $ \x -> (S.decode . S.encode) x `shouldBe` Right x
+    prop ("Binary encoding/decoding identity for " <> name) $
+    forAll gen $ \x ->
+    (runGetS deserialize . runPutS . serialize) x `shouldBe` Right x
   where
     name = show $ T.typeRep $ proxy gen
     proxy :: Gen a -> Proxy a

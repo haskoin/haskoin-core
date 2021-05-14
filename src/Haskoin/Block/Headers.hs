@@ -633,8 +633,8 @@ binSearch top net f = runMaybeT $ do
     no_middle a b = nodeHeight b - nodeHeight a <= 1
     is_between a' b' = a' /= GT && b' /= LT
     choose_one a b
-        | top = return b
-        | otherwise = return a
+        | top = return a
+        | otherwise = return b
 
 extremes :: BlockHeaders m => Network -> m (BlockNode, BlockNode)
 extremes net = do

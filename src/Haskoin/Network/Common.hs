@@ -183,7 +183,8 @@ data InvType
     | InvMerkleBlock -- ^ filtered block
     | InvWitnessTx -- ^ segwit transaction
     | InvWitnessBlock -- ^ segwit block
-    | InvWitnessMerkleBlock -- ^ segwit filtere block
+    | InvWitnessMerkleBlock -- ^ segwit filtered block
+    | InvType Word32 -- ^ unknown inv type
     deriving (Eq, Show, Read, Generic, NFData)
 
 instance Serial InvType where
@@ -199,7 +200,7 @@ instance Serial InvType where
                     | x == 1 `shiftL` 30 + 1 -> return InvWitnessTx
                     | x == 1 `shiftL` 30 + 2 -> return InvWitnessBlock
                     | x == 1 `shiftL` 30 + 3 -> return InvWitnessMerkleBlock
-                    | otherwise -> fail "bitcoinGet InvType: Invalid Type"
+                    | otherwise -> return (InvType x)
     serialize x =
         putWord32le $
         case x of
@@ -210,6 +211,7 @@ instance Serial InvType where
             InvWitnessTx          -> 1 `shiftL` 30 + 1
             InvWitnessBlock       -> 1 `shiftL` 30 + 2
             InvWitnessMerkleBlock -> 1 `shiftL` 30 + 3
+            InvType w             -> w
 
 instance Binary InvType where
     get = deserialize

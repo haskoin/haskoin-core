@@ -175,6 +175,7 @@ getMessage net = do
                  MCFilterClear -> return MFilterClear
                  MCMempool     -> return MMempool
                  MCSendHeaders -> return MSendHeaders
+                 MCOther c     -> return (MOther c BS.empty)
                  _             -> fail $ "get: command " ++ show cmd ++
                                          " is expected to carry a payload"
 

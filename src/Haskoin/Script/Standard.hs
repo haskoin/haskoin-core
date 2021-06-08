@@ -20,6 +20,7 @@ module Haskoin.Script.Standard
     , isPayPKHash
     , isPayMulSig
     , isPayScriptHash
+    , isPayWitness
     , isPayWitnessPKHash
     , isPayWitnessScriptHash
     , isDataCarrier
@@ -56,7 +57,7 @@ import           Data.Bytes.Serial
 import           Data.Function          (on)
 import           Data.Hashable
 import           Data.List              (sortBy)
-import           Data.Maybe             (fromJust, isJust, isNothing)
+import           Data.Maybe             (fromJust, isJust)
 import           Data.Word              (Word8)
 import           GHC.Generics           (Generic)
 import           Haskoin.Constants
@@ -189,6 +190,7 @@ witnessVersionOp 13 = Just OP_13
 witnessVersionOp 14 = Just OP_14
 witnessVersionOp 15 = Just OP_15
 witnessVersionOp 16 = Just OP_16
+witnessVersionOp _ = Nothing
 
 opWitnessVersion :: ScriptOp -> Maybe Word8
 opWitnessVersion OP_0  = Just 0

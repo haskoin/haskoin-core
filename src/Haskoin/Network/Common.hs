@@ -493,7 +493,7 @@ instance Serial VarInt where
         go 0xff = getWord64le
         go 0xfe = fromIntegral <$> getWord32le
         go 0xfd = fromIntegral <$> getWord16le
-        go x    = fromIntegral <$> return x
+        go x    = return $ fromIntegral x
 
     serialize (VarInt x)
         | x < 0xfd =

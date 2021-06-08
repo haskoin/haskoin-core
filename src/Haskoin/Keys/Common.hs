@@ -34,7 +34,6 @@ module Haskoin.Keys.Common
     , toWif
     ) where
 
-import           Control.Applicative     ((<|>))
 import           Control.DeepSeq
 import           Control.Monad           (guard, mzero, (<=<))
 import           Crypto.Secp256k1
@@ -80,7 +79,7 @@ instance ToJSON PubKeyI where
 
 instance FromJSON PubKeyI where
     parseJSON = withText "PubKeyI" $
-        maybe mzero return . (eitherToMaybe . runGetS deserialize =<<) . decodeHex
+        maybe mzero return . ((eitherToMaybe . runGetS deserialize) <=< decodeHex)
 
 instance Serial PubKeyI where
     deserialize = s >>= \case

@@ -19,6 +19,7 @@ module Haskoin.Address
       Address(..)
     , isPubKeyAddress
     , isScriptAddress
+    , isWitnessAddress
     , isWitnessPubKeyAddress
     , isWitnessScriptAddress
     , addrToText

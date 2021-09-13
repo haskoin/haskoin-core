@@ -1,4 +1,4 @@
-resolver: lts-17.4
+resolver: lts-18.10
 nix:
   packages:
     - secp256k1

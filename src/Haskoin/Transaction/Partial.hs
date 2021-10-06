@@ -21,6 +21,7 @@ module Haskoin.Transaction.Partial
     , UnknownMap (..)
     , Key (..)
     , merge
+    , mergeMany
     , mergeInput
     , mergeOutput
     , complete
@@ -32,7 +33,7 @@ module Haskoin.Transaction.Partial
 
 import           Control.Applicative        ((<|>))
 import           Control.DeepSeq
-import           Control.Monad              (guard, replicateM, void)
+import           Control.Monad              (guard, replicateM, void, foldM)
 import           Data.ByteString            (ByteString)
 import qualified Data.ByteString            as B
 import           Data.Bytes.Get             (runGetS)
@@ -137,6 +138,13 @@ merge psbt1 psbt2
         }
 merge _ _ = Nothing
 
+-- | A version of 'merge' for a collection of PSBTs.
+--
+-- @since 0.21.0
+mergeMany :: [PartiallySignedTransaction] -> Maybe PartiallySignedTransaction
+mergeMany (psbt : psbts) = foldM merge psbt psbts
+mergeMany _ = Nothing
+
 mergeInput :: Input -> Input -> Input
 mergeInput a b = Input
     { nonWitnessUtxo =
@@ -206,7 +214,19 @@ complete psbt =
     outputScript = eitherToMaybe . decodeOutputBS . scriptOutput
 
     completeInput (Nothing, input)     = input
-    completeInput (Just script, input) = completeSig input script
+    completeInput (Just script, input) = pruneInputFields $ completeSig input script
+
+    -- If we have final scripts, we can get rid of data for signing following
+    -- the Bitcoin Core implementation.
+    pruneInputFields input
+        | isJust (finalScriptSig input) || isJust (finalScriptWitness input) =
+            input { partialSigs = mempty
+                  , inputHDKeypaths = mempty
+                  , inputRedeemScript = Nothing
+                  , inputWitnessScript = Nothing
+                  , sigHashType = Nothing
+                  }
+        | otherwise = input
 
     indexed :: [a] -> [(Word32, a)]
     indexed = zip [0..]
@@ -236,34 +256,31 @@ completeSig input (PayPKHash h)
 
 completeSig input (PayMulSig pubKeys m)
     | length sigs >= m =
-          input { finalScriptSig = finalSig }
+          input { finalScriptSig = Just finalSig }
   where
     sigs = collectSigs m pubKeys input
-    finalSig =
-        Script .
-        (OP_0 :) .
-        (map opPushData sigs <>) .
-        pure . opPushData . runPutS . serialize <$>
-        inputRedeemScript input
+    finalSig = Script $ OP_0 : map opPushData sigs
 
 completeSig input (PayScriptHash h)
     | Just rdmScript <- inputRedeemScript input
     , PayScriptHash h == toP2SH rdmScript
     , Right decodedScript <- decodeOutput rdmScript
     , not (isPayScriptHash decodedScript) =
-            completeSig input decodedScript
+        pushScript rdmScript $ completeSig input decodedScript
+  where
+    pushScript rdmScript updatedInput =
+        updatedInput
+            { finalScriptSig = Just $
+                fromMaybe (Script mempty) (finalScriptSig updatedInput)
+                    `scriptAppend` serializedRedeemScript rdmScript
+            }
+    scriptAppend (Script script1) (Script script2) = Script $ script1 <> script2
 
 completeSig input (PayWitnessPKHash h)
     | [(k, sig)] <- HashMap.toList (partialSigs input)
     , PubKeyAddress h == pubKeyAddr k =
-            input
-            {
-                finalScriptWitness =
-                    Just [sig, runPutS $ serialize k],
-                finalScriptSig =
-                    Script . pure . opPushData . runPutS . serialize <$>
-                    inputRedeemScript input
-            }
+        input {finalScriptWitness = Just [sig, runPutS $ serialize k]}
+
 completeSig input (PayWitnessScriptHash h)
     | Just witScript <- inputWitnessScript input
     , PayWitnessScriptHash h == toP2WSH witScript
@@ -272,18 +289,15 @@ completeSig input (PayWitnessScriptHash h)
 
 completeSig input _ = input
 
+serializedRedeemScript :: Script -> Script
+serializedRedeemScript = Script . pure . opPushData . runPutS . serialize
+
 completeWitnessSig :: Input -> ScriptOutput -> Input
 completeWitnessSig input script@(PayMulSig pubKeys m)
     | length sigs >= m =
-          input
-          {
-              finalScriptWitness = Just finalWit,
-              finalScriptSig = finalSig
-          }
+          input {finalScriptWitness = Just finalWit}
   where
     sigs = collectSigs m pubKeys input
-    finalSig = Script . pure . opPushData . runPutS . serialize <$>
-               inputRedeemScript input
     finalWit = mempty : sigs <> [encodeOutputBS script]
 
 completeWitnessSig input _ = input
@@ -317,19 +331,10 @@ finalTransaction psbt =
             txWitness = if hasWitness then reverse witData else []
         }
     finalizeInput (ins, witData) (txInput, psbtInput) =
-        maybe finalWitness finalScript $
-        finalScriptSig psbtInput
-      where
-        finalScript script =
-            (
-                txInput { scriptInput = runPutS $ serialize script } : ins,
-                [] : witData
-            )
-        finalWitness =
-            (
-                ins,
-                fromMaybe [] (finalScriptWitness psbtInput) : witData
-            )
+        (
+            txInput { scriptInput = maybe mempty (runPutS . serialize) $ finalScriptSig psbtInput } : ins,
+            fromMaybe [] (finalScriptWitness psbtInput) : witData
+        )
 
 -- | Take an unsigned transaction and produce an empty
 -- 'PartiallySignedTransaction'
@@ -476,7 +481,7 @@ instance Serialize Input where
         putHDPath InBIP32Derivation inputHDKeypaths
         whenJust (putKeyValue InFinalScriptSig . serialize)
             finalScriptSig
-        whenJust (putKeyValue InFinalScriptWitness . serialize)
+        whenJust (putKeyValue InFinalScriptWitness . putFinalScriptWitness)
             finalScriptWitness
         S.put inputUnknown
         S.putWord8 0x00
@@ -487,6 +492,9 @@ instance Serialize Input where
             putKey InSigHashType
             S.putWord8 0x04
             S.putWord32le (fromIntegral sigHash)
+        putFinalScriptWitness witnessStack = do
+            S.put $ (VarInt . fromIntegral . length) witnessStack
+            mapM_ (serialize . VarString) witnessStack
 
 instance Serialize Output where
     get = getMap getOutputItem setOutputUnknown emptyOutput
@@ -630,8 +638,8 @@ getInputItem 0 input@Input{finalScriptWitness = Nothing} InFinalScriptWitness = 
     scripts <- map getVarString <$> getVarIntList
     return $ input { finalScriptWitness = Just scripts }
   where
-    getVarIntList = do
-        VarInt n <- deserialize
+    getVarIntList = getSizedBytes $ do
+        VarInt n <- deserialize -- Item count
         replicateM (fromIntegral n) deserialize
 
 getInputItem keySize input inputType = fail $

@@ -1,5 +1,5 @@
 name: haskoin-core
-version: 0.20.5
+version: 0.21.0
 synopsis: Bitcoin & Bitcoin Cash library for Haskell
 description: Please see the README on GitHub at <https://github.com/haskoin/haskoin-core#readme>
 category: Bitcoin, Finance, Network
@@ -63,6 +63,7 @@ tests:
       build-tool-depends:
           hspec-discover:hspec-discover
     dependencies:
+      - base64 ^>= 0.4
       - haskoin-core
       - hspec >= 2.7.1
       - HUnit >= 1.6.0.0

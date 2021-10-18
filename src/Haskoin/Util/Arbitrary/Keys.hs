@@ -8,12 +8,14 @@ Portability : POSIX
 -}
 module Haskoin.Util.Arbitrary.Keys where
 
-import           Data.Bits             (clearBit)
-import           Data.List             (foldl')
-import           Data.Word             (Word32)
+import           Data.Bits                      (clearBit)
+import           Data.Coerce                    (coerce)
+import           Data.List                      (foldl')
+import           Data.Word                      (Word32)
 import           Haskoin.Crypto
 import           Haskoin.Keys.Common
 import           Haskoin.Keys.Extended
+import           Haskoin.Keys.Extended.Internal (Fingerprint (..))
 import           Haskoin.Util.Arbitrary.Crypto
 import           Test.QuickCheck
 
@@ -27,11 +29,14 @@ arbitraryKeyPair = do
     k <- arbitrarySecKeyI
     return (k, derivePubKeyI k)
 
+arbitraryFingerprint :: Gen Fingerprint
+arbitraryFingerprint = Fingerprint <$> arbitrary
+
 -- | Arbitrary extended private key.
 arbitraryXPrvKey :: Gen XPrvKey
 arbitraryXPrvKey =
     XPrvKey <$> arbitrary
-            <*> arbitrary
+            <*> arbitraryFingerprint
             <*> arbitrary
             <*> arbitraryHash256
             <*> arbitrary

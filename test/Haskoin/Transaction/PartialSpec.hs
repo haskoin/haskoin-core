@@ -106,6 +106,7 @@ vec4Test = do
 vec5Test :: Assertion
 vec5Test = do
     psbt <- decodeHexPSBTM "Cannot parse validVec5" validVec5Hex
+    print psbt
     assertEqual "Correctly decode PSBT" expectedPsbt psbt
     let input = head $ inputs psbt
 
@@ -165,12 +166,12 @@ vec5Test = do
                            , inputHDKeypaths = fromList [ ( PubKeyI { pubKeyPoint = "03b1341ccba7683b6af4f1238cd6e97e7167d569fac47f1e48d47541844355bd46"
                                                                     , pubKeyCompressed = True
                                                                     }
-                                                          , (3030825575,[hardIndex 0,hardIndex 0,hardIndex 4])
+                                                          , ("b4a6ba67",[hardIndex 0,hardIndex 0,hardIndex 4])
                                                           )
                                                         , ( PubKeyI { pubKeyPoint = "03de55d1e1dac805e3f8a58c1fbf9b94c02f3dbaafe127fefca4995f26f82083bd"
                                                                     , pubKeyCompressed = True
                                                                     }
-                                                          , (3030825575,[hardIndex 0, hardIndex 0, hardIndex 5])
+                                                          , ("b4a6ba67",[hardIndex 0, hardIndex 0, hardIndex 5])
                                                           )
                                                         ]
                            , finalScriptSig = Nothing
@@ -187,7 +188,6 @@ vec5Test = do
         }
     hardIndex = (+ 2^31)
 
-
 vec6Test :: Assertion
 vec6Test = do
     psbt <- decodeHexPSBTM "Cannot parse validVec6" validVec6Hex
@@ -202,7 +202,6 @@ vec6Test = do
     expectedUnknowns = UnknownMap $ singleton
         (Key 0x0f (fromJust $ decodeHex "010203040506070809"))
         (fromJust $ decodeHex "0102030405060708090a0b0c0d0e0f")
-
 
 expectedOut :: ScriptOutput
 expectedOut = fromRight (error "could not decode expected output")

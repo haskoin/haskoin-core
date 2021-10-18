@@ -679,7 +679,7 @@ instance Serialize PSBTHDPath where
         PSBTHDPath <$>
             S.isolate
                 (fromIntegral valueSize)
-                ((,) <$> S.getWord32be <*> getKeyIndexList numIndices)
+                ((,) <$> S.get <*> getKeyIndexList numIndices)
       where
         getKeyIndexList n = replicateM n S.getWord32le
 
@@ -687,7 +687,7 @@ instance Serialize PSBTHDPath where
         putVarInt (B.length bs)
         S.putByteString bs
       where
-        bs = S.runPut $ S.putWord32be fp >> mapM_ S.putWord32le kis
+        bs = S.runPut $ S.put fp >> mapM_ S.putWord32le kis
 
 putPubKeyMap :: Enum t => (a -> Put) -> t -> HashMap PubKeyI a -> Put
 putPubKeyMap f t =

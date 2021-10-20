@@ -74,7 +74,7 @@ customCerealID :: Eq a => Get a -> Putter a -> a -> Bool
 customCerealID g p a = runGet g (runPut (p a)) == Right a
 
 readTestFile :: A.FromJSON a => FilePath -> IO a
-readTestFile fp = do
-    fileM <- A.decodeFileStrict $ "data/" <> fp
-    maybe (error $ "Could not read test file " <> fp) return fileM
-
+readTestFile fp =
+    A.eitherDecodeFileStrict ("data/" <> fp) >>= either (error . message) return
+  where
+    message aesonErr = "Could not read test file " <> fp <> ": " <> aesonErr

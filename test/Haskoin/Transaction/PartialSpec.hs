@@ -2,7 +2,6 @@
 
 module Haskoin.Transaction.PartialSpec (spec) where
 
-import           Control.Monad.Fail          (MonadFail)
 import           Data.ByteString             (ByteString)
 import           Data.Bytes.Get
 import           Data.Bytes.Put
@@ -17,15 +16,22 @@ import           Test.HUnit                  (Assertion, assertBool,
 import           Test.Hspec
 import           Test.QuickCheck
 
+import           Control.Monad               ((<=<))
+import           Data.Aeson                  (FromJSON, parseJSON, withObject,
+                                              (.:))
+import           Data.Bifunctor              (first)
+import           Data.ByteString.Base64      (decodeBase64)
+import qualified Data.Text                   as Text
+import           Data.Text.Encoding          (encodeUtf8)
 import           Haskoin.Address
 import           Haskoin.Constants
 import           Haskoin.Crypto
 import           Haskoin.Keys
 import           Haskoin.Script
 import           Haskoin.Transaction
-import           Haskoin.Transaction.Partial
 import           Haskoin.Util
 import           Haskoin.Util.Arbitrary
+import           Haskoin.UtilSpec            (readTestFile)
 
 spec :: Spec
 spec = describe "partially signed bitcoin transaction unit tests" $ do
@@ -50,6 +56,10 @@ spec = describe "partially signed bitcoin transaction unit tests" $ do
         forAll arbitraryKeyPair $ verifyNonWitnessPSBT btc . unfinalizedPkhPSBT btc
     it "signed and finalized multisig PSBTs verify" $ property $
         forAll arbitraryMultiSig $ verifyNonWitnessPSBT btc . unfinalizedMsPSBT btc
+    it "encodes and decodes psbt with final witness script" $
+        (fmap (encodeHex . S.encode) . decodeHexPSBT) validVec7Hex == Right validVec7Hex
+    it "handles complex psbts correctly" complexPsbtTest
+
 
 vec2Test :: Assertion
 vec2Test = do
@@ -202,6 +212,26 @@ vec6Test = do
     expectedUnknowns = UnknownMap $ singleton
         (Key 0x0f (fromJust $ decodeHex "010203040506070809"))
         (fromJust $ decodeHex "0102030405060708090a0b0c0d0e0f")
+
+complexPsbtTest :: Assertion
+complexPsbtTest = do
+    complexPsbtData <- readTestFile "complex_psbt.json"
+
+    let computedCombinedPsbt = mergeMany $ complexSignedPsbts complexPsbtData
+        expectedCombinedPsbt = stripRedundantUtxos $ complexCombinedPsbt complexPsbtData
+    assertEqual "combined psbt" computedCombinedPsbt (Just expectedCombinedPsbt)
+
+    let computedCompletePsbt = complete $ complexCombinedPsbt complexPsbtData
+        expectedCompletePsbt = complexCompletePsbt complexPsbtData
+    assertEqual "complete psbt" computedCompletePsbt expectedCompletePsbt
+
+    let computedFinalTx = finalTransaction $ complexCompletePsbt complexPsbtData
+    assertEqual "final tx" computedFinalTx (complexFinalTx complexPsbtData)
+  where
+    stripRedundantUtxos psbt = psbt { inputs = stripRedundantUtxo <$> inputs psbt }
+    stripRedundantUtxo input
+        | Just{} <- witnessUtxo input = input { nonWitnessUtxo = Nothing }
+        | otherwise = input
 
 expectedOut :: ScriptOutput
 expectedOut = fromRight (error "could not decode expected output")
@@ -408,3 +438,40 @@ validVec5Hex = "70736274ff0100550200000001279a2323a5dfb51fc45f220fa58b0fc13e1e33
 
 validVec6Hex :: Text
 validVec6Hex = "70736274ff01003f0200000001ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000ffffffff010000000000000000036a010000000000000a0f0102030405060708090f0102030405060708090a0b0c0d0e0f0000"
+
+-- Example of a PSBT with a `finalWitnessScript`
+validVec7Hex :: Text
+validVec7Hex = "70736274ff0100520200000001815dd29e16fd2f567a040ce24f5337fb9cfd0c05bacd8890714a33edc7cbbc920000000000ffffffff0192f1052a01000000160014ef9ade26f63015d57f4ecdb268d1a9b8d6cd8872000000000001008402000000010000000000000000000000000000000000000000000000000000000000000000ffffffff03510101ffffffff0200f2052a010000001600145f4ffa19dbbe464561c50fc4d8d8ac0b41009dd20000000000000000266a24aa21a9ede2f61c3f71d1defd3fa999dfa36953755c690689799962b48bebd836974e8cf90000000001011f00f2052a010000001600145f4ffa19dbbe464561c50fc4d8d8ac0b41009dd201086b02473044022026a9f7afdb0128970bb3577e536ec3d3dc10c1e82650d11c9da1df9003b31d0202202258b11f962f12e0897c642cd6f38a0181db17197f3693a530c9431eb44dde7d0121033dc786e9628bb6c41c08fceb9b37458ad7a95e7e6b04e0bde45b6879398c3ac100220203a6affb58dda998a4ffdce652feb91038fdfc78c748ae687372e11292af8d312d101c4c5bfc00000080000000800100008000"
+
+data ComplexPsbtData = ComplexPsbtData
+    { complexSignedPsbts  :: [ PartiallySignedTransaction ]
+    , complexCombinedPsbt :: PartiallySignedTransaction
+    , complexCompletePsbt :: PartiallySignedTransaction
+    , complexFinalTx      :: Tx
+    }
+    deriving (Eq, Show)
+
+instance FromJSON ComplexPsbtData where
+    parseJSON = withObject "ComplexPsbtData" $ \obj -> do
+        ComplexPsbtData
+          <$> sequence
+                [ psbtField "miner_psbt" obj
+                , psbtField "p2pkh_psbt" obj
+                , psbtField "p2sh_ms_1_psbt" obj
+                , psbtField "p2sh_ms_2_psbt" obj
+                , psbtField "p2sh_pk_psbt" obj
+                , psbtField "p2sh_wsh_pk_psbt" obj
+                , psbtField "p2sh_wsh_ms_1_psbt" obj
+                , psbtField "p2sh_wsh_ms_2_psbt" obj
+                , psbtField "p2wpkh_psbt" obj
+                , psbtField "p2wsh_pk_psbt" obj
+                , psbtField "p2wsh_ms_1_psbt" obj
+                , psbtField "p2wsh_ms_2_psbt" obj
+                ]
+          <*> psbtField "combined_psbt" obj
+          <*> psbtField "complete_psbt" obj
+          <*> (obj .: "final_tx" >>= parseTx)
+      where
+        parseTx = either fail pure . (S.decode <=< maybe (Left "hex") Right . decodeHex)
+        parsePsbt = either fail  pure . (S.decode <=< first Text.unpack . decodeBase64) . encodeUtf8
+        psbtField fieldName obj = obj .: fieldName >>= parsePsbt

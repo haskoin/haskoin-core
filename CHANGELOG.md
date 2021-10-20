@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Use a newtype for Fingerprint, which uses an 8 digit hex string for IsString,
   Read, & Show.  This fixes inconsistent (de)serialization across the package.
 
+### Fixed
+- Makes `finalScriptWitness` field encoding conform to bitcoin core.
+- Fixes bug in `finalizeTransaction`
+
+### Added
+- Helper function for merging PSBTs
+- Another PSBT test
+
 ## 0.20.5
 ### Added
 - Support Bech32m address format for Taproot.

@@ -50,6 +50,11 @@ dependencies:
   - vector >= 0.12.1.2
 library:
   source-dirs: src
+  other-modules:
+    Haskoin.Keys.Extended.Internal
+  when:
+    - condition: false
+      other-modules: Paths_haskoin_core
 tests:
   spec:
     main: Spec.hs

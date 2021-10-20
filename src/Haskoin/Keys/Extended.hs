@@ -103,40 +103,42 @@ module Haskoin.Keys.Extended
 
 import           Control.Applicative
 import           Control.DeepSeq
-import           Control.Exception       (Exception, throw)
-import           Control.Monad           (guard, mzero, unless, (<=<))
+import           Control.Exception              (Exception, throw)
+import           Control.Monad                  (guard, mzero, unless, (<=<))
 import           Crypto.Secp256k1
-import           Data.Aeson              as A (FromJSON, ToJSON (..),
-                                               Value (String), parseJSON,
-                                               toJSON, withText)
-import           Data.Aeson.Encoding     (Encoding, text)
-import           Data.Aeson.Types        (Parser)
-import           Data.Binary             (Binary (get, put))
-import           Data.Bits               (clearBit, setBit, testBit)
-import           Data.ByteString         (ByteString)
-import qualified Data.ByteString         as B
+import           Data.Aeson                     as A (FromJSON, ToJSON (..),
+                                                      Value (String), parseJSON,
+                                                      toJSON, withText)
+import           Data.Aeson.Encoding            (Encoding, text)
+import           Data.Aeson.Types               (Parser)
+import           Data.Binary                    (Binary (get, put))
+import           Data.Bits                      (clearBit, setBit, testBit)
+import           Data.ByteString                (ByteString)
+import qualified Data.ByteString                as B
 import           Data.Bytes.Get
 import           Data.Bytes.Put
 import           Data.Bytes.Serial
-import           Data.Either             (fromRight)
+import           Data.Either                    (fromRight)
 import           Data.Hashable
-import           Data.List               (foldl')
-import           Data.List.Split         (splitOn)
-import           Data.Maybe              (fromMaybe)
-import           Data.Serialize          (Serialize (..))
-import qualified Data.Serialize          as S
-import           Data.String             (IsString, fromString)
-import           Data.String.Conversions (cs)
-import           Data.Typeable           (Typeable)
-import           Data.Word               (Word32, Word8)
-import           GHC.Generics            (Generic)
+import           Data.List                      (foldl')
+import           Data.List.Split                (splitOn)
+import           Data.Maybe                     (fromMaybe)
+import           Data.Serialize                 (Serialize (..))
+import qualified Data.Serialize                 as S
+import           Data.String                    (IsString, fromString)
+import           Data.String.Conversions        (cs)
+import qualified Data.Text                      as Text
+import           Data.Typeable                  (Typeable)
+import           Data.Word                      (Word32, Word8)
+import           GHC.Generics                   (Generic)
 import           Haskoin.Address
 import           Haskoin.Constants
 import           Haskoin.Crypto.Hash
 import           Haskoin.Keys.Common
+import           Haskoin.Keys.Extended.Internal (Fingerprint (..))
 import           Haskoin.Script
 import           Haskoin.Util
-import           Text.Read               as R
+import           Text.Read                      as R
 import           Text.Read.Lex
 
 
@@ -153,9 +155,6 @@ type ChainCode = Hash256
 -- | Index of key as specified in BIP-32.
 type KeyIndex = Word32
 
--- | Fingerprint of parent
-type Fingerprint = Word32
-
 -- | Data type representing an extended BIP32 private key. An extended key
 -- is a node in a tree of key derivations. It has a depth in the tree, a
 -- parent node and an index to differentiate it from other siblings.
@@ -170,13 +169,13 @@ data XPrvKey = XPrvKey
 instance Serial XPrvKey where
     serialize k = do
         putWord8 $ xPrvDepth k
-        putWord32be $ xPrvParent k
+        serialize $ xPrvParent k
         putWord32be $ xPrvIndex k
         serialize $ xPrvChain k
         putPadPrvKey $ xPrvKey k
     deserialize =
         XPrvKey <$> getWord8
-                <*> getWord32be
+                <*> deserialize
                 <*> getWord32be
                 <*> deserialize
                 <*> getPadPrvKey
@@ -215,13 +214,13 @@ data XPubKey = XPubKey
 instance Serial XPubKey where
     serialize k = do
         putWord8 $ xPubDepth k
-        putWord32be $ xPubParent k
+        serialize $ xPubParent k
         putWord32be $ xPubIndex k
         serialize $ xPubChain k
         serialize $ wrapPubKey True (xPubKey k)
     deserialize =
         XPubKey <$> getWord8
-                <*> getWord32be
+                <*> deserialize
                 <*> getWord32be
                 <*> deserialize
                 <*> (pubKeyPoint <$> deserialize)
@@ -253,7 +252,7 @@ xPubToEncoding net = text . xPubExport net
 -- produce a root node (@depth=0@ and @parent=0@).
 makeXPrvKey :: ByteString -> XPrvKey
 makeXPrvKey bs =
-    XPrvKey 0 0 0 c k
+    XPrvKey 0 (Fingerprint 0) 0 c k
   where
     (p, c) = split512 $ hmac512 "Bitcoin seed" bs
     k     = fromMaybe err (secKey (runPutS (serialize p)))

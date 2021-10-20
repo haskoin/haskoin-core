@@ -106,10 +106,9 @@ vec4Test = do
 vec5Test :: Assertion
 vec5Test = do
     psbt <- decodeHexPSBTM "Cannot parse validVec5" validVec5Hex
-    assertEqual "1 input" 1 (length $ inputs psbt)
-    assertEqual "1 output" 1 (length $ outputs psbt)
+    print psbt
+    assertEqual "Correctly decode PSBT" expectedPsbt psbt
     let input = head $ inputs psbt
-    assertEqual "input not final script sig" Nothing (finalScriptSig input)
 
     let rdmScript = fromJust $ inputRedeemScript input
     assertBool "p2wsh" $ (isPayWitnessScriptHash <$> decodeOutput rdmScript) == Right True
@@ -121,6 +120,73 @@ vec5Test = do
   where
     expectedOut2 = fromRight (error "could not decode expected output")
                 . decodeOutputBS . fromJust $ decodeHex "a9146345200f68d189e1adc0df1c4d16ea8f14c0dbeb87"
+    -- From the bitcoind decodepsbt rpc call
+    expectedPsbt = PartiallySignedTransaction
+        { unsignedTransaction = Tx { txVersion = 2
+                                   , txIn = [ TxIn { prevOutput =
+                                                         OutPoint { outPointHash = "39bc5c3b33d66ce3d7852a7942331e3ec10f8ba50f225fc41fb5dfa523239a27"
+                                                                  , outPointIndex = 0
+                                                                  }
+                                                   , scriptInput = ""
+                                                   , txInSequence = 4294967295
+                                                   }
+                                            ]
+                                   , txOut = [ TxOut { outValue = 199908000
+                                                     , scriptOutput = (fromJust . decodeHex) "76a914ffe9c0061097cc3b636f2cb0460fa4fc427d2b4588ac"
+                                                     }
+                                             ]
+                                   , txWitness = mempty
+                                   , txLockTime = 0
+                                   }
+        , globalUnknown = mempty
+        , inputs = [ Input { nonWitnessUtxo = Nothing
+                           , witnessUtxo = Just (TxOut { outValue = 199909013
+                                                       , scriptOutput = (fromJust . decodeHex) "a9146345200f68d189e1adc0df1c4d16ea8f14c0dbeb87"
+                                                       }
+                                                )
+                           , partialSigs = fromList [(PubKeyI { pubKeyPoint = "03b1341ccba7683b6af4f1238cd6e97e7167d569fac47f1e48d47541844355bd46"
+                                                              , pubKeyCompressed = True
+                                                              }
+                                                     , (fromJust . decodeHex) "304302200424b58effaaa694e1559ea5c93bbfd4a89064224055cdf070b6771469442d07021f5c8eb0fea6516d60b8acb33ad64ede60e8785bfb3aa94b99bdf86151db9a9a01"
+                                                     )
+                                                    ]
+                           , sigHashType = Nothing
+                           , inputRedeemScript =
+                                 Just
+                                    . fromRight (error "vec5Test: Could not decode redeem script")
+                                    . decode
+                                    . fromJust
+                                    $ decodeHex "0020771fd18ad459666dd49f3d564e3dbc42f4c84774e360ada16816a8ed488d5681"
+                           , inputWitnessScript =
+                                 Just
+                                    . fromRight (error "vec5Test: Could not decode witness script")
+                                    . decode
+                                    . fromJust
+                                    $ decodeHex "522103b1341ccba7683b6af4f1238cd6e97e7167d569fac47f1e48d47541844355bd462103de55d1e1dac805e3f8a58c1fbf9b94c02f3dbaafe127fefca4995f26f82083bd52ae"
+                           , inputHDKeypaths = fromList [ ( PubKeyI { pubKeyPoint = "03b1341ccba7683b6af4f1238cd6e97e7167d569fac47f1e48d47541844355bd46"
+                                                                    , pubKeyCompressed = True
+                                                                    }
+                                                          , ("b4a6ba67",[hardIndex 0,hardIndex 0,hardIndex 4])
+                                                          )
+                                                        , ( PubKeyI { pubKeyPoint = "03de55d1e1dac805e3f8a58c1fbf9b94c02f3dbaafe127fefca4995f26f82083bd"
+                                                                    , pubKeyCompressed = True
+                                                                    }
+                                                          , ("b4a6ba67",[hardIndex 0, hardIndex 0, hardIndex 5])
+                                                          )
+                                                        ]
+                           , finalScriptSig = Nothing
+                           , finalScriptWitness = Nothing
+                           , inputUnknown = mempty
+                           }
+                   ]
+        , outputs = [ Output { outputRedeemScript = Nothing
+                             , outputWitnessScript = Nothing
+                             , outputHDKeypaths = mempty
+                             , outputUnknown = mempty
+                             }
+                    ]
+        }
+    hardIndex = (+ 2^31)
 
 vec6Test :: Assertion
 vec6Test = do

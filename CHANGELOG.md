@@ -6,8 +6,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## 0.21.0
 ### Changed
-- Use a newtype for Fingerprint, which uses an 8 digit hex string for IsString,
-  Read, & Show.  This fixes inconsistent (de)serialization across the package.
+- Use a newtype for Fingerprint, which uses an 8 digit hex string for various
+  instances.  This fixes inconsistent (de)serialization across the package.
 
 ### Fixed
 - Makes `finalScriptWitness` field encoding conform to bitcoin core.

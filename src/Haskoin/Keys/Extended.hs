@@ -21,6 +21,8 @@ module Haskoin.Keys.Extended
     , ChainCode
     , KeyIndex
     , Fingerprint
+    , fingerprintToText
+    , textToFingerprint
     , DerivationException(..)
     , makeXPrvKey
     , deriveXPubKey
@@ -135,7 +137,9 @@ import           Haskoin.Address
 import           Haskoin.Constants
 import           Haskoin.Crypto.Hash
 import           Haskoin.Keys.Common
-import           Haskoin.Keys.Extended.Internal (Fingerprint (..))
+import           Haskoin.Keys.Extended.Internal (Fingerprint (..),
+                                                 fingerprintToText,
+                                                 textToFingerprint)
 import           Haskoin.Script
 import           Haskoin.Util
 import           Text.Read                      as R

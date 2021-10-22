@@ -3,10 +3,15 @@
 {-# LANGUAGE TypeApplications           #-}
 
 module Haskoin.Keys.Extended.Internal (
-    Fingerprint (..)
+    Fingerprint (..),
+    fingerprintToText,
+    textToFingerprint,
 ) where
 
 import           Control.DeepSeq   (NFData)
+import           Control.Monad     ((>=>))
+import           Data.Aeson        (FromJSON, ToJSON, parseJSON, toJSON,
+                                    withText)
 import           Data.Binary       (Binary (..))
 import           Data.Bytes.Get    (getWord32be)
 import           Data.Bytes.Put    (putWord32be)
@@ -17,16 +22,23 @@ import           Data.Maybe        (fromMaybe)
 import           Data.Serialize    (Serialize (..))
 import qualified Data.Serialize    as S
 import           Data.String       (IsString (..))
+import           Data.Text         (Text)
 import qualified Data.Text         as Text
 import           Data.Typeable     (Typeable)
 import           Data.Word         (Word32)
 import           GHC.Generics      (Generic)
 import           Haskoin.Util      (decodeHex, encodeHex)
-import           Text.Read         (readPrec)
+import           Text.Read         (readEither, readPrec)
 
 -- | Fingerprint of parent
 newtype Fingerprint = Fingerprint { unFingerprint :: Word32 }
     deriving (Eq, Ord, Hashable, Typeable, Generic, NFData)
+
+fingerprintToText :: Fingerprint -> Text
+fingerprintToText = encodeHex . S.encode
+
+textToFingerprint :: Text -> Either String Fingerprint
+textToFingerprint = maybe (Left "Fingerprint: invalid hex") Right . decodeHex >=> S.decode
 
 instance Show Fingerprint where
     show = show . Text.unpack . encodeHex . S.encode
@@ -58,3 +70,9 @@ instance Binary Fingerprint where
 instance Serialize Fingerprint where
     put = serialize
     get = deserialize
+
+instance FromJSON Fingerprint where
+    parseJSON = withText "Fingerprint" $ either fail pure . textToFingerprint
+
+instance ToJSON Fingerprint where
+    toJSON = toJSON . fingerprintToText

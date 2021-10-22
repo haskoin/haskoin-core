@@ -1,39 +1,11 @@
 #!/usr/bin/env bash
 
-# Use Bitcoin Core 22.0 to create a complex PSBT test vector
+. ./scripts/lib.sh
 
-if ! command -v bitcoind &> /dev/null; then
-    echo "Please install bitcoind"
-    exit 1
-fi
+start_bitcoind
 
-if ! command -v jq &> /dev/null; then
-    echo "Please install jq"
-    exit 1
-fi
-
-datadir=$(mktemp -d "/tmp/bitcoind-regtest-XXXXXX")
-
-btc () {
-    bitcoin-cli -regtest -datadir=$datadir "$@"
-}
-
-bitcoind -regtest -datadir=$datadir -fallbackfee=0.0001000 -daemon
-
-while ! btc getblockchaininfo &> /dev/null; do
-    echo "Waiting for bitcoind"
-    sleep 5
-done
-
-passphrase="password"
-
-create_wallet () {
-    btc -named createwallet wallet_name=$1 passphrase=$passphrase &> /dev/null
-    btc -rpcwallet=$1 walletpassphrase $passphrase 3600
-}
-
-get_address () {
-    btc -rpcwallet="miner" getnewaddress
+sign_psbt () {
+    btc -rpcwallet=$1 -named walletprocesspsbt "psbt=$2" sign=true | jq -r .psbt
 }
 
 get_priv_key () {
@@ -41,34 +13,9 @@ get_priv_key () {
     btc -rpcwallet="miner" dumpprivkey $address
 }
 
-get_public_descriptor () {
-    btc getdescriptorinfo $1 | jq -r .descriptor
-}
-
-get_descriptor_address () {
-    btc deriveaddresses $1 | jq -r ".[0]"
-}
-
 get_canonical_descriptor () {
     checksum=$(btc getdescriptorinfo "$1" | jq -r .checksum)
     echo -n "$1#$checksum"
-}
-
-import_privkey () {
-    btc -rpcwallet=$1 importprivkey $2
-}
-
-import_descriptor () {
-    request=$(jq --null-input --arg "desc" $2 '[ { desc: $desc, timestamp: "now" } ]')
-    btc -rpcwallet=$1 importmulti "$request"
-}
-
-generate_blocks () {
-    btc generatetoaddress $1 $(btc -rpcwallet="miner" getnewaddress) &> /dev/null
-}
-
-sign_psbt () {
-    btc -rpcwallet=$1 -named walletprocesspsbt "psbt=$2" sign=true | jq -r .psbt
 }
 
 create_wallet "miner"
@@ -369,5 +316,4 @@ add_summary_field "final_tx" $final_tx
 echo $summary_entries | jq '. | from_entries' > /tmp/psbt_vectors.json
 echo "Done."
 
-btc stop
-rm -r $datadir
+stop_bitcoind

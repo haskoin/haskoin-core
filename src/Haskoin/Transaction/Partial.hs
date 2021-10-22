@@ -29,38 +29,59 @@ module Haskoin.Transaction.Partial
     , emptyPSBT
     , emptyInput
     , emptyOutput
+
+    -- ** Signing
+    , PsbtSigner
+    , getSignerKey
+    , secKeySigner
+    , xPrvSigner
+    , signPSBT
     ) where
 
-import           Control.Applicative        ((<|>))
+import           Control.Applicative         ((<|>))
 import           Control.DeepSeq
-import           Control.Monad              (guard, replicateM, void, foldM)
-import           Data.ByteString            (ByteString)
-import qualified Data.ByteString            as B
-import           Data.Bytes.Get             (runGetS)
-import           Data.Bytes.Put             (runPutS)
-import           Data.Bytes.Serial          (Serial (..))
-import           Data.HashMap.Strict        (HashMap)
-import qualified Data.HashMap.Strict        as HashMap
-import           Data.Hashable              (Hashable)
-import           Data.List                  (foldl')
-import           Data.Maybe                 (fromMaybe, isJust)
-import           Data.Serialize             (Get, Put, Serialize)
-import qualified Data.Serialize             as S
-import           GHC.Generics               (Generic)
-import           GHC.Word                   (Word32, Word8)
-import           Haskoin.Address            (Address (..), pubKeyAddr)
-import           Haskoin.Keys               (Fingerprint, KeyIndex, PubKeyI)
-import           Haskoin.Network            (VarInt (..), VarString (..),
-                                             putVarInt)
-import           Haskoin.Script             (Script (..), ScriptOp (..),
-                                             ScriptOutput (..), SigHash,
-                                             decodeOutput, decodeOutputBS,
-                                             encodeOutputBS, isPayScriptHash,
-                                             opPushData, toP2SH, toP2WSH)
-import           Haskoin.Transaction.Common (Tx (..), TxOut, WitnessStack,
-                                             outPointIndex, prevOutput,
-                                             scriptInput, scriptOutput)
-import           Haskoin.Util               (eitherToMaybe)
+import           Control.Monad               (foldM, guard, replicateM, void)
+import           Data.ByteString             (ByteString)
+import qualified Data.ByteString             as B
+import           Data.Bytes.Get              (runGetS)
+import           Data.Bytes.Put              (runPutS)
+import           Data.Bytes.Serial           (Serial (..))
+import           Data.Either                 (fromRight)
+import           Data.HashMap.Strict         (HashMap)
+import qualified Data.HashMap.Strict         as HM
+import qualified Data.HashMap.Strict         as HashMap
+import           Data.Hashable               (Hashable)
+import           Data.List                   (foldl')
+import           Data.Maybe                  (fromMaybe, isJust)
+import           Data.Serialize              (Get, Put, Serialize)
+import qualified Data.Serialize              as S
+import           GHC.Generics                (Generic)
+import           GHC.Word                    (Word32, Word8)
+import           Haskoin.Address             (Address (..), pubKeyAddr)
+import           Haskoin.Constants           (Network)
+import           Haskoin.Crypto              (SecKey, derivePubKey)
+import           Haskoin.Keys                (DerivPath, DerivPathI (Deriv),
+                                              Fingerprint, KeyIndex, PubKeyI,
+                                              SecKeyI (SecKeyI), XPrvKey,
+                                              derivePath, deriveXPubKey,
+                                              listToPath, pathToList,
+                                              pubKeyCompressed, pubKeyPoint,
+                                              xPrvKey, xPubFP)
+import           Haskoin.Network             (VarInt (..), VarString (..),
+                                              putVarInt)
+import           Haskoin.Script              (Script (..), ScriptOp (..),
+                                              ScriptOutput (..), SigHash,
+                                              decodeOutput, decodeOutputBS,
+                                              encodeOutputBS, encodeTxSig,
+                                              isPayScriptHash, opPushData,
+                                              sigHashAll, toP2SH, toP2WSH)
+import           Haskoin.Transaction.Builder (SigInput (..), makeSignature)
+import           Haskoin.Transaction.Common  (Tx (..), TxOut, WitnessStack,
+                                              outPointIndex, outValue,
+                                              prevOutput, scriptInput,
+                                              scriptOutput)
+import           Haskoin.Transaction.Segwit  (isSegwit)
+import           Haskoin.Util                (eitherToMaybe)
 
 -- | PSBT data type as specified in
 -- [BIP-174](https://github.com/bitcoin/bips/blob/master/bip-0174.mediawiki).
@@ -143,7 +164,7 @@ merge _ _ = Nothing
 -- @since 0.21.0
 mergeMany :: [PartiallySignedTransaction] -> Maybe PartiallySignedTransaction
 mergeMany (psbt : psbts) = foldM merge psbt psbts
-mergeMany _ = Nothing
+mergeMany _              = Nothing
 
 mergeInput :: Input -> Input -> Input
 mergeInput a b = Input
@@ -184,6 +205,151 @@ mergeOutput a b = Output
     , outputUnknown =
             outputUnknown a <> outputUnknown b
     }
+
+-- | A abstraction which covers varying key configurations.  Use the 'Semigroup'
+-- instance to create signers for sets of keys: `signerA <> signerB` can sign
+-- anything for which `signerA` or `signerB` could sign.
+--
+-- @since 0.21@
+newtype PsbtSigner = PsbtSigner
+    { unPsbtSigner ::
+        PubKeyI ->
+        Maybe (Fingerprint, DerivPath) ->
+        Maybe SecKey
+    }
+
+instance Semigroup PsbtSigner where
+    PsbtSigner signer1 <> PsbtSigner signer2 =
+        PsbtSigner $ \pubKey origin ->
+            signer1 pubKey origin <|> signer2 pubKey origin
+
+instance Monoid PsbtSigner where
+    mempty = PsbtSigner $ \_ _ -> Nothing
+
+-- | Fetch the secret key for the given 'PubKeyI' if possible.
+--
+-- @since 0.21@
+getSignerKey :: PsbtSigner -> PubKeyI -> Maybe (Fingerprint, DerivPath) -> Maybe SecKey
+getSignerKey = unPsbtSigner
+
+-- | This signer can sign for one key.
+--
+-- @since 0.21@
+secKeySigner :: SecKey -> PsbtSigner
+secKeySigner theSecKey = PsbtSigner signer
+  where
+    signer requiredKey _
+        | pubKeyPoint requiredKey == derivePubKey theSecKey = Just theSecKey
+        | otherwise = Nothing
+
+-- | This signer can sign with any child key, provided that derivation information is present.
+--
+-- @since 0.21@
+xPrvSigner ::
+    XPrvKey ->
+    -- | Origin data, if the input key is explicitly a child key
+    Maybe (Fingerprint, DerivPath) ->
+    PsbtSigner
+xPrvSigner xprv origin = PsbtSigner signer
+  where
+    signer pubKey (Just hdData)
+        | result@(Just theSecKey) <- maybe noOrigin onOrigin origin hdData
+        , pubKeyPoint pubKey == derivePubKey theSecKey = result
+    signer _ _ = Nothing
+
+    noOrigin (fp, path)
+        | thisFP == fp = Just $ deriveSecKey path
+        | otherwise = Nothing
+
+    onOrigin (originFP, originPath) (fp, path)
+        | thisFP == fp = Just $ deriveSecKey path
+        | originFP == fp =
+            deriveSecKey <$> adjustPath (pathToList originPath) (pathToList path)
+        | otherwise = Nothing
+
+    deriveSecKey path = xPrvKey $ derivePath path xprv
+
+    thisFP = xPubFP $ deriveXPubKey xprv
+
+    -- The origin path should be a prefix of the target path if we match the
+    -- origin fingerprint.  We need to remove this prefix.
+    adjustPath :: [KeyIndex] -> [KeyIndex] -> Maybe DerivPath
+    adjustPath (originIx : originTail) (thisIx : thisTail)
+        | originIx == thisIx = adjustPath originTail thisTail
+        | otherwise = Nothing
+    adjustPath [] thePath = Just $ listToPath thePath
+    adjustPath _ _ = Nothing
+
+-- | Update a PSBT with signatures when possible.  This function uses
+-- 'inputHDKeypaths' in order to calculate secret keys.
+--
+-- @since 0.21@
+signPSBT ::
+    Network ->
+    PsbtSigner ->
+    PartiallySignedTransaction ->
+    PartiallySignedTransaction
+signPSBT net signer psbt =
+    psbt
+        { inputs = addSigsForInput net signer tx <$> zip [0 :: Int ..] (inputs psbt)
+        }
+  where
+    tx = unsignedTransaction psbt
+
+addSigsForInput :: Network -> PsbtSigner -> Tx -> (Int, Input) -> Input
+addSigsForInput net signer tx (ix, input) =
+    maybe input (onPrevTxOut net signer tx ix input) $
+        (Left <$> nonWitnessUtxo input) <|> (Right <$> witnessUtxo input)
+
+onPrevTxOut ::
+    Network ->
+    PsbtSigner ->
+    Tx ->
+    Int ->
+    Input ->
+    Either Tx TxOut ->
+    Input
+onPrevTxOut net signer tx ix input prevTxData =
+    input
+        { partialSigs = newSigs <> partialSigs input
+        }
+  where
+    newSigs = HM.mapWithKey sigForInput sigKeys
+    sigForInput thePubKey theSecKey =
+        encodeTxSig . makeSignature net tx ix theSigInput $
+            SecKeyI theSecKey (pubKeyCompressed thePubKey)
+
+    theSigInput =
+        SigInput
+            { -- Must be the segwit input script for segwit spends (even nested)
+              sigInputScript = fromMaybe theInputScript segwitInput
+            , sigInputValue = outValue prevTxOut
+            , sigInputOP = thePrevOutPoint
+            , sigInputSH = fromMaybe sigHashAll $ sigHashType input
+            , -- Must be the witness script for segwit spends (even nested)
+              sigInputRedeem = theWitnessScript <|> theRedeemScript
+            }
+
+    prevTxOut = either ((!! (fromIntegral . outPointIndex) thePrevOutPoint) . txOut) id prevTxData
+    thePrevOutPoint = prevOutput $ txIn tx !! ix
+
+    segwitInput = justWhen isSegwit theInputScript <|> (justWhen isSegwit =<< theRedeemScript)
+
+    theInputScript = fromRight inputScriptErr $ (decodeOutputBS . scriptOutput) prevTxOut
+    inputScriptErr = error "addSigsForInput: Unable to decode input script"
+
+    theRedeemScript = case decodeOutput <$> inputRedeemScript input of
+        Just (Right script) -> Just script
+        Just Left{} -> error "addSigsForInput: Unable to decode redeem script"
+        _ -> Nothing
+
+    theWitnessScript = case decodeOutput <$> inputWitnessScript input of
+        Just (Right script) -> Just script
+        Just Left{} -> error "addSigsForInput: Unable to decode witness script"
+        _ -> Nothing
+
+    sigKeys = HM.mapMaybeWithKey getSignerKey $ inputHDKeypaths input
+    getSignerKey pubKey (fp, ixs) = unPsbtSigner signer pubKey $ Just (fp, listToPath ixs)
 
 -- | Take partial signatures from all of the 'Input's and finalize the signature.
 complete :: PartiallySignedTransaction
@@ -714,3 +880,6 @@ word8Enum n = Left n
 
 whenJust :: Monad m => (a -> m ()) -> Maybe a -> m ()
 whenJust = maybe (return ())
+
+justWhen :: (a -> Bool) -> a -> Maybe a
+justWhen test x = if test x then Just x else Nothing

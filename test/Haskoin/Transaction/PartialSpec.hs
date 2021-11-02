@@ -2,27 +2,25 @@
 
 module Haskoin.Transaction.PartialSpec (spec) where
 
-import           Data.ByteString             (ByteString)
+import           Data.ByteString        (ByteString)
 import           Data.Bytes.Get
 import           Data.Bytes.Put
 import           Data.Bytes.Serial
-import           Data.Either                 (fromRight, isLeft, isRight)
-import           Data.HashMap.Strict         (fromList, singleton)
-import           Data.Maybe                  (fromJust, isJust)
-import           Data.Serialize              as S
-import           Data.Text                   (Text)
-import           Test.HUnit                  (Assertion, assertBool,
-                                              assertEqual)
+import           Data.Either            (fromRight, isLeft, isRight)
+import           Data.HashMap.Strict    (fromList, singleton)
+import           Data.Maybe             (fromJust, isJust)
+import           Data.Serialize         as S
+import           Data.Text              (Text)
+import           Test.HUnit             (Assertion, assertBool, assertEqual)
 import           Test.Hspec
 import           Test.QuickCheck
 
-import           Control.Monad               ((<=<))
-import           Data.Aeson                  (FromJSON, parseJSON, withObject,
-                                              (.:))
-import           Data.Bifunctor              (first)
-import           Data.ByteString.Base64      (decodeBase64)
-import qualified Data.Text                   as Text
-import           Data.Text.Encoding          (encodeUtf8)
+import           Control.Monad          ((<=<))
+import           Data.Aeson             (FromJSON, parseJSON, withObject, (.:))
+import           Data.Bifunctor         (first)
+import           Data.ByteString.Base64 (decodeBase64)
+import qualified Data.Text              as Text
+import           Data.Text.Encoding     (encodeUtf8)
 import           Haskoin.Address
 import           Haskoin.Constants
 import           Haskoin.Crypto
@@ -31,7 +29,7 @@ import           Haskoin.Script
 import           Haskoin.Transaction
 import           Haskoin.Util
 import           Haskoin.Util.Arbitrary
-import           Haskoin.UtilSpec            (readTestFile)
+import           Haskoin.UtilSpec       (readTestFile)
 
 spec :: Spec
 spec = describe "partially signed bitcoin transaction unit tests" $ do
@@ -59,7 +57,7 @@ spec = describe "partially signed bitcoin transaction unit tests" $ do
     it "encodes and decodes psbt with final witness script" $
         (fmap (encodeHex . S.encode) . decodeHexPSBT) validVec7Hex == Right validVec7Hex
     it "handles complex psbts correctly" complexPsbtTest
-
+    it "calculates keys properly" psbtSignerTest
 
 vec2Test :: Assertion
 vec2Test = do
@@ -116,7 +114,6 @@ vec4Test = do
 vec5Test :: Assertion
 vec5Test = do
     psbt <- decodeHexPSBTM "Cannot parse validVec5" validVec5Hex
-    print psbt
     assertEqual "Correctly decode PSBT" expectedPsbt psbt
     let input = head $ inputs psbt
 
@@ -232,6 +229,38 @@ complexPsbtTest = do
     stripRedundantUtxo input
         | Just{} <- witnessUtxo input = input { nonWitnessUtxo = Nothing }
         | otherwise = input
+
+psbtSignerTest :: Assertion
+psbtSignerTest = do
+    assertEqual "recover explicit secret key" (Just theSecKey) (getSignerKey signer thePubKey Nothing)
+    assertEqual
+        "recover key for origin path"
+        (Just originPathSecKey)
+        (getSignerKey signer originPathPubKey (Just (rootFP, originKeyPath)))
+    assertEqual
+        "recover key for direct path"
+        (Just directPathSecKey)
+        (getSignerKey signer directPathPubKey (Just (keyFP, directPath)))
+  where
+    signer = secKeySigner theSecKey <> xPrvSigner xprv (Just origin)
+
+    Just theSecKey = secKey "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    thePubKey = PubKeyI { pubKeyPoint = derivePubKey theSecKey, pubKeyCompressed = True }
+
+    rootXPrv = makeXPrvKey "psbtSignerTest"
+    rootFP = xPubFP $ deriveXPubKey rootXPrv
+    xprv = derivePath keyPath rootXPrv
+    keyFP = xPubFP $ deriveXPubKey xprv
+    keyPath = Deriv :| 444
+    origin = (rootFP, keyPath)
+
+    originKeyPath = Deriv :| 444 :/ 0
+    originPathSecKey = xPrvKey $ derivePath originKeyPath rootXPrv
+    originPathPubKey = PubKeyI { pubKeyPoint = derivePubKey originPathSecKey, pubKeyCompressed = True }
+
+    directPath = Deriv :/ 1
+    directPathSecKey = xPrvKey $ derivePath directPath xprv
+    directPathPubKey = PubKeyI { pubKeyPoint = derivePubKey directPathSecKey, pubKeyCompressed = True }
 
 expectedOut :: ScriptOutput
 expectedOut = fromRight (error "could not decode expected output")

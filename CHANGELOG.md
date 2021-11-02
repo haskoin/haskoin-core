@@ -14,8 +14,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Fixes bug in `finalizeTransaction`
 
 ### Added
+- Signing support for PSBTs
 - Helper function for merging PSBTs
-- Another PSBT test
+- More PSBT tests
 
 ## 0.20.5
 ### Added

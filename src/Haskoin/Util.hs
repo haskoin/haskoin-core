@@ -1,7 +1,8 @@
-{-# LANGUAGE CPP                   #-}
-{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-|
+
+{- |
 Module      : Haskoin.Util
 Copyright   : No rights reserved
 License     : MIT
@@ -11,75 +12,84 @@ Portability : POSIX
 
 This module defines various utility functions used across the library.
 -}
-module Haskoin.Util
-    (
-      -- * ByteString Helpers
-      bsToInteger
-    , integerToBS
-    , hexBuilder
-    , encodeHex
-    , encodeHexLazy
-    , decodeHex
-    , decodeHexLazy
-    , getBits
+module Haskoin.Util (
+    -- * ByteString Helpers
+    bsToInteger,
+    integerToBS,
+    hexBuilder,
+    encodeHex,
+    encodeHexLazy,
+    decodeHex,
+    decodeHexLazy,
+    getBits,
 
-      -- * Maybe & Either Helpers
-    , eitherToMaybe
-    , maybeToEither
-    , liftEither
-    , liftMaybe
+    -- * Maybe & Either Helpers
+    eitherToMaybe,
+    maybeToEither,
+    liftEither,
+    liftMaybe,
 
-      -- * Other Helpers
-    , updateIndex
-    , matchTemplate
-    , convertBits
+    -- * Other Helpers
+    updateIndex,
+    matchTemplate,
+    convertBits,
 
-      -- * Triples
-    , fst3
-    , snd3
-    , lst3
+    -- * Triples
+    fst3,
+    snd3,
+    lst3,
 
-      -- * JSON Utilities
-    , dropFieldLabel
-    , dropSumLabels
+    -- * JSON Utilities
+    dropFieldLabel,
+    dropSumLabels,
 
-      -- * Serialization Helpers
-    , putList, getList
-    , putMaybe, getMaybe
-    , putLengthBytes, getLengthBytes
-    , putInteger, getInteger
-    , putInt32be, getInt32be
-    , putInt64be, getInt64be
-    , getIntMap, putIntMap
-    , getTwo, putTwo
+    -- * Serialization Helpers
+    putList,
+    getList,
+    putMaybe,
+    getMaybe,
+    putLengthBytes,
+    getLengthBytes,
+    putInteger,
+    getInteger,
+    putInt32be,
+    getInt32be,
+    putInt64be,
+    getInt64be,
+    getIntMap,
+    putIntMap,
+    getTwo,
+    putTwo,
+) where
 
-    ) where
-
-import           Control.Monad
-import           Control.Monad.Except        (ExceptT (..), liftEither)
-import           Data.Aeson.Types            (Options (..), SumEncoding (..),
-                                              defaultOptions,
-                                              defaultTaggedObject)
-import           Data.Bits
-import           Data.ByteString             (ByteString)
-import qualified Data.ByteString             as BS
-import qualified Data.ByteString.Base16      as B16
-import           Data.ByteString.Builder
-import qualified Data.ByteString.Lazy        as BL
+import Control.Monad
+import Control.Monad.Except (ExceptT (..), liftEither)
+import Data.Aeson.Types (
+    Options (..),
+    SumEncoding (..),
+    defaultOptions,
+    defaultTaggedObject,
+ )
+import Data.Bits
+import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Base16 as B16
+import Data.ByteString.Builder
+import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Base16 as BL16
-import           Data.Bytes.Get
-import           Data.Bytes.Put
-import           Data.Bytes.Serial
-import           Data.Char                   (toLower)
-import           Data.Int
-import           Data.IntMap                 (IntMap)
-import qualified Data.IntMap                 as IntMap
-import           Data.List
-import           Data.Text                   (Text)
-import qualified Data.Text.Encoding          as E
-import qualified Data.Text.Lazy              as TL
-import qualified Data.Text.Lazy.Encoding     as EL
-import           Data.Word
+import Data.Bytes.Get
+import Data.Bytes.Put
+import Data.Bytes.Serial
+import Data.Char (toLower)
+import Data.Int
+import Data.IntMap (IntMap)
+import qualified Data.IntMap as IntMap
+import Data.List
+import Data.Text (Text)
+import qualified Data.Text.Encoding as E
+import qualified Data.Text.Lazy as TL
+import qualified Data.Text.Lazy.Encoding as EL
+import Data.Word
 
 -- ByteString helpers
 
@@ -93,7 +103,7 @@ bsToInteger = BS.foldr f 0 . BS.reverse
 integerToBS :: Integer -> ByteString
 integerToBS 0 = BS.pack [0]
 integerToBS i
-    | i > 0     = BS.reverse $ BS.unfoldr f i
+    | i > 0 = BS.reverse $ BS.unfoldr f i
     | otherwise = error "integerToBS not defined for negative values"
   where
     f 0 = Nothing
@@ -116,9 +126,10 @@ decodeHex = eitherToMaybe . B16.decodeBase16 . E.encodeUtf8
 decodeHexLazy :: TL.Text -> Maybe BL.ByteString
 decodeHexLazy = eitherToMaybe . BL16.decodeBase16 . EL.encodeUtf8
 
--- | Obtain 'Int' bits from beginning of 'ByteString'. Resulting 'ByteString'
--- will be smallest required to hold that many bits, padded with zeroes to the
--- right.
+{- | Obtain 'Int' bits from beginning of 'ByteString'. Resulting 'ByteString'
+ will be smallest required to hold that many bits, padded with zeroes to the
+ right.
+-}
 getBits :: Int -> ByteString -> ByteString
 getBits b bs
     | r == 0 = BS.take q bs
@@ -131,14 +142,16 @@ getBits b bs
 
 -- Maybe and Either monad helpers
 
--- | Transform an 'Either' value into a 'Maybe' value. 'Right' is mapped to
--- 'Just' and 'Left' is mapped to 'Nothing'. The value inside 'Left' is lost.
+{- | Transform an 'Either' value into a 'Maybe' value. 'Right' is mapped to
+ 'Just' and 'Left' is mapped to 'Nothing'. The value inside 'Left' is lost.
+-}
 eitherToMaybe :: Either a b -> Maybe b
 eitherToMaybe (Right b) = Just b
-eitherToMaybe _         = Nothing
+eitherToMaybe _ = Nothing
 
--- | Transform a 'Maybe' value into an 'Either' value. 'Just' is mapped to
--- 'Right' and 'Nothing' is mapped to 'Left'. Default 'Left' required.
+{- | Transform a 'Maybe' value into an 'Either' value. 'Just' is mapped to
+ 'Right' and 'Nothing' is mapped to 'Left'. Default 'Left' required.
+-}
 maybeToEither :: b -> Maybe a -> Either b a
 maybeToEither err = maybe (Left err) Right
 
@@ -148,62 +161,77 @@ liftMaybe err = liftEither . maybeToEither err
 
 -- Various helpers
 
--- | Applies a function to only one element of a list defined by its index.  If
--- the index is out of the bounds of the list, the original list is returned.
-updateIndex :: Int      -- ^ index of the element to change
-            -> [a]      -- ^ list of elements
-            -> (a -> a) -- ^ function to apply
-            -> [a]      -- ^ result with one element changed
+{- | Applies a function to only one element of a list defined by its index.  If
+ the index is out of the bounds of the list, the original list is returned.
+-}
+updateIndex ::
+    -- | index of the element to change
+    Int ->
+    -- | list of elements
+    [a] ->
+    -- | function to apply
+    (a -> a) ->
+    -- | result with one element changed
+    [a]
 updateIndex i xs f
     | i < 0 || i >= length xs = xs
     | otherwise = l ++ (f h : r)
   where
-    (l,h:r) = splitAt i xs
+    (l, h : r) = splitAt i xs
 
--- | Use the list @[b]@ as a template and try to match the elements of @[a]@
--- against it. For each element of @[b]@ return the (first) matching element of
--- @[a]@, or 'Nothing'. Output list has same size as @[b]@ and contains results
--- in same order. Elements of @[a]@ can only appear once.
-matchTemplate :: [a]              -- ^ input list
-              -> [b]              -- ^ list to serve as a template
-              -> (a -> b -> Bool) -- ^ comparison function
-              -> [Maybe a]
+{- | Use the list @[b]@ as a template and try to match the elements of @[a]@
+ against it. For each element of @[b]@ return the (first) matching element of
+ @[a]@, or 'Nothing'. Output list has same size as @[b]@ and contains results
+ in same order. Elements of @[a]@ can only appear once.
+-}
+matchTemplate ::
+    -- | input list
+    [a] ->
+    -- | list to serve as a template
+    [b] ->
+    -- | comparison function
+    (a -> b -> Bool) ->
+    [Maybe a]
 matchTemplate [] bs _ = replicate (length bs) Nothing
-matchTemplate _  [] _ = []
-matchTemplate as (b:bs) f = case break (`f` b) as of
-    (l,r:rs) -> Just r  : matchTemplate (l ++ rs) bs f
-    _        -> Nothing : matchTemplate as bs f
+matchTemplate _ [] _ = []
+matchTemplate as (b : bs) f = case break (`f` b) as of
+    (l, r : rs) -> Just r : matchTemplate (l ++ rs) bs f
+    _ -> Nothing : matchTemplate as bs f
 
 -- | Returns the first value of a triple.
-fst3 :: (a,b,c) -> a
-fst3 (a,_,_) = a
+fst3 :: (a, b, c) -> a
+fst3 (a, _, _) = a
 
 -- | Returns the second value of a triple.
-snd3 :: (a,b,c) -> b
-snd3 (_,b,_) = b
+snd3 :: (a, b, c) -> b
+snd3 (_, b, _) = b
 
 -- | Returns the last value of a triple.
-lst3 :: (a,b,c) -> c
-lst3 (_,_,c) = c
+lst3 :: (a, b, c) -> c
+lst3 (_, _, c) = c
 
 -- | Field label goes lowercase and first @n@ characters get removed.
 dropFieldLabel :: Int -> Options
-dropFieldLabel n = defaultOptions
-    { fieldLabelModifier = map toLower . drop n
-    }
+dropFieldLabel n =
+    defaultOptions
+        { fieldLabelModifier = map toLower . drop n
+        }
 
--- | Transformation from 'dropFieldLabel' is applied with argument @f@, plus
--- constructor tags are lowercased and first @c@ characters removed. @tag@ is
--- used as the name of the object field name that will hold the transformed
--- constructor tag as its value.
+{- | Transformation from 'dropFieldLabel' is applied with argument @f@, plus
+ constructor tags are lowercased and first @c@ characters removed. @tag@ is
+ used as the name of the object field name that will hold the transformed
+ constructor tag as its value.
+-}
 dropSumLabels :: Int -> Int -> String -> Options
-dropSumLabels c f tag = (dropFieldLabel f)
-    { constructorTagModifier = map toLower . drop c
-    , sumEncoding = defaultTaggedObject { tagFieldName = tag }
-    }
+dropSumLabels c f tag =
+    (dropFieldLabel f)
+        { constructorTagModifier = map toLower . drop c
+        , sumEncoding = defaultTaggedObject{tagFieldName = tag}
+        }
 
--- | Convert from one power-of-two base to another, as long as it fits in a
--- 'Word'.
+{- | Convert from one power-of-two base to another, as long as it fits in a
+ 'Word'.
+-}
 convertBits :: Bool -> Int -> Int -> [Word] -> ([Word], Bool)
 convertBits pad frombits tobits i = (reverse yout, rem')
   where
@@ -211,7 +239,7 @@ convertBits pad frombits tobits i = (reverse yout, rem')
     (yout, rem')
         | pad && xbits /= 0 =
             let xout' = (xacc `shiftL` (tobits - xbits)) .&. maxv : xout
-            in (xout', False)
+             in (xout', False)
         | pad = (xout, False)
         | xbits /= 0 = (xout, True)
         | otherwise = (xout, False)
@@ -221,12 +249,12 @@ convertBits pad frombits tobits i = (reverse yout, rem')
         let acc' = ((acc `shiftL` frombits) .|. it) .&. max_acc
             bits' = bits + frombits
             (out', bits'') = inner acc' out bits'
-        in (acc', bits'', out')
+         in (acc', bits'', out')
     inner acc out bits
         | bits >= tobits =
             let bits' = bits - tobits
                 out' = ((acc `shiftR` bits') .&. maxv) : out
-            in inner acc out' bits'
+             in inner acc out' bits'
         | otherwise = (out, bits)
 
 --
@@ -260,14 +288,14 @@ getInt64be = do
 putInteger :: MonadPut m => Integer -> m ()
 putInteger n
     | n >= lo && n <= hi = do
-          putWord8 0x00
-          putInt32be (fromIntegral n)
+        putWord8 0x00
+        putInt32be (fromIntegral n)
     | otherwise = do
-          putWord8 0x01
-          putWord8 (fromIntegral (signum n))
-          let len = (nrBits (abs n) + 7) `div` 8
-          putWord64be (fromIntegral len)
-          mapM_ putWord8 (unroll (abs n))
+        putWord8 0x01
+        putWord8 (fromIntegral (signum n))
+        let len = (nrBits (abs n) + 7) `div` 8
+        putWord64be (fromIntegral len)
+        mapM_ putWord8 (unroll (abs n))
   where
     lo = fromIntegral (minBound :: Int32)
     hi = fromIntegral (maxBound :: Int32)
@@ -275,23 +303,23 @@ putInteger n
 getInteger :: MonadGet m => m Integer
 getInteger =
     getWord8 >>= \case
-    0 -> fromIntegral <$> getInt32be
-    _ -> do
-        sign  <- getWord8
-        bytes <- getList getWord8
-        let v = roll bytes
-        return $! if sign == 0x01 then v else - v
+        0 -> fromIntegral <$> getInt32be
+        _ -> do
+            sign <- getWord8
+            bytes <- getList getWord8
+            let v = roll bytes
+            return $! if sign == 0x01 then v else -v
 
 putMaybe :: MonadPut m => (a -> m ()) -> Maybe a -> m ()
-putMaybe f Nothing  = putWord8 0x00
+putMaybe f Nothing = putWord8 0x00
 putMaybe f (Just x) = putWord8 0x01 >> f x
 
 getMaybe :: MonadGet m => m a -> m (Maybe a)
 getMaybe f =
     getWord8 >>= \case
-    0x00 -> return Nothing
-    0x01 -> Just <$> f
-    _    -> fail "Not a Maybe"
+        0x00 -> return Nothing
+        0x01 -> Just <$> f
+        _ -> fail "Not a Maybe"
 
 putLengthBytes :: MonadPut m => ByteString -> m ()
 putLengthBytes bs = do
@@ -313,7 +341,7 @@ unroll = unfoldr step
     step i = Just (fromIntegral i, i `shiftR` 8)
 
 roll :: (Integral a, Bits a) => [Word8] -> a
-roll   = foldr unstep 0
+roll = foldr unstep 0
   where
     unstep b a = a `shiftL` 8 .|. fromIntegral b
 
@@ -324,9 +352,10 @@ nrBits k =
         findNr lo hi
             | mid == lo = hi
             | 2 ^ mid <= k = findNr mid hi
-            | 2 ^ mid > k  = findNr lo mid
-         where mid = (lo + hi) `div` 2
-    in findNr (expMax `div` 2) expMax
+            | 2 ^ mid > k = findNr lo mid
+          where
+            mid = (lo + hi) `div` 2
+     in findNr (expMax `div` 2) expMax
 
 -- | Read as a list of pairs of int and element.
 getIntMap :: MonadGet m => m Int -> m a -> m (IntMap a)

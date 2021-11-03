@@ -1,4 +1,4 @@
-{-|
+{- |
 Module      : Haskoin.Test.Crypto
 Copyright   : No rights reserved
 License     : MIT
@@ -8,9 +8,9 @@ Portability : POSIX
 -}
 module Haskoin.Util.Arbitrary.Crypto where
 
-import           Haskoin.Crypto.Hash
-import           Haskoin.Util.Arbitrary.Util
-import           Test.QuickCheck
+import Haskoin.Crypto.Hash
+import Haskoin.Util.Arbitrary.Util
+import Test.QuickCheck
 
 -- | Arbitrary 160-bit hash.
 arbitraryHash160 :: Gen Hash160

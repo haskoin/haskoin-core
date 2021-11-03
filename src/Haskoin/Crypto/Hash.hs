@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric  #-}
-{-|
+{-# LANGUAGE DeriveGeneric #-}
+
+{- |
 Module      : Haskoin.Crypto.Hash
 Copyright   : No rights reserved
 License     : MIT
@@ -11,53 +12,59 @@ Portability : POSIX
 Hashing functions and corresponding data types. Uses functions from the
 cryptonite library.
 -}
-module Haskoin.Crypto.Hash
-    ( -- * Hashes
-      Hash512(getHash512)
-    , Hash256(getHash256)
-    , Hash160(getHash160)
-    , CheckSum32(getCheckSum32)
-    , sha512
-    , sha256
-    , ripemd160
-    , sha1
-    , doubleSHA256
-    , addressHash
-    , checkSum32
-    , hmac512
-    , hmac256
-    , split512
-    , join512
-    ) where
+module Haskoin.Crypto.Hash (
+    -- * Hashes
+    Hash512 (getHash512),
+    Hash256 (getHash256),
+    Hash160 (getHash160),
+    CheckSum32 (getCheckSum32),
+    sha512,
+    sha256,
+    ripemd160,
+    sha1,
+    doubleSHA256,
+    addressHash,
+    checkSum32,
+    hmac512,
+    hmac256,
+    split512,
+    join512,
+) where
 
-import           Control.DeepSeq
-import           Crypto.Hash             (RIPEMD160 (..), SHA1 (..),
-                                          SHA256 (..), SHA512 (..), hashWith)
-import           Crypto.MAC.HMAC         (HMAC, hmac)
-import           Data.Binary             (Binary (..))
-import           Data.ByteArray          (ByteArrayAccess)
-import qualified Data.ByteArray          as BA
-import           Data.ByteString         (ByteString)
-import qualified Data.ByteString         as BS
-import           Data.ByteString.Short   (ShortByteString)
-import qualified Data.ByteString.Short   as BSS
-import qualified Data.Bytes.Get          as Get
-import qualified Data.Bytes.Put          as Put
-import           Data.Bytes.Serial       (Serial (..))
-import           Data.Either             (fromRight)
-import           Data.Hashable           (Hashable)
-import           Data.Serialize          (Serialize (..))
-import           Data.String             (IsString, fromString)
-import           Data.String.Conversions (cs)
-import           Data.Word               (Word32)
-import           GHC.Generics            (Generic)
-import           Haskoin.Util
-import           Text.Read               as R
+import Control.DeepSeq
+import Crypto.Hash (
+    RIPEMD160 (..),
+    SHA1 (..),
+    SHA256 (..),
+    SHA512 (..),
+    hashWith,
+ )
+import Crypto.MAC.HMAC (HMAC, hmac)
+import Data.Binary (Binary (..))
+import Data.ByteArray (ByteArrayAccess)
+import qualified Data.ByteArray as BA
+import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
+import Data.ByteString.Short (ShortByteString)
+import qualified Data.ByteString.Short as BSS
+import qualified Data.Bytes.Get as Get
+import qualified Data.Bytes.Put as Put
+import Data.Bytes.Serial (Serial (..))
+import Data.Either (fromRight)
+import Data.Hashable (Hashable)
+import Data.Serialize (Serialize (..))
+import Data.String (IsString, fromString)
+import Data.String.Conversions (cs)
+import Data.Word (Word32)
+import GHC.Generics (Generic)
+import Haskoin.Util
+import Text.Read as R
 
 -- | 'Word32' wrapped for type-safe 32-bit checksums.
 newtype CheckSum32 = CheckSum32
     { getCheckSum32 :: Word32
-    } deriving (Eq, Ord, Serial, Show, Read, Hashable, Generic, NFData)
+    }
+    deriving (Eq, Ord, Serial, Show, Read, Hashable, Generic, NFData)
 
 instance Serialize CheckSum32 where
     put = serialize
@@ -68,15 +75,15 @@ instance Binary CheckSum32 where
     get = deserialize
 
 -- | Type for 512-bit hashes.
-newtype Hash512 = Hash512 { getHash512 :: ShortByteString }
+newtype Hash512 = Hash512 {getHash512 :: ShortByteString}
     deriving (Eq, Ord, Hashable, Generic, NFData)
 
 -- | Type for 256-bit hashes.
-newtype Hash256 = Hash256 { getHash256 :: ShortByteString }
+newtype Hash256 = Hash256 {getHash256 :: ShortByteString}
     deriving (Eq, Ord, Hashable, Generic, NFData)
 
 -- | Type for 160-bit hashes.
-newtype Hash160 = Hash160 { getHash160 :: ShortByteString }
+newtype Hash160 = Hash160 {getHash160 :: ShortByteString}
     deriving (Eq, Ord, Hashable, Generic, NFData)
 
 instance Show Hash512 where
@@ -110,7 +117,7 @@ instance IsString Hash512 where
             Just bs ->
                 case BS.length bs of
                     64 -> Hash512 (BSS.toShort bs)
-                    _  -> e
+                    _ -> e
       where
         e = error "Could not decode hash from hex string"
 
@@ -133,7 +140,7 @@ instance IsString Hash256 where
             Just bs ->
                 case BS.length bs of
                     32 -> Hash256 (BSS.toShort bs)
-                    _  -> e
+                    _ -> e
       where
         e = error "Could not decode hash from hex string"
 
@@ -156,7 +163,7 @@ instance IsString Hash160 where
             Just bs ->
                 case BS.length bs of
                     20 -> Hash160 (BSS.toShort bs)
-                    _  -> e
+                    _ -> e
       where
         e = error "Could not decode hash from hex string"
 
@@ -202,12 +209,13 @@ addressHash =
 
 -- | Computes a 32 bit checksum.
 checkSum32 :: ByteArrayAccess b => b -> CheckSum32
-checkSum32 = fromRight (error "Could not decode bytes as CheckSum32")
-             . Get.runGetS deserialize
-             . BS.take 4
-             . BA.convert
-             . hashWith SHA256
-             . hashWith SHA256
+checkSum32 =
+    fromRight (error "Could not decode bytes as CheckSum32")
+        . Get.runGetS deserialize
+        . BS.take 4
+        . BA.convert
+        . hashWith SHA256
+        . hashWith SHA256
 
 {- HMAC -}
 
@@ -231,6 +239,6 @@ split512 h =
 -- | Join a pair of 'Hash256' into a 'Hash512'.
 join512 :: (Hash256, Hash256) -> Hash512
 join512 (a, b) =
-    Hash512 .
-    BSS.toShort $
-        BSS.fromShort (getHash256 a) `BS.append` BSS.fromShort (getHash256 b)
+    Hash512
+        . BSS.toShort
+        $ BSS.fromShort (getHash256 a) `BS.append` BSS.fromShort (getHash256 b)

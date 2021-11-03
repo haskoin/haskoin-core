@@ -1,29 +1,30 @@
 {-# LANGUAGE OverloadedStrings #-}
+
 module Haskoin.Crypto.SignatureSpec (spec) where
 
-import           Control.Monad
-import           Data.Bits               (testBit)
-import           Data.ByteString         (ByteString)
-import qualified Data.ByteString         as BS
-import           Data.Map.Strict         (Map)
-import qualified Data.Map.Strict         as Map
-import           Data.Maybe
-import           Data.Serialize          as S
-import           Data.String.Conversions (cs)
-import           Data.Text               (Text)
-import           Haskoin.Address
-import           Haskoin.Transaction
-import           Haskoin.Keys
-import           Haskoin.Crypto
-import           Haskoin.Script
-import           Haskoin.Constants
-import           Haskoin.Util
-import           Haskoin.Util.Arbitrary
-import           Haskoin.UtilSpec        (readTestFile)
-import           Test.Hspec
-import           Test.Hspec.QuickCheck
-import           Test.HUnit
-import           Test.QuickCheck
+import Control.Monad
+import Data.Bits (testBit)
+import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
+import Data.Maybe
+import Data.Serialize as S
+import Data.String.Conversions (cs)
+import Data.Text (Text)
+import Haskoin.Address
+import Haskoin.Constants
+import Haskoin.Crypto
+import Haskoin.Keys
+import Haskoin.Script
+import Haskoin.Transaction
+import Haskoin.Util
+import Haskoin.Util.Arbitrary
+import Haskoin.UtilSpec (readTestFile)
+import Test.HUnit
+import Test.Hspec
+import Test.Hspec.QuickCheck
+import Test.QuickCheck
 
 spec :: Spec
 spec = do
@@ -37,13 +38,13 @@ spec = do
             forAll arbitrarySignature $ testIsCanonical . lst3
         prop "decodeStrictSig . exportSig identity" $
             forAll arbitrarySignature $
-            (\s -> decodeStrictSig (exportSig s) == Just s) . lst3
+                (\s -> decodeStrictSig (exportSig s) == Just s) . lst3
         prop "importSig . exportSig identity" $
             forAll arbitrarySignature $
-            (\s -> importSig (exportSig s) == Just s) . lst3
+                (\s -> importSig (exportSig s) == Just s) . lst3
         prop "getSig . putSig identity" $
             forAll arbitrarySignature $
-            (\s -> runGet getSig (runPut $ putSig s) == Right s) . lst3
+                (\s -> runGet getSig (runPut $ putSig s) == Right s) . lst3
     describe "Signature vectors" $
         checkDistSig $ \file1 file2 -> do
             vectors <- runIO (readTestFile file1 :: IO [(Text, Text, Text)])
@@ -61,42 +62,55 @@ spec = do
 -- github.com/bitcoin/bitcoin/blob/master/src/script.cpp
 -- from function IsCanonicalSignature
 testIsCanonical :: Sig -> Bool
-testIsCanonical sig = not $
-    -- Non-canonical signature: too short
-    (len < 8) ||
-    -- Non-canonical signature: too long
-    (len > 72) ||
-    -- Non-canonical signature: wrong type
-    (BS.index s 0 /= 0x30) ||
-    -- Non-canonical signature: wrong length marker
-    (BS.index s 1 /= len - 2) ||
-    -- Non-canonical signature: S length misplaced
-    (5 + rlen >= len) ||
-    -- Non-canonical signature: R+S length mismatch
-    (rlen + slen + 6 /= len) ||
-    -- Non-canonical signature: R value type mismatch
-    (BS.index s 2 /= 0x02) ||
-
-    -- Non-canonical signature: R length is zero
-    (rlen == 0) ||
-    -- Non-canonical signature: R value negative
-    testBit (BS.index s 4) 7 ||
-    -- Non-canonical signature: R value excessively padded
-    (  rlen > 1
-    && BS.index s 4 == 0
-    && not (testBit (BS.index s 5) 7)
-    ) ||
-    -- Non-canonical signature: S value type mismatch
-    (BS.index s (fromIntegral rlen + 4) /= 0x02) ||
-    -- Non-canonical signature: S length is zero
-    (slen == 0) ||
-    -- Non-canonical signature: S value negative
-    testBit (BS.index s (fromIntegral rlen+6)) 7 ||
-    -- Non-canonical signature: S value excessively padded
-    (  slen > 1
-    && BS.index s (fromIntegral rlen + 6) == 0
-    && not (testBit (BS.index s (fromIntegral rlen + 7)) 7)
-    )
+testIsCanonical sig =
+    not $
+        -- Non-canonical signature: too short
+        (len < 8)
+            ||
+            -- Non-canonical signature: too long
+            (len > 72)
+            ||
+            -- Non-canonical signature: wrong type
+            (BS.index s 0 /= 0x30)
+            ||
+            -- Non-canonical signature: wrong length marker
+            (BS.index s 1 /= len - 2)
+            ||
+            -- Non-canonical signature: S length misplaced
+            (5 + rlen >= len)
+            ||
+            -- Non-canonical signature: R+S length mismatch
+            (rlen + slen + 6 /= len)
+            ||
+            -- Non-canonical signature: R value type mismatch
+            (BS.index s 2 /= 0x02)
+            ||
+            -- Non-canonical signature: R length is zero
+            (rlen == 0)
+            ||
+            -- Non-canonical signature: R value negative
+            testBit (BS.index s 4) 7
+            ||
+            -- Non-canonical signature: R value excessively padded
+            ( rlen > 1
+                && BS.index s 4 == 0
+                && not (testBit (BS.index s 5) 7)
+            )
+            ||
+            -- Non-canonical signature: S value type mismatch
+            (BS.index s (fromIntegral rlen + 4) /= 0x02)
+            ||
+            -- Non-canonical signature: S length is zero
+            (slen == 0)
+            ||
+            -- Non-canonical signature: S value negative
+            testBit (BS.index s (fromIntegral rlen + 6)) 7
+            ||
+            -- Non-canonical signature: S value excessively padded
+            ( slen > 1
+                && BS.index s (fromIntegral rlen + 6) == 0
+                && not (testBit (BS.index s (fromIntegral rlen + 7)) 7)
+            )
   where
     s = exportSig sig
     len = fromIntegral $ BS.length s
@@ -115,23 +129,27 @@ data ValidImpl
 implSig :: Text
 implSig =
     encodeHex $
-    exportSig $
-    signMsg
-        "0000000000000000000000000000000000000000000000000000000000000001"
-        "0000000000000000000000000000000000000000000000000000000000000000"
+        exportSig $
+            signMsg
+                "0000000000000000000000000000000000000000000000000000000000000001"
+                "0000000000000000000000000000000000000000000000000000000000000000"
 
 -- We have test vectors for these cases
 validImplMap :: Map Text ValidImpl
 validImplMap =
     Map.fromList
-        [ ( "3045022100a0b37f8fba683cc68f6574cd43b39f0343a50008bf6ccea9d13231\
-            \d9e7e2e1e4022011edc8d307254296264aebfc3dc76cd8b668373a072fd64665\
-            \b50000e9fcce52"
-          , ImplCore)
-        , ( "304402200581361d23e645be9e3efe63a9a2ac2e8dd0c70ba3ac8554c9befe06\
-            \0ad0b36202207d8172f1e259395834793d81b17e986f1e6131e4734969d2f4ae\
-            \3a9c8bc42965"
-          , ImplABC)
+        [
+            ( "3045022100a0b37f8fba683cc68f6574cd43b39f0343a50008bf6ccea9d13231\
+              \d9e7e2e1e4022011edc8d307254296264aebfc3dc76cd8b668373a072fd64665\
+              \b50000e9fcce52"
+            , ImplCore
+            )
+        ,
+            ( "304402200581361d23e645be9e3efe63a9a2ac2e8dd0c70ba3ac8554c9befe06\
+              \0ad0b36202207d8172f1e259395834793d81b17e986f1e6131e4734969d2f4ae\
+              \3a9c8bc42965"
+            , ImplABC
+            )
         ]
 
 getImpl :: Maybe ValidImpl
@@ -147,7 +165,7 @@ checkDistSig go =
         Just (file1, file2) -> go file1 file2
         _ ->
             it "Passes rfc6979 test vectors" $
-            void $ assertFailure "Invalid rfc6979 signature"
+                void $ assertFailure "Invalid rfc6979 signature"
 
 {- Trezor RFC 6979 Test Vectors -}
 -- github.com/trezor/python-ecdsa/blob/master/ecdsa/test_pyecdsa.py

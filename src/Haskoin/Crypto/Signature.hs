@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-|
+
+{- |
 Module      : Haskoin.Crypto.Signature
 Copyright   : No rights reserved
 License     : MIT
@@ -10,29 +11,29 @@ Portability : POSIX
 ECDSA signatures using secp256k1 curve. Uses functions from upstream secp256k1
 library.
 -}
-module Haskoin.Crypto.Signature
-    ( -- * Signatures
-      putSig
-    , getSig
-    , signHash
-    , verifyHashSig
-    , isCanonicalHalfOrder
-    , decodeStrictSig
-    , exportSig
-    ) where
+module Haskoin.Crypto.Signature (
+    -- * Signatures
+    putSig,
+    getSig,
+    signHash,
+    verifyHashSig,
+    isCanonicalHalfOrder,
+    decodeStrictSig,
+    exportSig,
+) where
 
-import           Control.Monad       (guard, unless, when)
-import           Crypto.Secp256k1
-import           Data.Binary         (Binary (..))
-import           Data.ByteString     (ByteString)
-import qualified Data.ByteString     as BS
-import           Data.Bytes.Get
-import           Data.Bytes.Put
-import           Data.Bytes.Serial
-import           Data.Maybe          (fromMaybe, isNothing)
-import           Data.Serialize      (Serialize (..))
-import           Haskoin.Crypto.Hash
-import           Numeric             (showHex)
+import Control.Monad (guard, unless, when)
+import Crypto.Secp256k1
+import Data.Binary (Binary (..))
+import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
+import Data.Bytes.Get
+import Data.Bytes.Put
+import Data.Bytes.Serial
+import Data.Maybe (fromMaybe, isNothing)
+import Data.Serialize (Serialize (..))
+import Haskoin.Crypto.Hash
+import Numeric (showHex)
 
 -- | Convert 256-bit hash into a 'Msg' for signing or verification.
 hashToMsg :: Hash256 -> Msg
@@ -60,14 +61,14 @@ getSig = do
             -- 0x30 is DER sequence type
             unless (t == 0x30) $
                 fail $
-                "Bad DER identifier byte 0x" ++ showHex t ". Expecting 0x30"
+                    "Bad DER identifier byte 0x" ++ showHex t ". Expecting 0x30"
             l <- getWord8
             when (l == 0x00) $ fail "Indeterminate form unsupported"
             when (l >= 0x80) $ fail "Multi-octect length not supported"
             return $ fromIntegral l
     bs <- getByteString $ l + 2
     case decodeStrictSig bs of
-        Just s  -> return s
+        Just s -> return s
         Nothing -> fail "Invalid signature"
 
 -- | Serialize an ECDSA signature for Bitcoin use.

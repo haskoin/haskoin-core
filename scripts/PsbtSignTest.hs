@@ -1,12 +1,12 @@
 module Main (main) where
 
-import qualified Data.ByteString    as BS
-import           Data.Maybe         (fromMaybe)
-import qualified Data.Serialize     as S
-import           Data.Text          (pack)
-import           Haskoin            (PartiallySignedTransaction, SecKey)
-import qualified Haskoin            as H
-import           System.Environment (getArgs)
+import qualified Data.ByteString as BS
+import Data.Maybe (fromMaybe)
+import qualified Data.Serialize as S
+import Data.Text (pack)
+import Haskoin (PartiallySignedTransaction, SecKey)
+import qualified Haskoin as H
+import System.Environment (getArgs)
 
 main :: IO ()
 main = do

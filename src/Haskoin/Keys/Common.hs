@@ -1,11 +1,12 @@
-{-# LANGUAGE DeriveAnyClass    #-}
-{-# LANGUAGE DeriveGeneric     #-}
-{-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE LambdaCase        #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
-{-|
+
+{- |
 Module      : Haskoin.Keys.Common
 Copyright   : No rights reserved
 License     : MIT
@@ -15,54 +16,61 @@ Portability : POSIX
 
 ECDSA private and public key functions.
 -}
-module Haskoin.Keys.Common
-    ( -- * Public & Private Keys
-      PubKeyI(..)
-    , SecKeyI(..)
-    , exportPubKey
-    , importPubKey
-    , wrapPubKey
-    , derivePubKeyI
-    , wrapSecKey
-    , fromMiniKey
-    , tweakPubKey
-    , tweakSecKey
-    , getSecKey
-    , secKey
-    -- ** Private Key Wallet Import Format (WIF)
-    , fromWif
-    , toWif
-    ) where
+module Haskoin.Keys.Common (
+    -- * Public & Private Keys
+    PubKeyI (..),
+    SecKeyI (..),
+    exportPubKey,
+    importPubKey,
+    wrapPubKey,
+    derivePubKeyI,
+    wrapSecKey,
+    fromMiniKey,
+    tweakPubKey,
+    tweakSecKey,
+    getSecKey,
+    secKey,
 
-import           Control.DeepSeq
-import           Control.Monad           (guard, mzero, (<=<))
-import           Crypto.Secp256k1
-import           Data.Aeson              (FromJSON, ToJSON (..), Value (String),
-                                          parseJSON, withText)
-import           Data.Aeson.Encoding     (unsafeToEncoding)
-import           Data.Binary             (Binary (..))
-import           Data.ByteString         (ByteString)
-import qualified Data.ByteString         as BS
-import           Data.ByteString.Builder (char7)
-import           Data.Bytes.Get
-import           Data.Bytes.Put
-import           Data.Bytes.Serial
-import           Data.Hashable
-import           Data.Maybe              (fromMaybe)
-import           Data.Serialize          (Serialize (..))
-import           Data.String             (IsString, fromString)
-import           Data.String.Conversions (cs)
-import           GHC.Generics            (Generic)
-import           Haskoin.Address.Base58
-import           Haskoin.Constants
-import           Haskoin.Crypto.Hash
-import           Haskoin.Util
+    -- ** Private Key Wallet Import Format (WIF)
+    fromWif,
+    toWif,
+) where
+
+import Control.DeepSeq
+import Control.Monad (guard, mzero, (<=<))
+import Crypto.Secp256k1
+import Data.Aeson (
+    FromJSON,
+    ToJSON (..),
+    Value (String),
+    parseJSON,
+    withText,
+ )
+import Data.Aeson.Encoding (unsafeToEncoding)
+import Data.Binary (Binary (..))
+import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
+import Data.ByteString.Builder (char7)
+import Data.Bytes.Get
+import Data.Bytes.Put
+import Data.Bytes.Serial
+import Data.Hashable
+import Data.Maybe (fromMaybe)
+import Data.Serialize (Serialize (..))
+import Data.String (IsString, fromString)
+import Data.String.Conversions (cs)
+import GHC.Generics (Generic)
+import Haskoin.Address.Base58
+import Haskoin.Constants
+import Haskoin.Crypto.Hash
+import Haskoin.Util
 
 -- | Elliptic curve public key type with expected serialized compression flag.
 data PubKeyI = PubKeyI
-    { pubKeyPoint      :: !PubKey
+    { pubKeyPoint :: !PubKey
     , pubKeyCompressed :: !Bool
-    } deriving (Generic, Eq, Show, Read, Hashable, NFData)
+    }
+    deriving (Generic, Eq, Show, Read, Hashable, NFData)
 
 instance IsString PubKeyI where
     fromString str =
@@ -72,25 +80,30 @@ instance IsString PubKeyI where
 
 instance ToJSON PubKeyI where
     toJSON = String . encodeHex . runPutS . serialize
-    toEncoding s = unsafeToEncoding $
-        char7 '"' <>
-        hexBuilder (runPutL (serialize s)) <>
-        char7 '"'
+    toEncoding s =
+        unsafeToEncoding $
+            char7 '"'
+                <> hexBuilder (runPutL (serialize s))
+                <> char7 '"'
 
 instance FromJSON PubKeyI where
-    parseJSON = withText "PubKeyI" $
-        maybe mzero return . ((eitherToMaybe . runGetS deserialize) <=< decodeHex)
+    parseJSON =
+        withText "PubKeyI" $
+            maybe mzero return . ((eitherToMaybe . runGetS deserialize) <=< decodeHex)
 
 instance Serial PubKeyI where
-    deserialize = s >>= \case
-        True  -> c
-        False -> u
+    deserialize =
+        s >>= \case
+            True -> c
+            False -> u
       where
-        s = lookAhead $ getWord8 >>= \case
-            0x02 -> return True
-            0x03 -> return True
-            0x04 -> return False
-            _    -> fail "Not a public key"
+        s =
+            lookAhead $
+                getWord8 >>= \case
+                    0x02 -> return True
+                    0x03 -> return True
+                    0x04 -> return False
+                    _ -> fail "Not a public key"
         c = do
             bs <- getByteString 33
             maybe (fail "Could not decode public key") return $
@@ -114,8 +127,9 @@ instance Binary PubKeyI where
 wrapPubKey :: Bool -> PubKey -> PubKeyI
 wrapPubKey c p = PubKeyI p c
 
--- | Derives a public key from a private key. This function will preserve
--- compression flag.
+{- | Derives a public key from a private key. This function will preserve
+ compression flag.
+-}
 derivePubKeyI :: SecKeyI -> PubKeyI
 derivePubKeyI (SecKeyI d c) = PubKeyI (derivePubKey d) c
 
@@ -123,14 +137,16 @@ derivePubKeyI (SecKeyI d c) = PubKeyI (derivePubKey d) c
 tweakPubKey :: PubKey -> Hash256 -> Maybe PubKey
 tweakPubKey p h = tweakAddPubKey p =<< tweak (runPutS (serialize h))
 
--- | Elliptic curve private key type with expected public key compression
--- information. Compression information is stored in private key WIF formats and
--- needs to be preserved to generate the correct address from the corresponding
--- public key.
+{- | Elliptic curve private key type with expected public key compression
+ information. Compression information is stored in private key WIF formats and
+ needs to be preserved to generate the correct address from the corresponding
+ public key.
+-}
 data SecKeyI = SecKeyI
-    { secKeyData       :: !SecKey
+    { secKeyData :: !SecKey
     , secKeyCompressed :: !Bool
-    } deriving (Eq, Show, Read, Generic, NFData)
+    }
+    deriving (Eq, Show, Read, Generic, NFData)
 
 -- | Wrap private key with corresponding public key compression flag.
 wrapSecKey :: Bool -> SecKey -> SecKeyI
@@ -163,12 +179,12 @@ fromWif net wif = do
             guard $ BS.last bs == 0x01
             wrapSecKey True <$> secKey (BS.tail $ BS.init bs)
         -- Bad length
-        _  -> Nothing
+        _ -> Nothing
 
 -- | Encode private key into a WIF string.
 toWif :: Network -> SecKeyI -> Base58
 toWif net (SecKeyI k c) =
     encodeBase58Check . BS.cons (getSecretPrefix net) $
-    if c
-        then getSecKey k `BS.snoc` 0x01
-        else getSecKey k
+        if c
+            then getSecKey k `BS.snoc` 0x01
+            else getSecKey k

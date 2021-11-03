@@ -1,7 +1,8 @@
-{-# LANGUAGE DeriveAnyClass    #-}
-{-# LANGUAGE DeriveGeneric     #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-|
+
+{- |
 Module      : Haskoin.Transaction.Common
 Copyright   : No rights reserved
 License     : MIT
@@ -11,52 +12,60 @@ Portability : POSIX
 
 Code related to transactions parsing and serialization.
 -}
-module Haskoin.Transaction.Common
-    ( -- * Transactions
-      Tx(..)
-    , TxIn(..)
-    , TxOut(..)
-    , OutPoint(..)
-    , TxHash(..)
-    , WitnessData
-    , WitnessStack
-    , WitnessStackItem
-    , txHash
-    , hexToTxHash
-    , txHashToHex
-    , nosigTxHash
-    , nullOutPoint
-    ) where
+module Haskoin.Transaction.Common (
+    -- * Transactions
+    Tx (..),
+    TxIn (..),
+    TxOut (..),
+    OutPoint (..),
+    TxHash (..),
+    WitnessData,
+    WitnessStack,
+    WitnessStackItem,
+    txHash,
+    hexToTxHash,
+    txHashToHex,
+    nosigTxHash,
+    nullOutPoint,
+) where
 
-import           Control.Applicative     ((<|>))
-import           Control.DeepSeq
-import           Control.Monad           (forM_, guard, liftM2, mzero,
-                                          replicateM, unless, when, (<=<))
-import           Data.Aeson              as A
-import           Data.Aeson.Encoding     (unsafeToEncoding)
-import           Data.Binary             (Binary (..))
-import           Data.ByteString         (ByteString)
-import qualified Data.ByteString         as B
-import           Data.ByteString.Builder (char7)
-import qualified Data.ByteString.Lazy    as BL
-import           Data.Bytes.Get
-import           Data.Bytes.Put
-import           Data.Bytes.Serial
-import           Data.Hashable           (Hashable)
-import           Data.Maybe              (fromMaybe)
-import           Data.Serialize          (Serialize (..))
-import           Data.String             (IsString, fromString)
-import           Data.String.Conversions (cs)
-import           Data.Text               (Text)
-import           Data.Word               (Word32, Word64)
-import           GHC.Generics            (Generic)
-import           Haskoin.Crypto.Hash
-import           Haskoin.Network.Common
-import           Haskoin.Util
-import           Text.Read               as R
+import Control.Applicative ((<|>))
+import Control.DeepSeq
+import Control.Monad (
+    forM_,
+    guard,
+    liftM2,
+    mzero,
+    replicateM,
+    unless,
+    when,
+    (<=<),
+ )
+import Data.Aeson as A
+import Data.Aeson.Encoding (unsafeToEncoding)
+import Data.Binary (Binary (..))
+import Data.ByteString (ByteString)
+import qualified Data.ByteString as B
+import Data.ByteString.Builder (char7)
+import qualified Data.ByteString.Lazy as BL
+import Data.Bytes.Get
+import Data.Bytes.Put
+import Data.Bytes.Serial
+import Data.Hashable (Hashable)
+import Data.Maybe (fromMaybe)
+import Data.Serialize (Serialize (..))
+import Data.String (IsString, fromString)
+import Data.String.Conversions (cs)
+import Data.Text (Text)
+import Data.Word (Word32, Word64)
+import GHC.Generics (Generic)
+import Haskoin.Crypto.Hash
+import Haskoin.Network.Common
+import Haskoin.Util
+import Text.Read as R
 
 -- | Transaction id: hash of transaction excluding witness data.
-newtype TxHash = TxHash { getTxHash :: Hash256 }
+newtype TxHash = TxHash {getTxHash :: Hash256}
     deriving (Eq, Ord, Generic, Hashable, Serial, NFData)
 
 instance Serialize TxHash where
@@ -78,27 +87,30 @@ instance Read TxHash where
 instance IsString TxHash where
     fromString s =
         let e = error "Could not read transaction hash from hex string"
-        in fromMaybe e $ hexToTxHash $ cs s
+         in fromMaybe e $ hexToTxHash $ cs s
 
 instance FromJSON TxHash where
-    parseJSON = withText "txid" $
-        maybe mzero return . hexToTxHash
+    parseJSON =
+        withText "txid" $
+            maybe mzero return . hexToTxHash
 
 instance ToJSON TxHash where
     toJSON = A.String . txHashToHex
     toEncoding h =
         unsafeToEncoding $
-        char7 '"' <>
-        hexBuilder (BL.reverse (runPutL (serialize h))) <>
-        char7 '"'
+            char7 '"'
+                <> hexBuilder (BL.reverse (runPutL (serialize h)))
+                <> char7 '"'
 
 -- | Transaction hash excluding signatures.
 nosigTxHash :: Tx -> TxHash
 nosigTxHash tx =
-    TxHash $ doubleSHA256 $ runPutS $
-    serialize tx { txIn = map clearInput $ txIn tx }
+    TxHash $
+        doubleSHA256 $
+            runPutS $
+                serialize tx{txIn = map clearInput $ txIn tx}
   where
-    clearInput ti = ti { scriptInput = B.empty }
+    clearInput ti = ti{scriptInput = B.empty}
 
 -- | Convert transaction hash to hex form, reversing bytes.
 txHashToHex :: TxHash -> Text
@@ -113,28 +125,31 @@ hexToTxHash hex = do
 
 -- | Witness stack for SegWit transactions.
 type WitnessData = [WitnessStack]
+
 -- | Witness stack for SegWit transactions.
 type WitnessStack = [WitnessStackItem]
+
 -- | Witness stack item for SegWit transactions.
 type WitnessStackItem = ByteString
 
 -- | Data type representing a transaction.
 data Tx = Tx
     { -- | transaction data format version
-      txVersion  :: !Word32
-      -- | list of transaction inputs
-    , txIn       :: ![TxIn]
-      -- | list of transaction outputs
-    , txOut      :: ![TxOut]
-      -- | witness data for the transaction
-    , txWitness  :: !WitnessData
-      -- | earliest mining height or time
-    , txLockTime :: !Word32
-    } deriving (Show, Read, Eq, Ord, Generic, Hashable, NFData)
+      txVersion :: !Word32
+    , -- | list of transaction inputs
+      txIn :: ![TxIn]
+    , -- | list of transaction outputs
+      txOut :: ![TxOut]
+    , -- | witness data for the transaction
+      txWitness :: !WitnessData
+    , -- | earliest mining height or time
+      txLockTime :: !Word32
+    }
+    deriving (Show, Read, Eq, Ord, Generic, Hashable, NFData)
 
 -- | Compute transaction hash.
 txHash :: Tx -> TxHash
-txHash tx = TxHash . doubleSHA256 . runPutS $ serialize tx {txWitness = []}
+txHash tx = TxHash . doubleSHA256 . runPutS $ serialize tx{txWitness = []}
 
 instance IsString Tx where
     fromString =
@@ -198,12 +213,12 @@ parseLegacyTx = do
     l <- getWord32le
     return
         Tx
-        { txVersion = v
-        , txIn = is
-        , txOut = os
-        , txWitness = []
-        , txLockTime = l
-        }
+            { txVersion = v
+            , txIn = is
+            , txOut = os
+            , txWitness = []
+            , txLockTime = l
+            }
   where
     replicateList (VarInt c) = replicateM (fromIntegral c) deserialize
 
@@ -219,7 +234,7 @@ parseWitnessTx = do
     w <- parseWitnessData $ length is
     l <- getWord32le
     return
-        Tx {txVersion = v, txIn = is, txOut = os, txWitness = w, txLockTime = l}
+        Tx{txVersion = v, txIn = is, txOut = os, txWitness = w, txLockTime = l}
   where
     replicateList (VarInt c) = replicateM (fromIntegral c) deserialize
 
@@ -248,10 +263,10 @@ putWitnessData = mapM_ putWitnessStack
 instance FromJSON Tx where
     parseJSON = withObject "Tx" $ \o ->
         Tx <$> o .: "version"
-           <*> o .: "inputs"
-           <*> o .: "outputs"
-           <*> (mapM (mapM f) =<< o .: "witnessdata")
-           <*> o .: "locktime"
+            <*> o .: "inputs"
+            <*> o .: "outputs"
+            <*> (mapM (mapM f) =<< o .: "witnessdata")
+            <*> o .: "locktime"
       where
         f = maybe mzero return . decodeHex
 
@@ -267,22 +282,22 @@ instance ToJSON Tx where
     toEncoding (Tx v i o w l) =
         pairs
             ( "version" .= v
-           <> "inputs" .= i
-           <> "outputs" .= o
-           <> "witnessdata" .= fmap (fmap encodeHex) w
-           <> "locktime" .= l
+                <> "inputs" .= i
+                <> "outputs" .= o
+                <> "witnessdata" .= fmap (fmap encodeHex) w
+                <> "locktime" .= l
             )
 
 -- | Data type representing a transaction input.
-data TxIn =
-    TxIn {
-           -- | output being spent
-           prevOutput   :: !OutPoint
-           -- | signatures and redeem script
-         , scriptInput  :: !ByteString
-           -- | lock-time using sequence numbers (BIP-68)
-         , txInSequence :: !Word32
-         } deriving (Eq, Show, Read, Ord, Generic, Hashable, NFData)
+data TxIn = TxIn
+    { -- | output being spent
+      prevOutput :: !OutPoint
+    , -- | signatures and redeem script
+      scriptInput :: !ByteString
+    , -- | lock-time using sequence numbers (BIP-68)
+      txInSequence :: !Word32
+    }
+    deriving (Eq, Show, Read, Ord, Generic, Hashable, NFData)
 
 instance Serial TxIn where
     deserialize =
@@ -308,8 +323,8 @@ instance FromJSON TxIn where
     parseJSON =
         withObject "TxIn" $ \o ->
             TxIn <$> o .: "prevoutput"
-                 <*> (maybe mzero return . decodeHex =<< o .: "inputscript")
-                 <*> o .: "sequence"
+                <*> (maybe mzero return . decodeHex =<< o .: "inputscript")
+                <*> o .: "sequence"
 
 instance ToJSON TxIn where
     toJSON (TxIn o s q) =
@@ -321,18 +336,18 @@ instance ToJSON TxIn where
     toEncoding (TxIn o s q) =
         pairs
             ( "prevoutput" .= o
-           <> "inputscript" .= encodeHex s
-           <> "sequence" .= q
+                <> "inputscript" .= encodeHex s
+                <> "sequence" .= q
             )
 
 -- | Data type representing a transaction output.
-data TxOut =
-    TxOut {
-            -- | value of output is satoshi
-            outValue     :: !Word64
-            -- | pubkey script
-          , scriptOutput :: !ByteString
-          } deriving (Eq, Show, Read, Ord, Generic, Hashable, NFData)
+data TxOut = TxOut
+    { -- | value of output is satoshi
+      outValue :: !Word64
+    , -- | pubkey script
+      scriptOutput :: !ByteString
+    }
+    deriving (Eq, Show, Read, Ord, Generic, Hashable, NFData)
 
 instance Serial TxOut where
     deserialize = do
@@ -357,7 +372,7 @@ instance FromJSON TxOut where
     parseJSON =
         withObject "TxOut" $ \o ->
             TxOut <$> o .: "value"
-                  <*> (maybe mzero return . decodeHex =<< o .: "outputscript")
+                <*> (maybe mzero return . decodeHex =<< o .: "outputscript")
 
 instance ToJSON TxOut where
     toJSON (TxOut o s) =
@@ -368,14 +383,15 @@ instance ToJSON TxOut where
 -- | The 'OutPoint' refers to a transaction output being spent.
 data OutPoint = OutPoint
     { -- | hash of previous transaction
-      outPointHash  :: !TxHash
-      -- | position of output in previous transaction
-    , outPointIndex :: !Word32
-    } deriving (Show, Read, Eq, Ord, Generic, Hashable, NFData)
+      outPointHash :: !TxHash
+    , -- | position of output in previous transaction
+      outPointIndex :: !Word32
+    }
+    deriving (Show, Read, Eq, Ord, Generic, Hashable, NFData)
 
 instance Serial OutPoint where
     deserialize = do
-        (h,i) <- liftM2 (,) deserialize getWord32le
+        (h, i) <- liftM2 (,) deserialize getWord32le
         return $ OutPoint h i
     serialize (OutPoint h i) = serialize h >> putWord32le i
 
@@ -400,7 +416,7 @@ instance ToJSON OutPoint where
 nullOutPoint :: OutPoint
 nullOutPoint =
     OutPoint
-    { outPointHash =
-          "0000000000000000000000000000000000000000000000000000000000000000"
-    , outPointIndex = maxBound
-    }
+        { outPointHash =
+            "0000000000000000000000000000000000000000000000000000000000000000"
+        , outPointIndex = maxBound
+        }

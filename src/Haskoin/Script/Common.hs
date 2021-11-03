@@ -31,6 +31,7 @@ import qualified Data.ByteString as B
 import Data.Bytes.Get
 import Data.Bytes.Put
 import Data.Bytes.Serial
+import Data.Either (fromRight)
 import Data.Hashable
 import Data.Serialize (Serialize (..))
 import Data.Word (Word8)
@@ -217,7 +218,7 @@ data ScriptOp
     deriving (Show, Read, Eq, Generic, Hashable, NFData)
 
 instance Serial ScriptOp where
-    deserialize = go =<< (fromIntegral <$> getWord8)
+    deserialize = go . fromIntegral =<< getWord8
       where
         go op
             | op == 0x00 = return OP_0
@@ -562,9 +563,7 @@ intToScriptOp i
     | otherwise = err
   where
     op =
-        either
-            (const err)
-            id
+        fromRight err
             . runGetS deserialize
             . B.singleton
             . fromIntegral

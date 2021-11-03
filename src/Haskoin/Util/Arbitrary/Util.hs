@@ -209,7 +209,7 @@ toMap :: a -> Map.Map String a
 toMap = Map.singleton "object"
 
 toMapE :: A.Encoding -> A.Encoding
-toMapE = A.pairs . (A.pair "object")
+toMapE = A.pairs . A.pair "object"
 
 fromMap :: Map.Map String a -> a
 fromMap = (Map.! "object")

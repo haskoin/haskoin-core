@@ -1,6 +1,5 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE TypeApplications #-}
 
 module Haskoin.Keys.Extended.Internal (
     Fingerprint (..),

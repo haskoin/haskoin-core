@@ -83,6 +83,4 @@ arbitraryBlockNode =
 arbitraryHeaderMemory :: Gen HeaderMemory
 arbitraryHeaderMemory = do
     ls <- listOf $ (,) <$> arbitrary <*> arbitraryBSS
-    HeaderMemory
-        <$> (return $ HashMap.fromList ls)
-        <*> arbitraryBlockNode
+    HeaderMemory (HashMap.fromList ls) <$> arbitraryBlockNode

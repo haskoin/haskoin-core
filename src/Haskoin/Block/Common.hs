@@ -32,7 +32,7 @@ module Haskoin.Block.Common (
 ) where
 
 import Control.DeepSeq
-import Control.Monad (forM_, liftM2, mzero, replicateM)
+import Control.Monad (forM_, liftM2, mzero, replicateM, (<=<))
 import Data.Aeson (
     FromJSON (..),
     ToJSON (..),
@@ -227,12 +227,7 @@ instance FromJSON BlockHeader where
                 <*> o .: "bits"
                 <*> o .: "nonce"
       where
-        f =
-            maybe
-                mzero
-                return
-                . (eitherToMaybe . runGetS deserialize =<<)
-                . decodeHex
+        f = maybe mzero return . (eitherToMaybe . runGetS deserialize <=< decodeHex)
 
 instance Serial BlockHeader where
     deserialize = do

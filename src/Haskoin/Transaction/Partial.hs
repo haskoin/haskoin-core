@@ -346,7 +346,7 @@ signPSBT net signer psbt =
 addSigsForInput :: Network -> PsbtSigner -> Tx -> (Int, Input) -> Input
 addSigsForInput net signer tx (ix, input) =
     maybe input (onPrevTxOut net signer tx ix input) $
-        (Left <$> nonWitnessUtxo input) <|> (Right <$> witnessUtxo input)
+        Left <$> nonWitnessUtxo input <|> Right <$> witnessUtxo input
 
 onPrevTxOut ::
     Network ->
@@ -750,10 +750,9 @@ putSizedBytes f = do
     bs = S.runPut f
 
 getSizedBytes :: Get a -> Get a
-getSizedBytes f =
+getSizedBytes =
     S.getNested
         (fromIntegral . getVarInt <$> deserialize)
-        f
 
 putKeyValue :: Enum t => t -> Put -> Put
 putKeyValue t v = do
@@ -783,7 +782,7 @@ getMap getMapItem setUnknown = go
         keySize <- getVarInt <$> deserialize
         if keySize == 0
             then return m
-            else getItem keySize m =<< (word8Enum <$> S.getWord8)
+            else getItem keySize m . word8Enum =<< S.getWord8
 
 data InputType
     = InNonWitnessUtxo

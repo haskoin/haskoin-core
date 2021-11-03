@@ -175,7 +175,7 @@ bsToIndices bs =
     go n i = fromIntegral (i `mod` 2048) : go (n - 1) (i `shiftR` 11)
 
 wl' :: M.Map Text Int
-wl' = V.ifoldr' (\i w m -> M.insert w i m) M.empty wl
+wl' = V.ifoldr' (flip M.insert) M.empty wl
 
 -- | Standard English dictionary from BIP-39 specification.
 wl :: Vector Text

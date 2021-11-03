@@ -1,4 +1,4 @@
-{-|
+{- |
 Module      : Haskoin.Test.Message
 Copyright   : No rights reserved
 License     : MIT
@@ -8,21 +8,21 @@ Portability : POSIX
 -}
 module Haskoin.Util.Arbitrary.Message where
 
-import           Haskoin.Constants
-import           Haskoin.Network.Message
-import           Haskoin.Util.Arbitrary.Block
-import           Haskoin.Util.Arbitrary.Crypto
-import           Haskoin.Util.Arbitrary.Network
-import           Haskoin.Util.Arbitrary.Transaction
-import           Test.QuickCheck
+import Haskoin.Constants
+import Haskoin.Network.Message
+import Haskoin.Util.Arbitrary.Block
+import Haskoin.Util.Arbitrary.Crypto
+import Haskoin.Util.Arbitrary.Network
+import Haskoin.Util.Arbitrary.Transaction
+import Test.QuickCheck
 
 -- | Arbitrary 'MessageHeader'.
 arbitraryMessageHeader :: Gen MessageHeader
 arbitraryMessageHeader =
     MessageHeader <$> arbitrary
-                  <*> arbitraryMessageCommand
-                  <*> arbitrary
-                  <*> arbitraryCheckSum32
+        <*> arbitraryMessageCommand
+        <*> arbitrary
+        <*> arbitraryCheckSum32
 
 -- | Arbitrary 'Message'.
 arbitraryMessage :: Network -> Gen Message

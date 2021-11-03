@@ -1,6 +1,7 @@
 {-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE OverloadedStrings         #-}
-{-|
+{-# LANGUAGE OverloadedStrings #-}
+
+{- |
 Module      : Haskoin.Test.Util
 Copyright   : No rights reserved
 License     : MIT
@@ -8,49 +9,48 @@ Maintainer  : jprupp@protonmail.ch
 Stability   : experimental
 Portability : POSIX
 -}
-module Haskoin.Util.Arbitrary.Util
-( arbitraryBS
-, arbitraryBS1
-, arbitraryBSn
-, arbitraryBSS
-, arbitraryBSS1
-, arbitraryBSSn
-, arbitraryMaybe
-, arbitraryNetwork
-, arbitraryUTCTime
-, SerialBox(..)
-, JsonBox(..)
-, NetBox(..)
-, ReadBox(..)
-, testIdentity
-, testSerial
-, testRead
-, testJson
-, testNetJson
-, arbitraryNetData
-, genNetData
-)
-where
+module Haskoin.Util.Arbitrary.Util (
+    arbitraryBS,
+    arbitraryBS1,
+    arbitraryBSn,
+    arbitraryBSS,
+    arbitraryBSS1,
+    arbitraryBSSn,
+    arbitraryMaybe,
+    arbitraryNetwork,
+    arbitraryUTCTime,
+    SerialBox (..),
+    JsonBox (..),
+    NetBox (..),
+    ReadBox (..),
+    testIdentity,
+    testSerial,
+    testRead,
+    testJson,
+    testNetJson,
+    arbitraryNetData,
+    genNetData,
+) where
 
-import           Control.Monad         (forM_, (<=<))
-import qualified Data.Aeson            as A
-import qualified Data.Aeson.Encoding   as A
-import qualified Data.Aeson.Types      as A
-import           Data.ByteString       (ByteString, pack)
+import Control.Monad (forM_, (<=<))
+import qualified Data.Aeson as A
+import qualified Data.Aeson.Encoding as A
+import qualified Data.Aeson.Types as A
+import Data.ByteString (ByteString, pack)
 import qualified Data.ByteString.Short as BSS
-import           Data.Bytes.Get
-import           Data.Bytes.Put
-import           Data.Bytes.Serial
-import qualified Data.Map.Strict       as Map
-import           Data.Proxy
-import           Data.Time.Clock       (UTCTime (..))
-import           Data.Time.Clock.POSIX (posixSecondsToUTCTime)
-import qualified Data.Typeable         as T
-import           Data.Word             (Word32)
-import           Haskoin.Constants
-import           Test.Hspec            (Spec, describe, shouldBe, shouldSatisfy)
-import           Test.Hspec.QuickCheck (prop)
-import           Test.QuickCheck
+import Data.Bytes.Get
+import Data.Bytes.Put
+import Data.Bytes.Serial
+import qualified Data.Map.Strict as Map
+import Data.Proxy
+import Data.Time.Clock (UTCTime (..))
+import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
+import qualified Data.Typeable as T
+import Data.Word (Word32)
+import Haskoin.Constants
+import Test.Hspec (Spec, describe, shouldBe, shouldSatisfy)
+import Test.Hspec.QuickCheck (prop)
+import Test.QuickCheck
 
 -- | Arbitrary strict 'ByteString'.
 arbitraryBS :: Gen ByteString
@@ -84,9 +84,11 @@ arbitraryUTCTime = do
 
 -- | Generate a Maybe from a Gen a
 arbitraryMaybe :: Gen a -> Gen (Maybe a)
-arbitraryMaybe g = frequency [ (1, return Nothing)
-                             , (5, Just <$> g)
-                             ]
+arbitraryMaybe g =
+    frequency
+        [ (1, return Nothing)
+        , (5, Just <$> g)
+        ]
 
 -- | Generate an Network
 arbitraryNetwork :: Gen Network
@@ -94,25 +96,30 @@ arbitraryNetwork = elements allNets
 
 -- Helpers for creating Serial and JSON Identity tests
 
-data SerialBox =
-    forall a. (Show a, Eq a, T.Typeable a, Serial a) =>
-              SerialBox (Gen a)
+data SerialBox
+    = forall a.
+        (Show a, Eq a, T.Typeable a, Serial a) =>
+      SerialBox (Gen a)
 
-data ReadBox =
-    forall a. (Read a, Show a, Eq a, T.Typeable a) =>
-              ReadBox (Gen a)
+data ReadBox
+    = forall a.
+        (Read a, Show a, Eq a, T.Typeable a) =>
+      ReadBox (Gen a)
 
-data JsonBox =
-    forall a. (Show a, Eq a, T.Typeable a, A.ToJSON a, A.FromJSON a) =>
-              JsonBox (Gen a)
+data JsonBox
+    = forall a.
+        (Show a, Eq a, T.Typeable a, A.ToJSON a, A.FromJSON a) =>
+      JsonBox (Gen a)
 
-data NetBox =
-    forall a. (Show a, Eq a, T.Typeable a) =>
-              NetBox
-                  ( Network -> a -> A.Value
-                  , Network -> a -> A.Encoding
-                  , Network -> A.Value -> A.Parser a
-                  , Gen (Network, a))
+data NetBox
+    = forall a.
+        (Show a, Eq a, T.Typeable a) =>
+      NetBox
+        ( Network -> a -> A.Value
+        , Network -> a -> A.Encoding
+        , Network -> A.Value -> A.Parser a
+        , Gen (Network, a)
+        )
 
 testIdentity :: [SerialBox] -> [ReadBox] -> [JsonBox] -> [NetBox] -> Spec
 testIdentity serialVals readVals jsonVals netVals = do
@@ -123,15 +130,15 @@ testIdentity serialVals readVals jsonVals netVals = do
     describe "Data.Aeson Encoding" $
         forM_ jsonVals $ \(JsonBox g) -> testJson g
     describe "Data.Aeson Encoding with Network" $
-        forM_ netVals $ \(NetBox (j,e,p,g)) -> testNetJson j e p g
+        forM_ netVals $ \(NetBox (j, e, p, g)) -> testNetJson j e p g
 
 -- | Generate binary identity tests
 testSerial ::
-       (Eq a, Show a, T.Typeable a, Serial a) => Gen a -> Spec
+    (Eq a, Show a, T.Typeable a, Serial a) => Gen a -> Spec
 testSerial gen =
     prop ("Binary encoding/decoding identity for " <> name) $
-    forAll gen $ \x ->
-    (runGetS deserialize . runPutS . serialize) x `shouldBe` Right x
+        forAll gen $ \x ->
+            (runGetS deserialize . runPutS . serialize) x `shouldBe` Right x
   where
     name = show $ T.typeRep $ proxy gen
     proxy :: Gen a -> Proxy a
@@ -139,7 +146,7 @@ testSerial gen =
 
 -- | Generate Read/Show identity tests
 testRead ::
-       (Eq a, Read a, Show a, T.Typeable a) => Gen a -> Spec
+    (Eq a, Read a, Show a, T.Typeable a) => Gen a -> Spec
 testRead gen =
     prop ("read/show identity for " <> name) $
         forAll gen $ \x -> (read . show) x `shouldBe` x
@@ -150,7 +157,7 @@ testRead gen =
 
 -- | Generate Data.Aeson identity tests
 testJson ::
-       (Eq a, Show a, T.Typeable a, A.ToJSON a, A.FromJSON a) => Gen a -> Spec
+    (Eq a, Show a, T.Typeable a, A.ToJSON a, A.FromJSON a) => Gen a -> Spec
 testJson gen = do
     prop ("Data.Aeson toJSON/fromJSON identity for " <> name) $
         forAll gen (`shouldSatisfy` jsonID)
@@ -162,17 +169,17 @@ testJson gen = do
     proxy = const Proxy
     jsonID x = (A.fromJSON . A.toJSON) (toMap x) == A.Success (toMap x)
     encodingID x =
-        (A.decode . A.encodingToLazyByteString . A.toEncoding) (toMap x) ==
-        Just (toMap x)
+        (A.decode . A.encodingToLazyByteString . A.toEncoding) (toMap x)
+            == Just (toMap x)
 
 -- | Generate Data.Aeson identity tests for type that need the @Network@
 testNetJson ::
-       (Eq a, Show a, T.Typeable a)
-    => (Network -> a -> A.Value)
-    -> (Network -> a -> A.Encoding)
-    -> (Network -> A.Value -> A.Parser a)
-    -> Gen (Network, a)
-    -> Spec
+    (Eq a, Show a, T.Typeable a) =>
+    (Network -> a -> A.Value) ->
+    (Network -> a -> A.Encoding) ->
+    (Network -> A.Value -> A.Parser a) ->
+    Gen (Network, a) ->
+    Spec
 testNetJson j e p g = do
     prop ("Data.Aeson toJSON/fromJSON identity (with network) for " <> name) $
         forAll g $ \(net, x) -> dec net (encVal net x) `shouldBe` Just x
@@ -202,8 +209,7 @@ toMap :: a -> Map.Map String a
 toMap = Map.singleton "object"
 
 toMapE :: A.Encoding -> A.Encoding
-toMapE = A.pairs . (A.pair "object")
+toMapE = A.pairs . A.pair "object"
 
 fromMap :: Map.Map String a -> a
 fromMap = (Map.! "object")
-

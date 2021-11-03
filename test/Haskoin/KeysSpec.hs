@@ -1,32 +1,33 @@
 {-# LANGUAGE OverloadedStrings #-}
+
 module Haskoin.KeysSpec (spec) where
 
-import           Control.Lens
-import           Control.Monad
-import           Data.Aeson              as A
-import           Data.Aeson.Lens
-import qualified Data.ByteString         as BS
-import qualified Data.ByteString.Char8   as C
-import           Data.Bytes.Get
-import           Data.Bytes.Put
-import           Data.Bytes.Serial
-import           Data.Maybe
-import qualified Data.Serialize          as S
-import           Data.String             (fromString)
-import           Data.String.Conversions (cs)
-import           Data.Text               (Text)
-import           Haskoin.Address
-import           Haskoin.Constants
-import           Haskoin.Crypto
-import           Haskoin.Keys
-import           Haskoin.Script
-import           Haskoin.Util
-import           Haskoin.Util.Arbitrary
-import           Haskoin.UtilSpec        (readTestFile)
-import           Test.HUnit
-import           Test.Hspec
-import           Test.Hspec.QuickCheck
-import           Test.QuickCheck
+import Control.Lens
+import Control.Monad
+import Data.Aeson as A
+import Data.Aeson.Lens
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as C
+import Data.Bytes.Get
+import Data.Bytes.Put
+import Data.Bytes.Serial
+import Data.Maybe
+import qualified Data.Serialize as S
+import Data.String (fromString)
+import Data.String.Conversions (cs)
+import Data.Text (Text)
+import Haskoin.Address
+import Haskoin.Constants
+import Haskoin.Crypto
+import Haskoin.Keys
+import Haskoin.Script
+import Haskoin.Util
+import Haskoin.Util.Arbitrary
+import Haskoin.UtilSpec (readTestFile)
+import Test.HUnit
+import Test.Hspec
+import Test.Hspec.QuickCheck
+import Test.QuickCheck
 
 serialVals :: [SerialBox]
 serialVals =
@@ -56,9 +57,9 @@ spec = do
                 fromString (cs . encodeHex $ runPutS $ serialize k) == k
     describe "SecKey properties" $
         prop "fromWif . toWif identity" $
-        forAll arbitraryNetwork $ \net ->
-            forAll arbitraryKeyPair $ \(pk, _) ->
-                fromWif net (toWif net pk) == Just pk
+            forAll arbitraryNetwork $ \net ->
+                forAll arbitraryKeyPair $ \(pk, _) ->
+                    fromWif net (toWif net pk) == Just pk
     describe "Bitcoin core vectors /src/test/key_tests.cpp" $ do
         it "Passes WIF decoding tests" testPrivkey
         it "Passes SecKey compression tests" testPrvKeyCompressed
@@ -80,15 +81,19 @@ spec = do
 -- github.com/bitcoin/bitcoin/blob/master/src/script.cpp
 -- from function IsCanonicalPubKey
 isCanonicalPubKey :: PubKeyI -> Bool
-isCanonicalPubKey p = not $
-    -- Non-canonical public key: too short
-    (BS.length bs < 33) ||
-    -- Non-canonical public key: invalid length for uncompressed key
-    (BS.index bs 0 == 4 && BS.length bs /= 65) ||
-    -- Non-canonical public key: invalid length for compressed key
-    (BS.index bs 0 `elem` [2,3] && BS.length bs /= 33) ||
-    -- Non-canonical public key: compressed nor uncompressed
-    (BS.index bs 0 `notElem` [2,3,4])
+isCanonicalPubKey p =
+    not $
+        -- Non-canonical public key: too short
+        (BS.length bs < 33)
+            ||
+            -- Non-canonical public key: invalid length for uncompressed key
+            (BS.index bs 0 == 4 && BS.length bs /= 65)
+            ||
+            -- Non-canonical public key: invalid length for compressed key
+            (BS.index bs 0 `elem` [2, 3] && BS.length bs /= 33)
+            ||
+            -- Non-canonical public key: compressed nor uncompressed
+            (BS.index bs 0 `notElem` [2, 3, 4])
   where
     bs = runPutS $ serialize p
 
@@ -127,8 +132,9 @@ testKeyIOValidVector (a, payload, obj)
         assertEqual "Address matches payload" (Just payload) scriptM
         let pubAsWifM = fromWif net a
             pubAsSecM =
-                eitherToMaybe . runGetS S.get =<<
-                decodeHex a :: Maybe SecKey
+                eitherToMaybe . runGetS S.get
+                    =<< decodeHex a ::
+                    Maybe SecKey
         assertBool "Address is invalid Wif" $ isNothing pubAsWifM
         assertBool "Address is invalid PrvKey" $ isNothing pubAsSecM
         -- Test Script to Addr
@@ -141,10 +147,10 @@ testKeyIOValidVector (a, payload, obj)
     chain = obj ^?! key "chain" . _String
     net =
         case chain of
-            "main"    -> btc
-            "test"    -> btcTest
+            "main" -> btc
+            "test" -> btcTest
             "regtest" -> btcRegTest
-            _         -> error "Invalid chain key in key_io_valid.json"
+            _ -> error "Invalid chain key in key_io_valid.json"
 
 testKeyIOInvalidVector :: [Text] -> Assertion
 testKeyIOInvalidVector [a] = do
@@ -161,8 +167,8 @@ testKeyIOInvalidVector _ = assertFailure "Invalid test vector"
 
 testPrivkey :: Assertion
 testPrivkey = do
-    assertBool "Key 1"  $ isJust $ fromWif btc strSecret1
-    assertBool "Key 2"  $ isJust $ fromWif btc strSecret2
+    assertBool "Key 1" $ isJust $ fromWif btc strSecret1
+    assertBool "Key 2" $ isJust $ fromWif btc strSecret2
     assertBool "Key 1C" $ isJust $ fromWif btc strSecret1C
     assertBool "Key 2C" $ isJust $ fromWif btc strSecret2C
     assertBool "Bad key" $ isNothing $ fromWif btc strAddressBad
@@ -194,29 +200,29 @@ testSigs = forM_ sigMsg $ testSignature . doubleSHA256
 sigMsg :: [BS.ByteString]
 sigMsg =
     [ mconcat ["Very secret message ", C.pack (show (i :: Int)), ": 11"]
-    | i <- [0..15]
+    | i <- [0 .. 15]
     ]
 
 testSignature :: Hash256 -> Assertion
 testSignature h = do
-    let sign1  = signHash (secKeyData sec1) h
-        sign2  = signHash (secKeyData sec2) h
+    let sign1 = signHash (secKeyData sec1) h
+        sign2 = signHash (secKeyData sec2) h
         sign1C = signHash (secKeyData sec1C) h
         sign2C = signHash (secKeyData sec2C) h
-    assertBool "Key 1, Sign1"   $ verifyHashSig h sign1 (pubKeyPoint pub1)
-    assertBool "Key 1, Sign2"   $ not $ verifyHashSig h sign2 (pubKeyPoint pub1)
-    assertBool "Key 1, Sign1C"  $ verifyHashSig h sign1C (pubKeyPoint pub1)
-    assertBool "Key 1, Sign2C"  $ not $ verifyHashSig h sign2C (pubKeyPoint pub1)
-    assertBool "Key 2, Sign1"   $ not $ verifyHashSig h sign1 (pubKeyPoint pub2)
-    assertBool "Key 2, Sign2"   $ verifyHashSig h sign2 (pubKeyPoint pub2)
-    assertBool "Key 2, Sign1C"  $ not $ verifyHashSig h sign1C (pubKeyPoint pub2)
-    assertBool "Key 2, Sign2C"  $ verifyHashSig h sign2C (pubKeyPoint pub2)
-    assertBool "Key 1C, Sign1"  $ verifyHashSig h sign1 (pubKeyPoint pub1C)
-    assertBool "Key 1C, Sign2"  $ not $ verifyHashSig h sign2 (pubKeyPoint pub1C)
+    assertBool "Key 1, Sign1" $ verifyHashSig h sign1 (pubKeyPoint pub1)
+    assertBool "Key 1, Sign2" $ not $ verifyHashSig h sign2 (pubKeyPoint pub1)
+    assertBool "Key 1, Sign1C" $ verifyHashSig h sign1C (pubKeyPoint pub1)
+    assertBool "Key 1, Sign2C" $ not $ verifyHashSig h sign2C (pubKeyPoint pub1)
+    assertBool "Key 2, Sign1" $ not $ verifyHashSig h sign1 (pubKeyPoint pub2)
+    assertBool "Key 2, Sign2" $ verifyHashSig h sign2 (pubKeyPoint pub2)
+    assertBool "Key 2, Sign1C" $ not $ verifyHashSig h sign1C (pubKeyPoint pub2)
+    assertBool "Key 2, Sign2C" $ verifyHashSig h sign2C (pubKeyPoint pub2)
+    assertBool "Key 1C, Sign1" $ verifyHashSig h sign1 (pubKeyPoint pub1C)
+    assertBool "Key 1C, Sign2" $ not $ verifyHashSig h sign2 (pubKeyPoint pub1C)
     assertBool "Key 1C, Sign1C" $ verifyHashSig h sign1C (pubKeyPoint pub1C)
     assertBool "Key 1C, Sign2C" $ not $ verifyHashSig h sign2C (pubKeyPoint pub1C)
-    assertBool "Key 2C, Sign1"  $ not $ verifyHashSig h sign1 (pubKeyPoint pub2C)
-    assertBool "Key 2C, Sign2"  $ verifyHashSig h sign2 (pubKeyPoint pub2C)
+    assertBool "Key 2C, Sign1" $ not $ verifyHashSig h sign1 (pubKeyPoint pub2C)
+    assertBool "Key 2C, Sign2" $ verifyHashSig h sign2 (pubKeyPoint pub2C)
     assertBool "Key 2C, Sign1C" $ not $ verifyHashSig h sign1C (pubKeyPoint pub2C)
     assertBool "Key 2C, Sign2C" $ verifyHashSig h sign2C (pubKeyPoint pub2C)
 
@@ -233,8 +239,8 @@ testDetSigning = do
         (signHash (secKeyData sec2C) m)
 
 strSecret1, strSecret2, strSecret1C, strSecret2C :: Text
-strSecret1  = "5HxWvvfubhXpYYpS3tJkw6fq9jE9j18THftkZjHHfmFiWtmAbrj"
-strSecret2  = "5KC4ejrDjv152FGwP386VD1i2NYc5KkfSMyv1nGy1VGDxGHqVY3"
+strSecret1 = "5HxWvvfubhXpYYpS3tJkw6fq9jE9j18THftkZjHHfmFiWtmAbrj"
+strSecret2 = "5KC4ejrDjv152FGwP386VD1i2NYc5KkfSMyv1nGy1VGDxGHqVY3"
 strSecret1C = "Kwr371tjA9u2rFSMZjTNun2PXXP3WPZu2afRHTcta6KxEUdm1vEw"
 strSecret2C = "L3Hq7a8FEQwJkW1M2GNKDW28546Vp5miewcCzSqUD9kCAXrJdS3g"
 
@@ -245,8 +251,8 @@ sec1C = fromJust $ fromWif btc strSecret1C
 sec2C = fromJust $ fromWif btc strSecret2C
 
 addr1, addr2, addr1C, addr2C :: Text
-addr1  = "1QFqqMUD55ZV3PJEJZtaKCsQmjLT6JkjvJ"
-addr2  = "1F5y5E5FMc5YzdJtB9hLaUe43GDxEKXENJ"
+addr1 = "1QFqqMUD55ZV3PJEJZtaKCsQmjLT6JkjvJ"
+addr2 = "1F5y5E5FMc5YzdJtB9hLaUe43GDxEKXENJ"
 addr1C = "1NoJrossxPBKfCHuJXT4HadJrXRE9Fxiqs"
 addr2C = "1CRj2HyM1CXWzHAXLQtiGLyggNT9WQqsDs"
 
@@ -254,8 +260,7 @@ strAddressBad :: Text
 strAddressBad = "1HV9Lc3sNHZxwj4Zk6fB38tEmBryq2cBiF"
 
 pub1, pub2, pub1C, pub2C :: PubKeyI
-pub1  = derivePubKeyI sec1
-pub2  = derivePubKeyI sec2
+pub1 = derivePubKeyI sec1
+pub2 = derivePubKeyI sec2
 pub1C = derivePubKeyI sec1C
 pub2C = derivePubKeyI sec2C
-

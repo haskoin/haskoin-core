@@ -1,22 +1,23 @@
 {-# LANGUAGE OverloadedStrings #-}
+
 module Haskoin.Keys.MnemonicSpec (spec) where
 
-import           Control.Monad          (zipWithM_)
-import           Data.Bits              (shiftR, (.&.))
-import qualified Data.ByteString        as BS
-import           Data.Either            (fromRight)
-import           Data.List              (isPrefixOf)
-import           Data.Maybe             (fromJust)
-import           Data.Serialize         (Serialize, encode)
-import           Data.Text              (Text)
-import qualified Data.Text              as T
-import           Data.Word              (Word32, Word64)
-import           Haskoin.Keys
-import           Haskoin.Util
-import           Haskoin.Util.Arbitrary
-import           Test.Hspec
-import           Test.HUnit
-import           Test.QuickCheck        hiding ((.&.))
+import Control.Monad (zipWithM_)
+import Data.Bits (shiftR, (.&.))
+import qualified Data.ByteString as BS
+import Data.Either (fromRight)
+import Data.List (isPrefixOf)
+import Data.Maybe (fromJust)
+import Data.Serialize (Serialize, encode)
+import Data.Text (Text)
+import qualified Data.Text as T
+import Data.Word (Word32, Word64)
+import Haskoin.Keys
+import Haskoin.Util
+import Haskoin.Util.Arbitrary
+import Test.HUnit
+import Test.Hspec
+import Test.QuickCheck hiding ((.&.))
 
 spec :: Spec
 spec =
@@ -49,40 +50,43 @@ toMnemonicTest = zipWithM_ f ents mss
   where
     f e m = assertEqual "" m . h $ e
     h =
-        fromRight (error "Could not decode mnemonic sentence") .
-        toMnemonic . fromJust . decodeHex
+        fromRight (error "Could not decode mnemonic sentence")
+            . toMnemonic
+            . fromJust
+            . decodeHex
 
 fromMnemonicTest :: Assertion
 fromMnemonicTest = zipWithM_ f ents mss
   where
     f e = assertEqual "" e . h
     h =
-        encodeHex .
-        fromRight (error "Could not decode mnemonic sentence") . fromMnemonic
+        encodeHex
+            . fromRight (error "Could not decode mnemonic sentence")
+            . fromMnemonic
 
 mnemonicToSeedTest :: Assertion
 mnemonicToSeedTest = zipWithM_ f mss seeds
   where
     f m s = assertEqual "" s . h $ m
     h =
-        encodeHex .
-        fromRight (error "Could not decode mnemonic seed") .
-        mnemonicToSeed "TREZOR"
+        encodeHex
+            . fromRight (error "Could not decode mnemonic seed")
+            . mnemonicToSeed "TREZOR"
 
 fromMnemonicInvalidTest :: Assertion
 fromMnemonicInvalidTest = mapM_ f invalidMss
   where
     f = assertBool "" . h
     h m = case fromMnemonic m of
-            Right _  -> False
-            Left err -> "fromMnemonic: checksum failed:" `isPrefixOf` err
+        Right _ -> False
+        Left err -> "fromMnemonic: checksum failed:" `isPrefixOf` err
 
 emptyMnemonicTest :: Assertion
 emptyMnemonicTest =
     assertBool "" $
-    case fromMnemonic "" of
-        Right _  -> False
-        Left err -> "fromMnemonic: empty mnemonic" `isPrefixOf` err
+        case fromMnemonic "" of
+            Right _ -> False
+            Left err -> "fromMnemonic: empty mnemonic" `isPrefixOf` err
 
 ents :: [Text]
 ents =
@@ -290,27 +294,30 @@ toMnemonic128 (a, b) = l == 12
   where
     bs = encode a `BS.append` encode b
     l =
-        length .
-        T.words . fromRight (error "Could not decode mnemonic senttence") $
-        toMnemonic bs
+        length
+            . T.words
+            . fromRight (error "Could not decode mnemonic senttence")
+            $ toMnemonic bs
 
 toMnemonic160 :: (Word32, Word64, Word64) -> Bool
 toMnemonic160 (a, b, c) = l == 15
   where
     bs = BS.concat [encode a, encode b, encode c]
     l =
-        length .
-        T.words . fromRight (error "Could not decode mnemonic sentence") $
-        toMnemonic bs
+        length
+            . T.words
+            . fromRight (error "Could not decode mnemonic sentence")
+            $ toMnemonic bs
 
 toMnemonic256 :: (Word64, Word64, Word64, Word64) -> Bool
 toMnemonic256 (a, b, c, d) = l == 24
   where
     bs = BS.concat [encode a, encode b, encode c, encode d]
     l =
-        length .
-        T.words . fromRight (error "Could not decode mnemonic sentence") $
-        toMnemonic bs
+        length
+            . T.words
+            . fromRight (error "Could not decode mnemonic sentence")
+            $ toMnemonic bs
 
 toMnemonic512 ::
     ((Word64, Word64, Word64, Word64), (Word64, Word64, Word64, Word64)) -> Bool
@@ -328,9 +335,10 @@ toMnemonic512 ((a, b, c, d), (e, f, g, h)) = l == 48
             , encode h
             ]
     l =
-        length .
-        T.words . fromRight (error "Could not decode mnemonic sentence") $
-        toMnemonic bs
+        length
+            . T.words
+            . fromRight (error "Could not decode mnemonic sentence")
+            $ toMnemonic bs
 
 toMnemonicVar :: [Word32] -> Property
 toMnemonicVar ls = not (null ls) && length ls <= 8 ==> l == wc
@@ -340,9 +348,9 @@ toMnemonicVar ls = not (null ls) && length ls <= 8 ==> l == wc
     cb = bl `div` 4
     wc = (cb + bl * 8) `div` 11
     l =
-        length . T.words .
-        fromRight (error "Could not decode mnemonic sentence") $
-        toMnemonic bs
+        length . T.words
+            . fromRight (error "Could not decode mnemonic sentence")
+            $ toMnemonic bs
 
 {- Encode/Decode -}
 
@@ -467,7 +475,7 @@ mnemonicToSeedVar ls = not (null ls) && length ls <= 16 ==> l == 64
 
 {- Get bits from ByteString -}
 
-data ByteCountGen = ByteCountGen BS.ByteString Int deriving Show
+data ByteCountGen = ByteCountGen BS.ByteString Int deriving (Show)
 
 instance Arbitrary ByteCountGen where
     arbitrary = do

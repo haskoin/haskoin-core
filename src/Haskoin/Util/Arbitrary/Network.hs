@@ -1,4 +1,4 @@
-{-|
+{- |
 Module      : Haskoin.Test.Network
 Copyright   : No rights reserved
 License     : MIT
@@ -8,14 +8,14 @@ Portability : POSIX
 -}
 module Haskoin.Util.Arbitrary.Network where
 
-import qualified Data.ByteString               as BS (empty, pack)
-import qualified Data.ByteString.Char8         as C8
-import           Data.Word                     (Word16, Word32)
-import           Haskoin.Network
-import           Haskoin.Util.Arbitrary.Crypto
-import           Haskoin.Util.Arbitrary.Util
-import           Network.Socket                (SockAddr (..))
-import           Test.QuickCheck
+import qualified Data.ByteString as BS (empty, pack)
+import qualified Data.ByteString.Char8 as C8
+import Data.Word (Word16, Word32)
+import Haskoin.Network
+import Haskoin.Util.Arbitrary.Crypto
+import Haskoin.Util.Arbitrary.Util
+import Network.Socket (SockAddr (..))
+import Test.QuickCheck
 
 -- | Arbitrary 'VarInt'.
 arbitraryVarInt :: Gen VarInt
@@ -31,14 +31,15 @@ arbitraryNetworkAddress = do
     s <- arbitrary
     a <- arbitrary
     p <- arbitrary
-    d <- oneof
-        [ do
-            b <- arbitrary
-            c <- arbitrary
-            d <- arbitrary
-            return $ SockAddrInet6 (fromIntegral p) 0 (a,b,c,d) 0
-        , return $ SockAddrInet (fromIntegral (p :: Word16)) a
-        ]
+    d <-
+        oneof
+            [ do
+                b <- arbitrary
+                c <- arbitrary
+                d <- arbitrary
+                return $ SockAddrInet6 (fromIntegral p) 0 (a, b, c, d) 0
+            , return $ SockAddrInet (fromIntegral (p :: Word16)) a
+            ]
     let n = sockToHostAddress d
     return $ NetworkAddress s n
 
@@ -62,21 +63,22 @@ arbitraryInv1 = Inv <$> listOf1 arbitraryInvVector
 arbitraryVersion :: Gen Version
 arbitraryVersion =
     Version <$> arbitrary
-            <*> arbitrary
-            <*> arbitrary
-            <*> arbitraryNetworkAddress
-            <*> arbitraryNetworkAddress
-            <*> arbitrary
-            <*> arbitraryVarString
-            <*> arbitrary
-            <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitraryNetworkAddress
+        <*> arbitraryNetworkAddress
+        <*> arbitrary
+        <*> arbitraryVarString
+        <*> arbitrary
+        <*> arbitrary
 
 -- | Arbitrary non-empty 'Addr'.
 arbitraryAddr1 :: Gen Addr
 arbitraryAddr1 = Addr <$> listOf1 arbitraryNetworkAddressTime
 
--- | Arbitrary 'Alert' with random payload and signature. Signature is not
--- valid.
+{- | Arbitrary 'Alert' with random payload and signature. Signature is not
+ valid.
+-}
 arbitraryAlert :: Gen Alert
 arbitraryAlert = Alert <$> arbitraryVarString <*> arbitraryVarString
 
@@ -86,9 +88,11 @@ arbitraryReject = do
     m <- arbitraryMessageCommand
     c <- arbitraryRejectCode
     s <- arbitraryVarString
-    d <- oneof [ return BS.empty
-               , BS.pack <$> vectorOf 32 arbitrary
-               ]
+    d <-
+        oneof
+            [ return BS.empty
+            , BS.pack <$> vectorOf 32 arbitrary
+            ]
     return $ Reject m c s d
 
 -- | Arbitrary 'RejectCode'.
@@ -130,14 +134,15 @@ arbitraryBloomFlags =
         , BloomUpdateP2PubKeyOnly
         ]
 
--- | Arbitrary bloom filter with its corresponding number of elements
--- and false positive rate.
+{- | Arbitrary bloom filter with its corresponding number of elements
+ and false positive rate.
+-}
 arbitraryBloomFilter :: Gen (Int, Double, BloomFilter)
 arbitraryBloomFilter = do
-    n     <- choose (0,100000)
-    fp    <- choose (1e-8,1)
+    n <- choose (0, 100000)
+    fp <- choose (1e-8, 1)
     tweak <- arbitrary
-    fl    <- arbitraryBloomFlags
+    fl <- arbitraryBloomFlags
     return (n, fp, bloomCreate n fp tweak fl)
 
 -- | Arbitrary 'FilterLoad'.

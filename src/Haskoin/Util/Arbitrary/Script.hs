@@ -1,5 +1,6 @@
 {-# LANGUAGE LambdaCase #-}
-{-|
+
+{- |
 Module      : Haskoin.Test.Script
 Copyright   : No rights reserved
 License     : MIT
@@ -9,21 +10,21 @@ Portability : POSIX
 -}
 module Haskoin.Util.Arbitrary.Script where
 
-import           Crypto.Secp256k1
-import qualified Data.ByteString                as B
-import           Data.Maybe
-import           Data.Word
-import           Haskoin.Address
-import           Haskoin.Constants
-import           Haskoin.Keys.Common
-import           Haskoin.Script
-import           Haskoin.Transaction.Common
-import           Haskoin.Util
-import           Haskoin.Util.Arbitrary.Address
-import           Haskoin.Util.Arbitrary.Crypto
-import           Haskoin.Util.Arbitrary.Keys
-import           Haskoin.Util.Arbitrary.Util
-import           Test.QuickCheck
+import Crypto.Secp256k1
+import qualified Data.ByteString as B
+import Data.Maybe
+import Data.Word
+import Haskoin.Address
+import Haskoin.Constants
+import Haskoin.Keys.Common
+import Haskoin.Script
+import Haskoin.Transaction.Common
+import Haskoin.Util
+import Haskoin.Util.Arbitrary.Address
+import Haskoin.Util.Arbitrary.Crypto
+import Haskoin.Util.Arbitrary.Keys
+import Haskoin.Util.Arbitrary.Util
+import Test.QuickCheck
 
 -- | Arbitrary 'Script' with random script ops.
 arbitraryScript :: Gen Script
@@ -33,7 +34,7 @@ arbitraryScript = Script <$> listOf arbitraryScriptOp
 arbitraryScriptOp :: Gen ScriptOp
 arbitraryScriptOp =
     oneof
-          -- Pushing Data
+        -- Pushing Data
         [ opPushData <$> arbitraryBS1
         , return OP_0
         , return OP_1NEGATE
@@ -54,8 +55,8 @@ arbitraryScriptOp =
         , return OP_14
         , return OP_15
         , return OP_16
-        -- Flow control
-        , return OP_NOP
+        , -- Flow control
+          return OP_NOP
         , return OP_VER
         , return OP_IF
         , return OP_NOTIF
@@ -65,8 +66,8 @@ arbitraryScriptOp =
         , return OP_ENDIF
         , return OP_VERIFY
         , return OP_RETURN
-        -- Stack operations
-        , return OP_TOALTSTACK
+        , -- Stack operations
+          return OP_TOALTSTACK
         , return OP_FROMALTSTACK
         , return OP_IFDUP
         , return OP_DEPTH
@@ -85,14 +86,14 @@ arbitraryScriptOp =
         , return OP_2OVER
         , return OP_2ROT
         , return OP_2SWAP
-        -- Splice
-        , return OP_CAT
+        , -- Splice
+          return OP_CAT
         , return OP_SUBSTR
         , return OP_LEFT
         , return OP_RIGHT
         , return OP_SIZE
-        -- Bitwise logic
-        , return OP_INVERT
+        , -- Bitwise logic
+          return OP_INVERT
         , return OP_AND
         , return OP_OR
         , return OP_XOR
@@ -100,8 +101,8 @@ arbitraryScriptOp =
         , return OP_EQUALVERIFY
         , return OP_RESERVED1
         , return OP_RESERVED2
-        -- Arithmetic
-        , return OP_1ADD
+        , -- Arithmetic
+          return OP_1ADD
         , return OP_1SUB
         , return OP_2MUL
         , return OP_2DIV
@@ -128,8 +129,8 @@ arbitraryScriptOp =
         , return OP_MIN
         , return OP_MAX
         , return OP_WITHIN
-        -- Crypto
-        , return OP_RIPEMD160
+        , -- Crypto
+          return OP_RIPEMD160
         , return OP_SHA1
         , return OP_SHA256
         , return OP_HASH160
@@ -139,8 +140,8 @@ arbitraryScriptOp =
         , return OP_CHECKSIGVERIFY
         , return OP_CHECKMULTISIG
         , return OP_CHECKMULTISIGVERIFY
-        -- Expansion
-        , return OP_NOP1
+        , -- Expansion
+          return OP_NOP1
         , return OP_CHECKLOCKTIMEVERIFY
         , return OP_CHECKSEQUENCEVERIFY
         , return OP_NOP4
@@ -150,13 +151,13 @@ arbitraryScriptOp =
         , return OP_NOP8
         , return OP_NOP9
         , return OP_NOP10
-        -- Bitcoin Cash Nov 2018 hard fork
-        , return OP_CHECKDATASIG
+        , -- Bitcoin Cash Nov 2018 hard fork
+          return OP_CHECKDATASIG
         , return OP_CHECKDATASIGVERIFY
-        -- Bitcoin Cash May 2020 hard fork
-        , return OP_REVERSEBYTES
-        -- Other
-        , return OP_PUBKEYHASH
+        , -- Bitcoin Cash May 2020 hard fork
+          return OP_REVERSEBYTES
+        , -- Other
+          return OP_PUBKEYHASH
         , return OP_PUBKEY
         , return $ OP_INVALIDOPCODE 0xff
         ]
@@ -165,10 +166,22 @@ arbitraryScriptOp =
 arbitraryIntScriptOp :: Gen ScriptOp
 arbitraryIntScriptOp =
     elements
-        [ OP_1,  OP_2,  OP_3,  OP_4
-        , OP_5,  OP_6,  OP_7,  OP_8
-        , OP_9,  OP_10, OP_11, OP_12
-        , OP_13, OP_14, OP_15, OP_16
+        [ OP_1
+        , OP_2
+        , OP_3
+        , OP_4
+        , OP_5
+        , OP_6
+        , OP_7
+        , OP_8
+        , OP_9
+        , OP_10
+        , OP_11
+        , OP_12
+        , OP_13
+        , OP_14
+        , OP_15
+        , OP_16
         ]
 
 -- | Arbitrary 'PushDataType'.
@@ -185,9 +198,9 @@ arbitraryValidSigHash net = do
     sh <- elements [sigHashAll, sigHashNone, sigHashSingle]
     f1 <-
         elements $
-        if isJust (getSigHashForkId net)
-            then [id, setForkIdFlag]
-            else [id]
+            if isJust (getSigHashForkId net)
+                then [id, setForkIdFlag]
+                else [id]
     f2 <- elements [id, setAnyoneCanPayFlag]
     return $ f1 $ f2 sh
 
@@ -201,9 +214,10 @@ arbitrarySigHashFlag =
         , SIGHASH_ANYONECANPAY
         ]
 
--- | Arbitrary message hash, private key and corresponding 'TxSignature'. The
--- signature is generated deterministically using a random message and a random
--- private key.
+{- | Arbitrary message hash, private key and corresponding 'TxSignature'. The
+ signature is generated deterministically using a random message and a random
+ private key.
+-}
 arbitraryTxSignature :: Network -> Gen (TxHash, SecKey, TxSignature)
 arbitraryTxSignature net = do
     (m, key, sig) <- arbitrarySignature
@@ -211,43 +225,47 @@ arbitraryTxSignature net = do
     let txsig = TxSignature sig sh
     return (TxHash m, key, txsig)
   where
-    filterBad sh = not $
-        isSigHashUnknown sh ||
-        isNothing (getSigHashForkId net) && hasForkIdFlag sh
+    filterBad sh =
+        not $
+            isSigHashUnknown sh
+                || isNothing (getSigHashForkId net) && hasForkIdFlag sh
 
 -- | Arbitrary transaction signature that could also be empty.
 arbitraryTxSignatureEmpty :: Network -> Gen TxSignature
 arbitraryTxSignatureEmpty net =
-    frequency [ (1, return TxSignatureEmpty)
-              , (10, lst3 <$> arbitraryTxSignature net)
-              ]
+    frequency
+        [ (1, return TxSignatureEmpty)
+        , (10, lst3 <$> arbitraryTxSignature net)
+        ]
 
 -- | Arbitrary m of n parameters.
 arbitraryMSParam :: Gen (Int, Int)
 arbitraryMSParam = do
-    m <- choose (1,16)
-    n <- choose (m,16)
+    m <- choose (1, 16)
+    n <- choose (m, 16)
     return (m, n)
 
 -- | Arbitrary 'ScriptOutput' (Can by any valid type).
 arbitraryScriptOutput :: Network -> Gen ScriptOutput
 arbitraryScriptOutput net =
     oneof $
-    [ arbitraryPKOutput
-    , arbitraryPKHashOutput
-    , arbitraryMSOutput
-    , arbitrarySHOutput
-    , arbitraryDCOutput
-    ] ++
-    if getSegWit net
-        then [ arbitraryWPKHashOutput
-             , arbitraryWSHOutput
-             , arbitraryWitOutput
-             ]
-        else []
+        [ arbitraryPKOutput
+        , arbitraryPKHashOutput
+        , arbitraryMSOutput
+        , arbitrarySHOutput
+        , arbitraryDCOutput
+        ]
+            ++ if getSegWit net
+                then
+                    [ arbitraryWPKHashOutput
+                    , arbitraryWSHOutput
+                    , arbitraryWitOutput
+                    ]
+                else []
 
--- | Arbitrary 'ScriptOutput' of type 'PayPK', 'PayPKHash' or 'PayMS'
--- (Not 'PayScriptHash', 'DataCarrier', or SegWit)
+{- | Arbitrary 'ScriptOutput' of type 'PayPK', 'PayPKHash' or 'PayMS'
+ (Not 'PayScriptHash', 'DataCarrier', or SegWit)
+-}
 arbitrarySimpleOutput :: Gen ScriptOutput
 arbitrarySimpleOutput =
     oneof
@@ -258,7 +276,7 @@ arbitrarySimpleOutput =
 
 -- | Arbitrary 'ScriptOutput' of type 'PayPK'
 arbitraryPKOutput :: Gen ScriptOutput
-arbitraryPKOutput =  PayPK . snd <$> arbitraryKeyPair
+arbitraryPKOutput = PayPK . snd <$> arbitraryKeyPair
 
 -- | Arbitrary 'ScriptOutput' of type 'PayPKHash'
 arbitraryPKHashOutput :: Gen ScriptOutput
@@ -292,8 +310,8 @@ arbitraryMSOutputC :: Gen ScriptOutput
 arbitraryMSOutputC = do
     (m, n) <- arbitraryMSParam
     keys <-
-        map snd <$>
-        vectorOf n (arbitraryKeyPair `suchThat` (pubKeyCompressed . snd))
+        map snd
+            <$> vectorOf n (arbitraryKeyPair `suchThat` (pubKeyCompressed . snd))
     return $ PayMulSig keys m
 
 -- | Arbitrary 'ScriptOutput' of type 'PayScriptHash'.
@@ -314,8 +332,9 @@ arbitraryScriptInput net =
         , arbitrarySHInput net
         ]
 
--- | Arbitrary 'ScriptInput' of type 'SpendPK', 'SpendPKHash' or 'SpendMulSig'
--- (not 'ScriptHashInput')
+{- | Arbitrary 'ScriptInput' of type 'SpendPK', 'SpendPKHash' or 'SpendMulSig'
+ (not 'ScriptHashInput')
+-}
 arbitrarySimpleInput :: Network -> Gen ScriptInput
 arbitrarySimpleInput net =
     oneof
@@ -352,7 +371,7 @@ arbitraryPKHashInputFullC net = do
 -- | Arbitrary 'ScriptInput' of type 'SpendMulSig'.
 arbitraryMSInput :: Network -> Gen ScriptInput
 arbitraryMSInput net = do
-    m    <- fst <$> arbitraryMSParam
+    m <- fst <$> arbitraryMSParam
     sigs <- vectorOf m (arbitraryTxSignatureEmpty net)
     return $ RegularInput $ SpendMulSig sigs
 
@@ -362,8 +381,9 @@ arbitrarySHInput net = do
     i <- arbitrarySimpleInput net
     ScriptHashInput (getRegularInput i) <$> arbitrarySimpleOutput
 
--- | Arbitrary 'ScriptInput' of type 'ScriptHashInput' containing a
--- 'RedeemScript' of type 'PayMulSig' and an input of type 'SpendMulSig'.
+{- | Arbitrary 'ScriptInput' of type 'ScriptHashInput' containing a
+ 'RedeemScript' of type 'PayMulSig' and an input of type 'SpendMulSig'.
+-}
 arbitraryMulSigSHInput :: Network -> Gen ScriptInput
 arbitraryMulSigSHInput net =
     arbitraryMSOutput >>= \case
@@ -372,14 +392,15 @@ arbitraryMulSigSHInput net =
             return $ ScriptHashInput (SpendMulSig sigs) rdm
         _ -> undefined
 
--- | Arbitrary 'ScriptInput' of type 'ScriptHashInput' containing a
--- 'RedeemScript' of type 'PayMulSig' and an input of type 'SpendMulSig'.
+{- | Arbitrary 'ScriptInput' of type 'ScriptHashInput' containing a
+ 'RedeemScript' of type 'PayMulSig' and an input of type 'SpendMulSig'.
+-}
 arbitraryMulSigSHInputC :: Network -> Gen ScriptInput
 arbitraryMulSigSHInputC net =
     arbitraryMSOutputC >>= \case
         rdm@(PayMulSig _ m) -> do
-          sigs <- vectorOf m (arbitraryTxSignatureEmpty net)
-          return $ ScriptHashInput (SpendMulSig sigs) rdm
+            sigs <- vectorOf m (arbitraryTxSignatureEmpty net)
+            return $ ScriptHashInput (SpendMulSig sigs) rdm
         _ -> undefined
 
 -- | Like 'arbitraryMulSigSHCInput' with no empty signatures.

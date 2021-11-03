@@ -14,3 +14,7 @@ Haskoin Core is a library of Bitcoin and Bitcoin Cash functions written in Haske
 - Parsing and manipulation of all Bitcoin and Bitcoin Cash protocol messages
 - Bloom filters and partial merkle trees (used in SPV wallets)
 - Comprehensive test suite
+
+## Contributing
+
+Please use `ormolu` (or `fourmolu`) to format code prior to submission.  See `scripts/pre-commit.sh` for an example pre-commit hook.

@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Signing support for PSBTs
 - Helper function for merging PSBTs
 - More PSBT tests
+- Partial support for taproot
 
 ## 0.20.5
 ### Added

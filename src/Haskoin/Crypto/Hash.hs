@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE TypeApplications #-}
 
 {- |
 Module      : Haskoin.Crypto.Hash
@@ -29,14 +30,18 @@ module Haskoin.Crypto.Hash (
     hmac256,
     split512,
     join512,
+    initTaggedHash,
 ) where
 
 import Control.DeepSeq
 import Crypto.Hash (
+    Context,
     RIPEMD160 (..),
     SHA1 (..),
     SHA256 (..),
     SHA512 (..),
+    hashInit,
+    hashUpdates,
     hashWith,
  )
 import Crypto.MAC.HMAC (HMAC, hmac)
@@ -242,3 +247,17 @@ join512 (a, b) =
     Hash512
         . BSS.toShort
         $ BSS.fromShort (getHash256 a) `BS.append` BSS.fromShort (getHash256 b)
+
+{- | Initialize tagged hash specified in BIP340
+
+@since 0.21.0
+-}
+initTaggedHash ::
+    -- | Hash tag
+    ByteString ->
+    Context SHA256
+initTaggedHash tag =
+    (`hashUpdates` [hashedTag, hashedTag]) $
+        hashInit @SHA256
+  where
+    hashedTag = hashWith SHA256 tag

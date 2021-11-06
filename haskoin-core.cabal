@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: ec2010d735f2cc98f82ef204ad36efd8e1077e2f9cf9c67871c1e868c025a11f
+-- hash: 03edd130a89789be22754a6b6bbe6524bac85c7afd49f622d76994be6189a765
 
 name:           haskoin-core
 version:        0.21.0
@@ -21,6 +21,7 @@ license:        MIT
 license-file:   LICENSE
 build-type:     Simple
 extra-source-files:
+    data/bip341.json
     data/complex_psbt.json
     data/forkid_script_tests.json
     data/forkid_sighash.json
@@ -75,6 +76,7 @@ library
       Haskoin.Transaction.Genesis
       Haskoin.Transaction.Partial
       Haskoin.Transaction.Segwit
+      Haskoin.Transaction.Taproot
       Haskoin.Util
       Haskoin.Util.Arbitrary
       Haskoin.Util.Arbitrary.Address
@@ -139,6 +141,7 @@ test-suite spec
       Haskoin.NetworkSpec
       Haskoin.ScriptSpec
       Haskoin.Transaction.PartialSpec
+      Haskoin.Transaction.TaprootSpec
       Haskoin.TransactionSpec
       Haskoin.UtilSpec
       Paths_haskoin_core

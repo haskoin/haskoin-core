@@ -424,8 +424,8 @@ bchTest4 =
                 "0000000000000000000000000000000000000000000000000000000000000000"
                 (buildMerkleRoot [txHash genesisTx])
                 1597811185
-                486604799
-                414098458
+                0x1d00ffff
+                114152193
         , -- Hash 000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943
           getMaxBlockSize = 2000000
         , getMaxSatoshi = 2100000000000000

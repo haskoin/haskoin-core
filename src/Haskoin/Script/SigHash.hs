@@ -50,9 +50,9 @@ import Data.Maybe
 import Data.Scientific
 import Data.Word
 import GHC.Generics (Generic)
-import Haskoin.Data
 import Haskoin.Crypto
 import Haskoin.Crypto.Hash
+import Haskoin.Data
 import Haskoin.Network.Common
 import Haskoin.Script.Common
 import Haskoin.Transaction.Common

@@ -24,7 +24,7 @@ module Haskoin.Constants (
     bchTest4,
     bchRegTest,
     allNets,
-    netByName
+    netByName,
 ) where
 
 import Control.DeepSeq
@@ -48,6 +48,7 @@ import Text.Read
 
 -- | Version of Haskoin Core package.
 versionString :: IsString a => a
+
 #ifdef CURRENT_PACKAGE_VERSION
 versionString = CURRENT_PACKAGE_VERSION
 #else
@@ -453,7 +454,6 @@ bchTest4 =
                 , "00000000fb325b8f34fe80c96a5f708a08699a68bbab82dba4474d86bd743077"
                 )
             ,
-
                 ( 38000
                 , "000000000015197537e59f339e3b1bbf81a66f691bd3d7aa08560fc7bf5113fb"
                 )

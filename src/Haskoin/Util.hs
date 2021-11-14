@@ -308,7 +308,7 @@ getInteger =
             sign <- getWord8
             bytes <- getList getWord8
             let v = roll bytes
-            return $! if sign == 0x01 then v else -v
+            return $! if sign == 0x01 then v else - v
 
 putMaybe :: MonadPut m => (a -> m ()) -> Maybe a -> m ()
 putMaybe f Nothing = putWord8 0x00

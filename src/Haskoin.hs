@@ -23,13 +23,13 @@ module Haskoin (
     module Util,
 ) where
 
-import Haskoin.Data as Data
-import Haskoin.Constants as Constants
 import Haskoin.Address as Address
 import Haskoin.Block as Block
+import Haskoin.Constants as Constants
 import Haskoin.Crypto as Crypto
+import Haskoin.Data as Data
 import Haskoin.Keys as Keys
+import Haskoin.Network as Network
 import Haskoin.Script as Script
 import Haskoin.Transaction as Transaction
-import Haskoin.Network as Network
 import Haskoin.Util as Util

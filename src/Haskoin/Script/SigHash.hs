@@ -50,7 +50,7 @@ import Data.Maybe
 import Data.Scientific
 import Data.Word
 import GHC.Generics (Generic)
-import Haskoin.Constants
+import Haskoin.Data
 import Haskoin.Crypto
 import Haskoin.Crypto.Hash
 import Haskoin.Network.Common

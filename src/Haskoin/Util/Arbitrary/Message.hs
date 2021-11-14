@@ -8,7 +8,7 @@ Portability : POSIX
 -}
 module Haskoin.Util.Arbitrary.Message where
 
-import Haskoin.Constants
+import Haskoin.Data
 import Haskoin.Network.Message
 import Haskoin.Util.Arbitrary.Block
 import Haskoin.Util.Arbitrary.Crypto

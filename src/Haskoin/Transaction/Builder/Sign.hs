@@ -52,9 +52,9 @@ import Data.Maybe (
 import Data.Word (Word64)
 import GHC.Generics (Generic)
 import Haskoin.Address (getAddrHash160, pubKeyAddr)
-import Haskoin.Constants (Network)
 import Haskoin.Crypto (Hash256, SecKey)
 import Haskoin.Crypto.Signature (signHash, verifyHashSig)
+import Haskoin.Data (Network)
 import Haskoin.Keys.Common (
     PubKeyI (..),
     SecKeyI (..),

@@ -33,8 +33,8 @@ import Data.Word (Word32)
 import GHC.Generics (Generic)
 import Haskoin.Block.Common
 import Haskoin.Block.Merkle
-import Haskoin.Constants
 import Haskoin.Crypto.Hash
+import Haskoin.Data
 import Haskoin.Network.Bloom
 import Haskoin.Network.Common
 import Haskoin.Transaction.Common

@@ -13,9 +13,11 @@ module Haskoin.Transaction (
     module Builder,
     module Segwit,
     module Partial,
+    module Genesis
 ) where
 
 import Haskoin.Transaction.Builder as Builder
 import Haskoin.Transaction.Common as Common
 import Haskoin.Transaction.Partial as Partial
 import Haskoin.Transaction.Segwit as Segwit
+import Haskoin.Transaction.Genesis as Genesis

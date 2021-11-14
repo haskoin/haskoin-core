@@ -109,8 +109,8 @@ import Data.Typeable (Typeable)
 import Data.Word (Word32, Word64)
 import GHC.Generics (Generic)
 import Haskoin.Block.Common
-import Haskoin.Constants
 import Haskoin.Crypto
+import Haskoin.Data
 import Haskoin.Transaction.Genesis
 import Haskoin.Util
 

@@ -16,16 +16,15 @@ Cash (BCH), and corresponding public test and private regression test networks.
 -}
 module Haskoin.Constants (
     -- * Constants
-    Network (..),
     btc,
     btcTest,
     btcRegTest,
     bch,
     bchTest,
+    bchTest4,
     bchRegTest,
     allNets,
-    netByName,
-    netByIdent,
+    netByName
 ) where
 
 import Control.DeepSeq
@@ -41,7 +40,10 @@ import Data.String
 import Data.Text (Text)
 import Data.Word (Word32, Word64, Word8)
 import GHC.Generics (Generic)
-import Haskoin.Block.Common
+import Haskoin.Block
+import Haskoin.Data
+import Haskoin.Network.Common
+import Haskoin.Transaction
 import Text.Read
 
 -- | Version of Haskoin Core package.
@@ -52,122 +54,15 @@ versionString = CURRENT_PACKAGE_VERSION
 versionString = "Unavailable"
 #endif
 
--- | Constants for network.
-data Network = Network
-    { -- | lowercase alphanumeric and dashes
-      getNetworkName :: !String
-    , -- | network Haskell identifier
-      getNetworkIdent :: !String
-    , -- | prefix for 'Base58' P2PKH addresses
-      getAddrPrefix :: !Word8
-    , -- | prefix for 'Base58' P2SH addresses
-      getScriptPrefix :: !Word8
-    , -- | prefix for WIF private key
-      getSecretPrefix :: !Word8
-    , -- | prefix for extended public key
-      getExtPubKeyPrefix :: !Word32
-    , -- | prefix for extended private key
-      getExtSecretPrefix :: !Word32
-    , -- | network magic
-      getNetworkMagic :: !Word32
-    , -- | genesis block header
-      getGenesisHeader :: !BlockHeader
-    , -- | maximum block size in bytes
-      getMaxBlockSize :: !Int
-    , -- | maximum amount of satoshi
-      getMaxSatoshi :: !Word64
-    , -- | user agent string
-      getHaskoinUserAgent :: !ByteString
-    , -- | default port for P2P connections
-      getDefaultPort :: !Int
-    , -- | allow min difficulty blocks (testnet)
-      getAllowMinDifficultyBlocks :: !Bool
-    , -- | do not retarget difficulty (regtest)
-      getPowNoRetargetting :: !Bool
-    , -- | proof-of-work target higest possible value
-      getPowLimit :: !Integer
-    , -- | block at which BIP34 activates
-      getBip34Block :: !(BlockHeight, BlockHash)
-    , -- | block at which BIP65 activates
-      getBip65Height :: !BlockHeight
-    , -- | block at which BIP66 activates
-      getBip66Height :: !BlockHeight
-    , -- | time between difficulty retargets
-      getTargetTimespan :: !Word32
-    , -- | time between blocks
-      getTargetSpacing :: !Word32
-    , -- | checkpoints
-      getCheckpoints :: ![(BlockHeight, BlockHash)]
-    , -- | BIP44 derivation path root
-      getBip44Coin :: !Word32
-    , -- | peer-to-peer network seeds
-      getSeeds :: ![String]
-    , -- | fork id for replay protection
-      getSigHashForkId :: !(Maybe Word32)
-    , -- | EDA start block height
-      getEdaBlockHeight :: !(Maybe Word32)
-    , -- | DAA start block height
-      getDaaBlockHeight :: !(Maybe Word32)
-    , -- | asert3-2d algorithm activation time
-      -- TODO: Replace with block height after fork
-      getAsertActivationTime :: !(Maybe Word32)
-    , -- | asert3-2d algorithm halflife (not used for non-BCH networks)
-      getAsertHalfLife :: !Integer
-    , -- | segregated witness active
-      getSegWit :: !Bool
-    , -- | 'CashAddr' prefix (for Bitcoin Cash)
-      getCashAddrPrefix :: !(Maybe Text)
-    , -- | 'Bech32' prefix (for SegWit network)
-      getBech32Prefix :: !(Maybe Text)
-    , -- | Replace-By-Fee (BIP-125)
-      getReplaceByFee :: !Bool
-    , -- | Subsidy halving interval
-      getHalvingInterval :: !Word32
-    }
-    deriving (Eq, Generic, NFData)
-
-instance Serial Network where
-    serialize net =
-        putWord32be $ getNetworkMagic net
-    deserialize = do
-        magic <- getWord32be
-        case find ((== magic) . getNetworkMagic) allNets of
-            Nothing -> fail $ "Network magic unknown: " <> show magic
-            Just net -> return net
-
-instance Binary Network where
-    put = serialize
-    get = deserialize
-
-instance Serialize Network where
-    put = serialize
-    get = deserialize
-
-instance Show Network where
-    show = getNetworkIdent
-
-instance Read Network where
-    readPrec = do
-        Ident str <- lexP
-        maybe pfail return (netByIdent str)
-
-instance IsString Network where
-    fromString = fromMaybe (error "Network name invalid") . netByName
-
 -- | Query known networks by name.
 netByName :: String -> Maybe Network
 netByName str = find ((== str) . getNetworkName) allNets
-
--- | Query known networks by Haskell identifier.
-netByIdent :: String -> Maybe Network
-netByIdent str = find ((== str) . getNetworkIdent) allNets
 
 -- | Bitcoin SegWit network. Symbol: BTC.
 btc :: Network
 btc =
     Network
         { getNetworkName = "btc"
-        , getNetworkIdent = "btc"
         , getAddrPrefix = 0
         , getScriptPrefix = 5
         , getSecretPrefix = 128
@@ -178,7 +73,7 @@ btc =
             BlockHeader
                 0x01
                 "0000000000000000000000000000000000000000000000000000000000000000"
-                "3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a"
+                (buildMerkleRoot [txHash genesisTx])
                 1231006505
                 0x1d00ffff
                 2083236893
@@ -283,7 +178,6 @@ btcTest :: Network
 btcTest =
     Network
         { getNetworkName = "btctest"
-        , getNetworkIdent = "btcTest"
         , getAddrPrefix = 111
         , getScriptPrefix = 196
         , getSecretPrefix = 239
@@ -294,7 +188,7 @@ btcTest =
             BlockHeader
                 0x01
                 "0000000000000000000000000000000000000000000000000000000000000000"
-                "3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a"
+                (buildMerkleRoot [txHash genesisTx])
                 1296688602
                 486604799
                 414098458
@@ -345,7 +239,6 @@ btcRegTest :: Network
 btcRegTest =
     Network
         { getNetworkName = "btcreg"
-        , getNetworkIdent = "btcRegTest"
         , getAddrPrefix = 111
         , getScriptPrefix = 196
         , getSecretPrefix = 239
@@ -357,7 +250,7 @@ btcRegTest =
                 -- 0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206
                 0x01
                 "0000000000000000000000000000000000000000000000000000000000000000"
-                "3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a"
+                (buildMerkleRoot [txHash genesisTx])
                 1296688602
                 0x207fffff
                 2
@@ -397,7 +290,6 @@ bch :: Network
 bch =
     Network
         { getNetworkName = "bch"
-        , getNetworkIdent = "bch"
         , getAddrPrefix = 0
         , getScriptPrefix = 5
         , getSecretPrefix = 128
@@ -408,7 +300,7 @@ bch =
             BlockHeader
                 0x01
                 "0000000000000000000000000000000000000000000000000000000000000000"
-                "3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a"
+                (buildMerkleRoot [txHash genesisTx])
                 1231006505
                 0x1d00ffff
                 2083236893
@@ -515,11 +407,85 @@ bch =
         }
 
 -- | Testnet for Bitcoin Cash network.
+bchTest4 :: Network
+bchTest4 =
+    Network
+        { getNetworkName = "bchtest4"
+        , getAddrPrefix = 111
+        , getScriptPrefix = 196
+        , getSecretPrefix = 239
+        , getExtPubKeyPrefix = 0x043587cf
+        , getExtSecretPrefix = 0x04358394
+        , getNetworkMagic = 0xe2b7daaf
+        , getGenesisHeader =
+            BlockHeader
+                0x01
+                "0000000000000000000000000000000000000000000000000000000000000000"
+                (buildMerkleRoot [txHash genesisTx])
+                1597811185
+                486604799
+                414098458
+        , -- Hash 000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943
+          getMaxBlockSize = 2000000
+        , getMaxSatoshi = 2100000000000000
+        , getHaskoinUserAgent = "/haskoin-bch-test4:" <> versionString <> "/"
+        , getDefaultPort = 28333
+        , getAllowMinDifficultyBlocks = True
+        , getPowNoRetargetting = False
+        , getPowLimit =
+            0x00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+        , getBip34Block =
+            ( 2
+            , "00000000b0c65b1e03baace7d5c093db0d6aac224df01484985ffd5e86a1a20c"
+            )
+        , getBip65Height = 3
+        , getBip66Height = 4
+        , getTargetTimespan = 14 * 24 * 60 * 60
+        , getTargetSpacing = 10 * 60
+        , getCheckpoints =
+            [
+                ( 5000
+                , "000000009f092d074574a216faec682040a853c4f079c33dfd2c3ef1fd8108c4"
+                )
+            , -- Axion activation
+
+                ( 16845
+                , "00000000fb325b8f34fe80c96a5f708a08699a68bbab82dba4474d86bd743077"
+                )
+            ,
+
+                ( 38000
+                , "000000000015197537e59f339e3b1bbf81a66f691bd3d7aa08560fc7bf5113fb"
+                )
+            ,
+                ( 54700
+                , "00000000009af4379d87f17d0f172ee4769b48839a5a3a3e81d69da4322518b8"
+                )
+            ]
+        , getSeeds =
+            [ "testnet4-seed-bch.bitcoinforks.org"
+            , "testnet4-seed-bch.toom.im"
+            , "seed.tbch4.loping.net"
+            , "testnet4-seed.flowee.cash"
+            ]
+        , getBip44Coin = 1
+        , getSigHashForkId = Just 0
+        , getEdaBlockHeight = Just 7
+        , getDaaBlockHeight = Just 3000
+        , getAsertActivationTime = Just 1605441600
+        , getAsertHalfLife = 60 * 60
+        , getSegWit = False
+        , getCashAddrPrefix = Just "bchtest"
+        , getBech32Prefix = Nothing
+        , getReplaceByFee = False
+        , getHalvingInterval = 210000
+        }
+
+-- | Testnet for Bitcoin Cash network.
 bchTest :: Network
 bchTest =
     Network
         { getNetworkName = "bchtest"
-        , getNetworkIdent = "bchTest"
         , getAddrPrefix = 111
         , getScriptPrefix = 196
         , getSecretPrefix = 239
@@ -530,7 +496,7 @@ bchTest =
             BlockHeader
                 0x01
                 "0000000000000000000000000000000000000000000000000000000000000000"
-                "3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a"
+                (buildMerkleRoot [txHash genesisTx])
                 1296688602
                 486604799
                 414098458
@@ -591,7 +557,6 @@ bchRegTest :: Network
 bchRegTest =
     Network
         { getNetworkName = "bchreg"
-        , getNetworkIdent = "bchRegTest"
         , getAddrPrefix = 111
         , getScriptPrefix = 196
         , getSecretPrefix = 239
@@ -603,7 +568,7 @@ bchRegTest =
                 -- 0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206
                 0x01
                 "0000000000000000000000000000000000000000000000000000000000000000"
-                "3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a"
+                (buildMerkleRoot [txHash genesisTx])
                 1296688602
                 0x207fffff
                 2
@@ -645,4 +610,4 @@ bchRegTest =
 
 -- | List of all networks supported by this library.
 allNets :: [Network]
-allNets = [btc, bch, btcTest, bchTest, btcRegTest, bchRegTest]
+allNets = [btc, bch, btcTest, bchTest4, bchTest, btcRegTest, bchRegTest]

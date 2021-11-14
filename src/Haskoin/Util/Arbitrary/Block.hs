@@ -10,7 +10,7 @@ module Haskoin.Util.Arbitrary.Block where
 
 import qualified Data.HashMap.Strict as HashMap
 import Haskoin.Block
-import Haskoin.Constants
+import Haskoin.Data
 import Haskoin.Util.Arbitrary.Crypto
 import Haskoin.Util.Arbitrary.Network
 import Haskoin.Util.Arbitrary.Transaction

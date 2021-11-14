@@ -15,6 +15,7 @@ import Data.List (nub, nubBy, permutations)
 import Data.Word (Word64)
 import Haskoin.Address
 import Haskoin.Constants
+import Haskoin.Data
 import Haskoin.Keys.Common
 import Haskoin.Script
 import Haskoin.Transaction

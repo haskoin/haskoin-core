@@ -23,6 +23,7 @@ import qualified Data.Text as Text
 import Data.Text.Encoding (encodeUtf8)
 import Haskoin.Address
 import Haskoin.Constants
+import Haskoin.Data
 import Haskoin.Crypto
 import Haskoin.Keys
 import Haskoin.Script

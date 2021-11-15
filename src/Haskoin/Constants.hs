@@ -15,6 +15,7 @@ Network constants for various networks, including Bitcoin SegWit (BTC), Bitcoin
 Cash (BCH), and corresponding public test and private regression test networks.
 -}
 module Haskoin.Constants (
+    Network(..),
     -- * Constants
     btc,
     btcTest,

@@ -61,8 +61,8 @@ import Data.String (IsString, fromString)
 import Data.String.Conversions (cs)
 import GHC.Generics (Generic)
 import Haskoin.Address.Base58
-import Haskoin.Constants
 import Haskoin.Crypto.Hash
+import Haskoin.Data
 import Haskoin.Util
 
 -- | Elliptic curve public key type with expected serialized compression flag.

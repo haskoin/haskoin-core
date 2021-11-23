@@ -141,8 +141,8 @@ import Data.Typeable (Typeable)
 import Data.Word (Word32, Word8)
 import GHC.Generics (Generic)
 import Haskoin.Address
-import Haskoin.Constants
 import Haskoin.Crypto.Hash
+import Haskoin.Data
 import Haskoin.Keys.Common
 import Haskoin.Keys.Extended.Internal (
     Fingerprint (..),

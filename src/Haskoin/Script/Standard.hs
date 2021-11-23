@@ -62,8 +62,8 @@ import Data.List (sortBy)
 import Data.Maybe (fromJust, isJust)
 import Data.Word (Word8)
 import GHC.Generics (Generic)
-import Haskoin.Constants
 import Haskoin.Crypto
+import Haskoin.Data
 import Haskoin.Keys.Common
 import Haskoin.Script.Common
 import Haskoin.Script.SigHash

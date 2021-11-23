@@ -1,10 +1,8 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.34.5.
+-- This file has been generated from package.yaml by hpack version 0.34.4.
 --
 -- see: https://github.com/sol/hpack
---
--- hash: 03edd130a89789be22754a6b6bbe6524bac85c7afd49f622d76994be6189a765
 
 name:           haskoin-core
 version:        0.21.0
@@ -57,6 +55,7 @@ library
       Haskoin.Crypto
       Haskoin.Crypto.Hash
       Haskoin.Crypto.Signature
+      Haskoin.Data
       Haskoin.Keys
       Haskoin.Keys.Common
       Haskoin.Keys.Extended

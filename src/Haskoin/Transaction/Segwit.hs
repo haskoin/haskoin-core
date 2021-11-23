@@ -32,7 +32,7 @@ import Data.ByteString (ByteString)
 import Data.Bytes.Get
 import Data.Bytes.Put
 import Data.Bytes.Serial
-import Haskoin.Constants
+import Haskoin.Data
 import Haskoin.Keys.Common
 import Haskoin.Script
 import Haskoin.Transaction.Common

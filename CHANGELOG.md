@@ -5,6 +5,9 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 ## 0.21.0
+### Added
+- BCH Testnet4 support.
+
 ### Changed
 - Use a newtype for Fingerprint, which uses an 8 digit hex string for various
   instances.  This fixes inconsistent (de)serialization across the package.

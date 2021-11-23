@@ -69,9 +69,9 @@ import Data.String.Conversions (cs)
 import Data.Text (Text)
 import Data.Word (Word64)
 import Haskoin.Address
-import Haskoin.Constants
 import Haskoin.Crypto.Hash (Hash256, addressHash)
 import Haskoin.Crypto.Signature
+import Haskoin.Data
 import Haskoin.Keys.Common
 import Haskoin.Network.Common
 import Haskoin.Script

@@ -14,6 +14,7 @@ import Data.Text (Text)
 import Data.Word (Word32, Word64)
 import Haskoin.Address
 import Haskoin.Constants
+import Haskoin.Data
 import Haskoin.Keys
 import Haskoin.Script
 import Haskoin.Transaction

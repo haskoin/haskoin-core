@@ -16,6 +16,7 @@ import Data.Maybe
 import Data.Word
 import Haskoin.Address
 import Haskoin.Constants
+import Haskoin.Data
 import Haskoin.Keys.Common
 import Haskoin.Script
 import Haskoin.Transaction.Common

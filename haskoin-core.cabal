@@ -19,6 +19,7 @@ license:        MIT
 license-file:   LICENSE
 build-type:     Simple
 extra-source-files:
+    data/bip341.json
     data/complex_psbt.json
     data/forkid_script_tests.json
     data/forkid_sighash.json
@@ -74,6 +75,7 @@ library
       Haskoin.Transaction.Genesis
       Haskoin.Transaction.Partial
       Haskoin.Transaction.Segwit
+      Haskoin.Transaction.Taproot
       Haskoin.Util
       Haskoin.Util.Arbitrary
       Haskoin.Util.Arbitrary.Address
@@ -138,6 +140,7 @@ test-suite spec
       Haskoin.NetworkSpec
       Haskoin.ScriptSpec
       Haskoin.Transaction.PartialSpec
+      Haskoin.Transaction.TaprootSpec
       Haskoin.TransactionSpec
       Haskoin.UtilSpec
       Paths_haskoin_core

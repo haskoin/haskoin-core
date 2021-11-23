@@ -13,6 +13,7 @@ module Haskoin.Util.Arbitrary.Address where
 import qualified Data.ByteString as B
 import Haskoin.Address
 import Haskoin.Constants
+import Haskoin.Data
 import Haskoin.Util.Arbitrary.Crypto
 import Haskoin.Util.Arbitrary.Util
 import Test.QuickCheck
@@ -36,7 +37,7 @@ arbitraryAddressAll =
 arbitraryNetAddress :: Gen (Network, Address)
 arbitraryNetAddress = do
     net <- arbitraryNetwork
-    if net `elem` [bch, bchTest, bchRegTest]
+    if net `elem` [bch, bchTest, bchTest4, bchRegTest]
         then (net,) <$> arbitraryAddress
         else (net,) <$> arbitraryAddressAll
 

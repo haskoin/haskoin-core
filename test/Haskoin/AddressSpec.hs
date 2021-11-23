@@ -9,6 +9,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Haskoin.Address
 import Haskoin.Constants
+import Haskoin.Data
 import Haskoin.Keys
 import Haskoin.Util
 import Haskoin.Util.Arbitrary

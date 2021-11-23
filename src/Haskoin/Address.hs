@@ -76,8 +76,8 @@ import GHC.Generics (Generic)
 import Haskoin.Address.Base58
 import Haskoin.Address.Bech32
 import Haskoin.Address.CashAddr
-import Haskoin.Constants
 import Haskoin.Crypto
+import Haskoin.Data
 import Haskoin.Keys.Common
 import Haskoin.Script
 import Haskoin.Util

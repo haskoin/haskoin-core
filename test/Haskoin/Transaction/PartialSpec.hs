@@ -24,6 +24,7 @@ import Data.Text.Encoding (encodeUtf8)
 import Haskoin.Address
 import Haskoin.Constants
 import Haskoin.Crypto
+import Haskoin.Data
 import Haskoin.Keys
 import Haskoin.Script
 import Haskoin.Transaction

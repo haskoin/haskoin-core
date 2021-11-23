@@ -13,6 +13,7 @@ import Data.Text (Text)
 import Data.Word (Word32)
 import Haskoin.Block
 import Haskoin.Constants
+import Haskoin.Data
 import Haskoin.Transaction
 import Haskoin.Util.Arbitrary
 import Test.HUnit hiding (State)

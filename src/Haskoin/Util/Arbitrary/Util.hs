@@ -48,6 +48,7 @@ import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import qualified Data.Typeable as T
 import Data.Word (Word32)
 import Haskoin.Constants
+import Haskoin.Data
 import Test.Hspec (Spec, describe, shouldBe, shouldSatisfy)
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck

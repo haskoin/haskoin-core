@@ -59,8 +59,8 @@ import qualified Data.Serialize as S
 import GHC.Generics (Generic)
 import GHC.Word (Word32, Word8)
 import Haskoin.Address (Address (..), pubKeyAddr)
-import Haskoin.Constants (Network)
 import Haskoin.Crypto (SecKey, derivePubKey)
+import Haskoin.Data (Network)
 import Haskoin.Keys (
     DerivPath,
     DerivPathI (Deriv),

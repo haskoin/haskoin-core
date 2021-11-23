@@ -49,8 +49,8 @@ import Data.Serialize (Serialize (..))
 import Data.Word (Word32, Word8)
 import GHC.Generics
 import Haskoin.Block.Common
-import Haskoin.Constants
 import Haskoin.Crypto.Hash
+import Haskoin.Data
 import Haskoin.Network.Common
 import Haskoin.Transaction.Common
 

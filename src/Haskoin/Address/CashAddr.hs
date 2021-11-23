@@ -35,7 +35,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as E
 import Data.Word
-import Haskoin.Constants
+import Haskoin.Data
 import Haskoin.Util
 
 {- | 'CashAddr' prefix, usually shown before the colon in addresses, but sometimes

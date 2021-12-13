@@ -24,6 +24,8 @@ import Control.Monad
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as C
+import Data.Array
+import Data.Char
 import Data.Bytes.Get
 import Data.Bytes.Put
 import Data.Bytes.Serial
@@ -31,6 +33,7 @@ import Data.Maybe (fromMaybe, isJust, listToMaybe)
 import Data.String.Conversions (cs)
 import Data.Text (Text)
 import qualified Data.Text as T
+import Data.Word
 import Haskoin.Crypto.Hash
 import Haskoin.Util
 import Numeric (readInt, showIntAtBase)
@@ -42,21 +45,29 @@ type Base58 = Text
 b58Data :: ByteString
 b58Data = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
+b58Array :: Array Int Word8
+b58Array = listArray (0, 57) (BS.unpack b58Data)
+
+b58InvArray :: Array Word8 (Maybe Int)
+b58InvArray = listArray (minBound, maxBound) (repeat Nothing) // map swap (assocs b58Array)
+  where
+    swap (i, c) = (c, Just i)
+
 {- | Convert a number less than or equal to provided integer into a 'Base58'
  character.
 -}
-b58 :: Int -> Char
-b58 = C.index b58Data
+b58 :: Int -> Word8
+b58 = (b58Array !)
 
 -- | Convert a 'Base58' character into the number it represents.
-b58' :: Char -> Maybe Int
-b58' = flip C.elemIndex b58Data
+b58' :: Word8 -> Maybe Int
+b58' = (b58InvArray !)
 
 {- | Encode an arbitrary-length 'Integer' into a 'Base58' string. Leading zeroes
  will not be part of the resulting string.
 -}
 encodeBase58I :: Integer -> Base58
-encodeBase58I i = cs $ showIntAtBase 58 b58 i ""
+encodeBase58I i = cs $ showIntAtBase 58 (chr . fromIntegral . b58) i ""
 
 -- | Decode a 'Base58' string into an arbitrary-length 'Integer'.
 decodeBase58I :: Base58 -> Maybe Integer
@@ -65,8 +76,8 @@ decodeBase58I s =
         Just (r, []) -> Just r
         _ -> Nothing
   where
-    p = isJust . b58'
-    f = fromMaybe e . b58'
+    p = isJust . b58' . fromIntegral . ord
+    f = fromMaybe e . b58' . fromIntegral . ord
     go = listToMaybe $ readInt 58 p f (cs s)
     e = error "Could not decode base58"
 
@@ -75,10 +86,10 @@ decodeBase58I s =
 -}
 encodeBase58 :: ByteString -> Base58
 encodeBase58 bs =
-    l `mappend` r
+    l <> r
   where
     (z, b) = BS.span (== 0) bs
-    l = cs $ BS.replicate (BS.length z) (BS.index b58Data 0) -- preserve leading 0's
+    l = cs $ BS.replicate (BS.length z) (b58 0) -- preserve leading 0's
     r
         | BS.null b = T.empty
         | otherwise = encodeBase58I $ bsToInteger b
@@ -88,7 +99,7 @@ decodeBase58 :: Base58 -> Maybe ByteString
 decodeBase58 t =
     BS.append prefix <$> r
   where
-    (z, b) = BS.span (== BS.index b58Data 0) (cs t)
+    (z, b) = BS.span (== b58 0) (cs t)
     prefix = BS.replicate (BS.length z) 0 -- preserve leading 1's
     r
         | BS.null b = Just BS.empty

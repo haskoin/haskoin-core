@@ -21,14 +21,14 @@ module Haskoin.Address.Base58 (
 ) where
 
 import Control.Monad
+import Data.Array
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as C
-import Data.Array
-import Data.Char
 import Data.Bytes.Get
 import Data.Bytes.Put
 import Data.Bytes.Serial
+import Data.Char
 import Data.Maybe (fromMaybe, isJust, listToMaybe)
 import Data.String.Conversions (cs)
 import Data.Text (Text)

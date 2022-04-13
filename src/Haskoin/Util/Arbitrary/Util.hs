@@ -38,6 +38,7 @@ import qualified Data.Aeson.Encoding as A
 import qualified Data.Aeson.Types as A
 import Data.ByteString (ByteString, pack)
 import qualified Data.ByteString.Short as BSS
+import Data.ByteString.Lazy (fromStrict, toStrict)
 import Data.Bytes.Get
 import Data.Bytes.Put
 import Data.Bytes.Serial
@@ -138,8 +139,11 @@ testSerial ::
     (Eq a, Show a, T.Typeable a, Serial a) => Gen a -> Spec
 testSerial gen =
     prop ("Binary encoding/decoding identity for " <> name) $
-        forAll gen $ \x ->
+        forAll gen $ \x -> do
+            (runGetL deserialize . runPutL . serialize) x `shouldBe` x
+            (runGetL deserialize . fromStrict . runPutS . serialize) x `shouldBe` x
             (runGetS deserialize . runPutS . serialize) x `shouldBe` Right x
+            (runGetS deserialize . toStrict . runPutL . serialize) x `shouldBe` Right x
   where
     name = show $ T.typeRep $ proxy gen
     proxy :: Gen a -> Proxy a

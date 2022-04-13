@@ -1,5 +1,5 @@
 name: haskoin-core
-version: 0.21.1
+version: 0.21.2
 synopsis: Bitcoin & Bitcoin Cash library for Haskell
 description: Please see the README on GitHub at <https://github.com/haskoin/haskoin-core#readme>
 category: Bitcoin, Finance, Network

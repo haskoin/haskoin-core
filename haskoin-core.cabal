@@ -1,11 +1,11 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.34.4.
+-- This file has been generated from package.yaml by hpack version 0.35.0.
 --
 -- see: https://github.com/sol/hpack
 
 name:           haskoin-core
-version:        0.21.2
+version:        0.22.0
 synopsis:       Bitcoin & Bitcoin Cash library for Haskell
 description:    Please see the README on GitHub at <https://github.com/haskoin/haskoin-core#readme>
 category:       Bitcoin, Finance, Network
@@ -39,6 +39,11 @@ extra-source-files:
 source-repository head
   type: git
   location: git://github.com/haskoin/haskoin.git
+
+flag bip340
+  description: Enable support for taproot signing
+  manual: True
+  default: False
 
 library
   exposed-modules:
@@ -123,6 +128,8 @@ library
     , unordered-containers >=0.2.10.0
     , vector >=0.12.1.2
   default-language: Haskell2010
+  if flag(bip340)
+    cpp-options: -DBIP340
 
 test-suite spec
   type: exitcode-stdio-1.0
@@ -143,7 +150,6 @@ test-suite spec
       Haskoin.Transaction.TaprootSpec
       Haskoin.TransactionSpec
       Haskoin.UtilSpec
-      Paths_haskoin_core
   hs-source-dirs:
       test
   build-depends:
@@ -183,4 +189,6 @@ test-suite spec
     , unordered-containers >=0.2.10.0
     , vector >=0.12.1.2
   default-language: Haskell2010
+  if flag(bip340)
+    cpp-options: -DBIP340
   build-tool-depends: hspec-discover:hspec-discover

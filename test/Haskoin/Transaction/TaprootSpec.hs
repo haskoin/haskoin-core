@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -5,26 +6,38 @@
 module Haskoin.Transaction.TaprootSpec (spec) where
 
 import Control.Applicative ((<|>))
-import Control.Monad (zipWithM, (<=<))
-import Data.Aeson (FromJSON (parseJSON), withObject, (.:), (.:?))
+import Control.Monad (zipWithM, (<=<), (>=>))
+import Data.Aeson (FromJSON (parseJSON), Value, withObject, (.:), (.:?))
 import Data.Aeson.Types (Parser)
 import qualified Data.ByteArray as BA
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.Bytes.Get (runGetS)
 import Data.Bytes.Put (runPutS)
-import Data.Bytes.Serial (deserialize, serialize)
+import Data.Bytes.Serial (serialize)
+import Data.Foldable (foldl')
+import Data.Maybe (catMaybes, isJust, listToMaybe)
+import Data.Serialize (Get, Serialize)
+import qualified Data.Serialize as S
+import Data.String (fromString)
 import Data.Text (Text)
-import Data.Word (Word8)
+import Data.Word (Word32, Word8)
 import Haskoin (
+    Input (Input),
     MAST (..),
+    Msg,
     PubKey,
     PubKeyI (PubKeyI),
     ScriptOutput,
     ScriptPathData (..),
+    SecKey,
+    SigHash (SigHash),
     TaprootOutput (TaprootOutput),
     TaprootWitness (ScriptPathSpend),
-    XOnlyPubKey (..),
+    Tweak,
+    Tx,
+    TxOut (TxOut),
+    XOnlyPubKey,
     addrToText,
     btc,
     decodeHex,
@@ -38,19 +51,33 @@ import Haskoin (
     taprootScriptOutput,
     verifyScriptPathData,
  )
+#ifdef BIP340
+import Haskoin (signTaprootInput, taprootKeyPathWitness)
+#endif
+import qualified Haskoin as H
+import Haskoin.Transaction.Taproot (getByXCoord, toXCoord)
 import Haskoin.UtilSpec (readTestFile)
 import Test.HUnit (assertBool, (@?=))
 import Test.Hspec (Spec, describe, it, runIO)
 
 spec :: Spec
 spec = do
+#ifdef BIP340
+    TestVector{testScriptPubKey, testKeyPathSpending} <- runIO $ readTestFile "bip341.json"
+#else
     TestVector{testScriptPubKey} <- runIO $ readTestFile "bip341.json"
+#endif
     describe "Taproot" $ do
-        it "should calculate the correct hashes" $ mapM_ testHashes testScriptPubKey
-        it "should build the correct output key" $ mapM_ testOutputKey testScriptPubKey
-        it "should build the correct script output" $ mapM_ testScriptOutput testScriptPubKey
-        it "should calculate the correct control blocks" $ mapM_ testControlBlocks testScriptPubKey
-        it "should arrive at the correct address" $ mapM_ testAddress testScriptPubKey
+        describe "Structure tests" $ do
+            it "should calculate the correct hashes" $ mapM_ testHashes testScriptPubKey
+            it "should build the correct output key" $ mapM_ testOutputKey testScriptPubKey
+            it "should build the correct script output" $ mapM_ testScriptOutput testScriptPubKey
+            it "should calculate the correct control blocks" $ mapM_ testControlBlocks testScriptPubKey
+            it "should arrive at the correct address" $ mapM_ testAddress testScriptPubKey
+#ifdef BIP340
+        describe "Signing tests" $ do
+            it "should sign inputs correctly" $ testSignInputs testKeyPathSpending
+#endif
 
 testHashes :: TestScriptPubKey -> IO ()
 testHashes testData =
@@ -69,10 +96,10 @@ testHashes testData =
 
 testOutputKey :: TestScriptPubKey -> IO ()
 testOutputKey testData = do
-    XOnlyPubKey (taprootOutputKey theOutput) @?= theOutputKey
+    (toXCoord . taprootOutputKey) theOutput @?= toXCoord theOutputKey
   where
     theOutput = tspkGiven testData
-    theOutputKey = XOnlyPubKey . spkiTweakedPubKey $ tspkIntermediary testData
+    theOutputKey = spkiTweakedPubKey $ tspkIntermediary testData
 
 testScriptOutput :: TestScriptPubKey -> IO ()
 testScriptOutput testData =
@@ -115,13 +142,37 @@ testAddress testData = computedAddress @?= (Just . spkeAddress . tspkExpected) t
   where
     computedAddress = (addrToText btc <=< outputAddress) . taprootScriptOutput $ tspkGiven testData
 
+#ifdef BIP340
+testSignInputs :: TestKeyPathSpending -> IO ()
+testSignInputs tkps = mapM_ trySign $ tkpsInputSpending tkps
+  where
+    trySign kpis =
+        assertBool "Witness matches" $
+            witness == kpisWitness kpis
+      where
+        Just witness =
+            uncurry taprootKeyPathWitness
+                <$> (sign <$> kpisTxInIndex <*> kpisSigHashType <*> kpisTweakedPrivkey) kpis
+
+    sign ix theSigHashType theSecKey =
+        signTaprootInput
+            0x00
+            (tkpsUtxosSpent tkps)
+            (tkpsRawUnsignedTx tkps)
+            ix
+            theSigHashType
+            Nothing
+            theSecKey
+            Nothing
+#endif
+
 newtype SpkGiven = SpkGiven {unSpkGiven :: TaprootOutput}
 
 instance FromJSON SpkGiven where
     parseJSON = withObject "SpkGiven" $ \obj ->
         fmap SpkGiven $
             TaprootOutput
-                <$> (xOnlyPubKey <$> obj .: "internalPubkey")
+                <$> (obj .: "internalPubkey" >>= hexFieldBy getByXCoord)
                 <*> (obj .:? "scriptTree" >>= traverse parseScriptTree)
       where
         parseScriptTree v =
@@ -131,12 +182,11 @@ instance FromJSON SpkGiven where
         parseScriptLeaf = withObject "ScriptTree leaf" $ \obj ->
             MASTLeaf
                 <$> obj .: "leafVersion"
-                <*> (obj .: "script" >>= hexScript)
+                <*> (obj .: "script" >>= hexField)
         parseScriptBranch v =
             parseJSON v >>= \case
                 [v1, v2] -> MASTBranch <$> parseScriptTree v1 <*> parseScriptTree v2
                 _ -> fail "ScriptTree branch"
-        hexScript = either fail pure . runGetS deserialize <=< jsonHex
 
 data SpkIntermediary = SpkIntermediary
     { spkiLeafHashes :: Maybe [ByteString]
@@ -149,7 +199,7 @@ instance FromJSON SpkIntermediary where
         SpkIntermediary
             <$> (obj .:? "leafHashes" >>= (traverse . traverse) jsonHex)
             <*> (obj .: "merkleRoot" >>= traverse jsonHex)
-            <*> (xOnlyPubKey <$> obj .: "tweakedPubkey")
+            <*> (obj .: "tweakedPubkey" >>= hexFieldBy getByXCoord)
 
 data SpkExpected = SpkExpected
     { spkeScriptPubKey :: ScriptOutput
@@ -177,6 +227,86 @@ instance FromJSON TestScriptPubKey where
             <*> obj .: "intermediary"
             <*> obj .: "expected"
 
+#ifdef BIP340
+
+data KeyPathInputSpending = KeyPathInputSpending
+    { kpisTxInIndex :: Int
+    , kpisInternalPrivKey :: SecKey
+    , kpisInternalPubKey :: XOnlyPubKey
+    , kpisMerkleRoot :: Maybe ByteString
+    , kpisSigHashType :: SigHash
+    , kpisTweak :: Tweak
+    , kpisTweakedPrivkey :: SecKey
+    , kpisSigMsg :: ByteString
+    , kpisPrecomputedUsed :: [Text]
+    , kpisSigHash :: Msg
+    , kpisWitness :: ByteString
+    }
+
+data TestKeyPathSpending = TestKeyPathSpending
+    { tkpsRawUnsignedTx :: Tx
+    , tkpsUtxosSpent :: [TxOut]
+    , tkpsHashAmounts :: ByteString
+    , tkpsHashOutpus :: ByteString
+    , tkpsHasPrevouts :: ByteString
+    , tkpsHashScriptPubKeys :: ByteString
+    , tkpsHashSequences :: ByteString
+    , tkpsInputSpending :: [KeyPathInputSpending]
+    , tkpsFullySignedTx :: Tx
+    }
+
+instance FromJSON TestKeyPathSpending where
+    parseJSON v =
+        TestKeyPathSpending
+            <$> (deepField ["given", "rawUnsignedTx"] v >>= hexField)
+            <*> (deepField ["given", "utxosSpent"] v >>= traverse decodeUtxoSpent)
+            <*> (deepField ["intermediary", "hashAmounts"] v >>= jsonHex)
+            <*> (deepField ["intermediary", "hashOutputs"] v >>= jsonHex)
+            <*> (deepField ["intermediary", "hashPrevouts"] v >>= jsonHex)
+            <*> (deepField ["intermediary", "hashScriptPubkeys"] v >>= jsonHex)
+            <*> (deepField ["intermediary", "hashSequences"] v >>= jsonHex)
+            <*> (deepField ["inputSpending"] v >>= traverse decodeInputSpending)
+            <*> (deepField ["auxiliary", "fullySignedTx"] v >>= hexField)
+      where
+        deepField :: FromJSON a => [String] -> Value -> Parser a
+        deepField = \case
+            [name] -> withObject ("." <> name) $ (.: fromString name)
+            name : names -> withObject ("." <> name) $ (.: fromString name) >=> deepField names
+            _ -> const $ fail "empty path"
+        decodeUtxoSpent = withObject "uxto spent" $ \obj ->
+            TxOut
+                <$> obj .: "amountSats"
+                <*> (obj .: "scriptPubKey" >>= jsonHex)
+        decodeInputSpending vIS =
+            KeyPathInputSpending
+                <$> deepField ["given", "txinIndex"] vIS
+                <*> (deepField ["given", "internalPrivkey"] vIS >>= hexField)
+                <*> (deepField ["intermediary", "internalPubkey"] vIS >>= hexField)
+                <*> (deepField ["given", "merkleRoot"] vIS >>= traverse jsonHex)
+                <*> deepField ["given", "hashType"] vIS
+                <*> (deepField ["intermediary", "tweak"] vIS >>= hexField)
+                <*> (deepField ["intermediary", "tweakedPrivkey"] vIS >>= hexField)
+                <*> (deepField ["intermediary", "sigMsg"] vIS >>= jsonHex)
+                <*> deepField ["intermediary", "precomputedUsed"] vIS
+                <*> (deepField ["intermediary", "sigHash"] vIS >>= hexField)
+                <*> (deepField ["expected", "witness"] vIS >>= traverse jsonHex >>= oneElement)
+
+data TestVector = TestVector
+    { testScriptPubKey :: [TestScriptPubKey]
+    , testKeyPathSpending :: TestKeyPathSpending
+    }
+
+instance FromJSON TestVector where
+    parseJSON = withObject "TestVector" $ \obj ->
+        TestVector
+            <$> obj .: "scriptPubKey"
+            <*> (obj .: "keyPathSpending" >>= oneElement)
+
+oneElement :: [a] -> Parser a
+oneElement = maybe (fail "Must be exactly one element") pure . listToMaybe
+
+#else
+
 newtype TestVector = TestVector
     { testScriptPubKey :: [TestScriptPubKey]
     }
@@ -184,6 +314,14 @@ newtype TestVector = TestVector
 instance FromJSON TestVector where
     parseJSON = withObject "TestVector" $ \obj ->
         TestVector <$> obj .: "scriptPubKey"
+
+#endif
+
+hexField :: Serialize a => Text -> Parser a
+hexField = either fail pure . S.decode <=< jsonHex
+
+hexFieldBy :: Get a -> Text -> Parser a
+hexFieldBy parser = either fail pure . runGetS parser <=< jsonHex
 
 jsonHex :: Text -> Parser ByteString
 jsonHex = maybe (fail "Unable to decode hex") pure . decodeHex

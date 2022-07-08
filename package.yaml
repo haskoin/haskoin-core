@@ -1,5 +1,5 @@
 name: haskoin-core
-version: 0.21.2
+version: 0.22.0
 synopsis: Bitcoin & Bitcoin Cash library for Haskell
 description: Please see the README on GitHub at <https://github.com/haskoin/haskoin-core#readme>
 category: Bitcoin, Finance, Network
@@ -17,6 +17,11 @@ extra-source-files:
   - data/*.json
   - README.md
   - CHANGELOG.md
+flags:
+  bip340:
+     description: Enable support for taproot signing
+     manual: true
+     default: false
 dependencies:
   - aeson >= 1.4.6.0
   - array >= 0.5.4.0
@@ -51,10 +56,12 @@ dependencies:
 library:
   source-dirs: src
   other-modules:
-    Haskoin.Keys.Extended.Internal
+    - Haskoin.Keys.Extended.Internal
   when:
     - condition: false
       other-modules: Paths_haskoin_core
+    - condition: flag(bip340)
+      cpp-options: -DBIP340
 tests:
   spec:
     main: Spec.hs
@@ -70,3 +77,8 @@ tests:
       - QuickCheck >= 2.13.2
       - lens-aeson >= 1.1
       - lens >= 4.18.1
+    when:
+      - condition: false
+        other-modules: Paths_haskoin_core
+      - condition: flag(bip340)
+        cpp-options: -DBIP340

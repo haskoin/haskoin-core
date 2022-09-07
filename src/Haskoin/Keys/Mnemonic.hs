@@ -1,15 +1,10 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-{- |
-Module      : Haskoin.Keys.Mnemonic
-Copyright   : No rights reserved
-License     : MIT
-Maintainer  : jprupp@protonmail.ch
-Stability   : experimental
-Portability : POSIX
-
-Mnemonic keys (BIP-39). Only English dictionary.
--}
+-- |
+-- Stability   : experimental
+-- Portability : POSIX
+--
+-- Mnemonic keys (BIP-39). Only English dictionary.
 module Haskoin.Keys.Mnemonic (
     -- * Mnemonic Sentences
     Entropy,
@@ -39,30 +34,35 @@ import Data.Vector (Vector, (!))
 import qualified Data.Vector as V
 import Haskoin.Util
 
-{- | Random data used to create a mnemonic sentence. Use a good entropy source.
- You will get your coins stolen if you don't. You have been warned.
--}
+
+-- | Random data used to create a mnemonic sentence. Use a good entropy source.
+-- You will get your coins stolen if you don't. You have been warned.
 type Entropy = ByteString
+
 
 -- | Human-readable mnemonic sentence.
 type Mnemonic = Text
 
+
 -- | Optional passphrase for mnemnoic sentence.
 type Passphrase = Text
+
 
 -- | Seed for a private key from a mnemonic sentence.
 type Seed = ByteString
 
+
 -- | Mnemonic key checksum.
 type Checksum = ByteString
+
 
 -- | Paremeters for PBKDF2 function.
 pbkdfParams :: Parameters
 pbkdfParams = Parameters{iterCounts = 2048, outputLength = 64}
 
-{- | Provide intial 'Entropy' as a 'ByteString' of length multiple of 4 bytes.
- Output a 'Mnemonic' sentence.
--}
+
+-- | Provide intial 'Entropy' as a 'ByteString' of length multiple of 4 bytes.
+-- Output a 'Mnemonic' sentence.
 toMnemonic :: Entropy -> Either String Mnemonic
 toMnemonic ent = do
     when (BS.null ent) $
@@ -78,24 +78,27 @@ toMnemonic ent = do
     indices = bsToIndices $ ent `BS.append` c
     ms = T.unwords $ map (wl !) indices
 
-{- | Revert 'toMnemonic'. Do not use this to generate a 'Seed'. Instead use
- 'mnemonicToSeed'. This outputs the original 'Entropy' used to generate a
- 'Mnemonic' sentence.
--}
+
+-- | Revert 'toMnemonic'. Do not use this to generate a 'Seed'. Instead use
+-- 'mnemonicToSeed'. This outputs the original 'Entropy' used to generate a
+-- 'Mnemonic' sentence.
 fromMnemonic :: Mnemonic -> Either String Entropy
 fromMnemonic ms = do
     when (T.null ms) $
         Left "fromMnemonic: empty mnemonic"
     when (word_count > 48) $
-        Left $ "fromMnemonic: too many words: " ++ show word_count
+        Left $
+            "fromMnemonic: too many words: " ++ show word_count
     when (word_count `mod` 3 /= 0) $
-        Left $ "fromMnemonic: wrong number of words:" ++ show word_count
+        Left $
+            "fromMnemonic: wrong number of words:" ++ show word_count
     ms_bs <- indicesToBS =<< getIndices ms_words
     let (ms_ent, ms_cs) = BS.splitAt (ent_len * 4) ms_bs
         ms_cs_num = numCS cs_len ms_cs
         ent_cs_num = numCS cs_len $ calcCS cs_len ms_ent
     when (ent_cs_num /= ms_cs_num) $
-        Left $ "fromMnemonic: checksum failed: " ++ sh ent_cs_num ms_cs_num
+        Left $
+            "fromMnemonic: checksum failed: " ++ sh ent_cs_num ms_cs_num
     return ms_ent
   where
     ms_words = T.words ms
@@ -103,9 +106,11 @@ fromMnemonic ms = do
     (ent_len, cs_len) = (word_count * 11) `quotRem` 32
     sh cs_a cs_b = show cs_a ++ " /= " ++ show cs_b
 
+
 -- | Compute 'Checksum'.
 calcCS :: Int -> Entropy -> Checksum
 calcCS len = getBits len . BA.convert . hashWith SHA256
+
 
 numCS :: Int -> Entropy -> Integer
 numCS len =
@@ -115,10 +120,10 @@ numCS len =
         8 -> id
         x -> flip shiftR x
 
-{- | Turn an arbitrary sequence of characters into a 512-bit 'Seed'. Use
- 'mnemonicToSeed' to get a seed from a 'Mnemonic' sentence. Warning: Does not
- perform NFKD normalization.
--}
+
+-- | Turn an arbitrary sequence of characters into a 512-bit 'Seed'. Use
+-- 'mnemonicToSeed' to get a seed from a 'Mnemonic' sentence. Warning: Does not
+-- perform NFKD normalization.
 anyToSeed :: Passphrase -> Mnemonic -> Seed
 anyToSeed pf ms =
     fastPBKDF2_SHA512
@@ -126,15 +131,16 @@ anyToSeed pf ms =
         (E.encodeUtf8 ms)
         ("mnemonic" `mappend` E.encodeUtf8 pf)
 
-{- | Get a 512-bit 'Seed' from a 'Mnemonic' sentence. Will validate checksum.
- 'Passphrase' can be used to protect the 'Mnemonic'. Use an empty string as
- 'Passphrase' if none is required.
--}
+
+-- | Get a 512-bit 'Seed' from a 'Mnemonic' sentence. Will validate checksum.
+-- 'Passphrase' can be used to protect the 'Mnemonic'. Use an empty string as
+-- 'Passphrase' if none is required.
 mnemonicToSeed :: Passphrase -> Mnemonic -> Either String Seed
 mnemonicToSeed pf ms = do
     ent <- fromMnemonic ms
     mnm <- toMnemonic ent
     return $ anyToSeed pf mnm
+
 
 -- | Get indices of words in word list.
 getIndices :: [Text] -> Either String [Int]
@@ -145,6 +151,7 @@ getIndices ws
     i = map (`M.lookup` wl') ws
     n = elemIndices Nothing i
     w = T.unwords $ map (ws !!) n
+
 
 -- | Turn a list of 11-bit numbers into a 'ByteString'
 indicesToBS :: [Int] -> Either String ByteString
@@ -165,6 +172,7 @@ indicesToBS is = do
     pad bs = BS.append (BS.replicate (bl - BS.length bs) 0x00) bs
     f acc x = (acc `shiftL` 11) + fromIntegral x
 
+
 -- | Turn a 'ByteString' into a list of 11-bit numbers.
 bsToIndices :: ByteString -> [Int]
 bsToIndices bs =
@@ -174,8 +182,10 @@ bsToIndices bs =
     go 0 _ = []
     go n i = fromIntegral (i `mod` 2048) : go (n - 1) (i `shiftR` 11)
 
+
 wl' :: M.Map Text Int
 wl' = V.ifoldr' (flip M.insert) M.empty wl
+
 
 -- | Standard English dictionary from BIP-39 specification.
 wl :: Vector Text

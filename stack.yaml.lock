@@ -3,10 +3,17 @@
 # For more information, please see the documentation at:
 #   https://docs.haskellstack.org/en/stable/lock_files
 
-packages: []
+packages:
+- completed:
+    hackage: fourmolu-0.8.2.0@sha256:2cc2e4b296897b14e937c6a22e1b9840699b2b7bf5021fbdc6f212376d44edb6,7469
+    pantry-tree:
+      size: 143718
+      sha256: e467a3bce53e6bbb71414a368369095eee13e423d093a5aff2cd128317362c3e
+  original:
+    hackage: fourmolu-0.8.2.0
 snapshots:
 - completed:
-    size: 617368
-    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/19/3.yaml
-    sha256: a209d3455279ee76eb45f01f73bbb960ceaaa8dfad8891435384689df4dcb653
-  original: lts-19.3
+    size: 619399
+    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/19/22.yaml
+    sha256: 5098594e71bdefe0c13e9e6236f12e3414ef91a2b89b029fd30e8fc8087f3a07
+  original: lts-19.22

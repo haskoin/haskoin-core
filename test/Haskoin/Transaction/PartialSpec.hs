@@ -2,7 +2,11 @@
 
 module Haskoin.Transaction.PartialSpec (spec) where
 
+import Control.Monad ((<=<))
+import Data.Aeson (FromJSON, parseJSON, withObject, (.:))
+import Data.Bifunctor (first)
 import Data.ByteString (ByteString)
+import Data.ByteString.Base64 (decodeBase64)
 import Data.Bytes.Get
 import Data.Bytes.Put
 import Data.Bytes.Serial
@@ -11,14 +15,6 @@ import Data.HashMap.Strict (fromList, singleton)
 import Data.Maybe (fromJust, isJust)
 import Data.Serialize as S
 import Data.Text (Text)
-import Test.HUnit (Assertion, assertBool, assertEqual)
-import Test.Hspec
-import Test.QuickCheck
-
-import Control.Monad ((<=<))
-import Data.Aeson (FromJSON, parseJSON, withObject, (.:))
-import Data.Bifunctor (first)
-import Data.ByteString.Base64 (decodeBase64)
 import qualified Data.Text as Text
 import Data.Text.Encoding (encodeUtf8)
 import Haskoin.Address
@@ -31,6 +27,10 @@ import Haskoin.Transaction
 import Haskoin.Util
 import Haskoin.Util.Arbitrary
 import Haskoin.UtilSpec (readTestFile)
+import Test.HUnit (Assertion, assertBool, assertEqual)
+import Test.Hspec
+import Test.QuickCheck
+
 
 spec :: Spec
 spec = describe "partially signed bitcoin transaction unit tests" $ do
@@ -45,7 +45,8 @@ spec = describe "partially signed bitcoin transaction unit tests" $ do
     it "encodes valid bip vecs" $
         mapM_ (uncurry encodeVecTest) validEncodeVec
     it "decodes valid bip vecs" $
-        mapM_ (uncurry decodeVecTest) $ zip [1 ..] validVec
+        mapM_ (uncurry decodeVecTest) $
+            zip [1 ..] validVec
     it "decodes vector 2" vec2Test
     it "decodes vector 3" vec3Test
     it "decodes vector 4" vec4Test
@@ -53,14 +54,17 @@ spec = describe "partially signed bitcoin transaction unit tests" $ do
     it "decodes vector 6" vec6Test
     it "signed and finalized p2pkh PSBTs verify" $
         property $
-            forAll arbitraryKeyPair $ verifyNonWitnessPSBT btc . unfinalizedPkhPSBT btc
+            forAll arbitraryKeyPair $
+                verifyNonWitnessPSBT btc . unfinalizedPkhPSBT btc
     it "signed and finalized multisig PSBTs verify" $
         property $
-            forAll arbitraryMultiSig $ verifyNonWitnessPSBT btc . unfinalizedMsPSBT btc
+            forAll arbitraryMultiSig $
+                verifyNonWitnessPSBT btc . unfinalizedMsPSBT btc
     it "encodes and decodes psbt with final witness script" $
         (fmap (encodeHex . S.encode) . decodeHexPSBT) validVec7Hex == Right validVec7Hex
     it "handles complex psbts correctly" complexPsbtTest
     it "calculates keys properly" psbtSignerTest
+
 
 vec2Test :: Assertion
 vec2Test = do
@@ -79,6 +83,7 @@ vec2Test = do
 
     mapM_ (assertEqual "outputs are empty" emptyOutput) (outputs psbt)
 
+
 vec3Test :: Assertion
 vec3Test = do
     psbt <- decodeHexPSBTM "Cannot parse validVec3" validVec3Hex
@@ -96,6 +101,7 @@ vec3Test = do
                 $ txOut utx !! fromIntegral prevVOut
     assertBool "p2pkh" $ isPayPKHash prevOutputKey
     assertEqual "sighash type" sigHashAll (fromJust $ sigHashType firstInput)
+
 
 vec4Test :: Assertion
 vec4Test = do
@@ -116,6 +122,7 @@ vec4Test = do
     assertEqual "expected redeem script" expectedOut rdmScriptP2SH
 
     assertBool "all non-empty outputs" $ emptyOutput `notElem` outputs psbt
+
 
 vec5Test :: Assertion
 vec5Test = do
@@ -229,6 +236,7 @@ vec5Test = do
             }
     hardIndex = (+ 2 ^ 31)
 
+
 vec6Test :: Assertion
 vec6Test = do
     psbt <- decodeHexPSBTM "Cannot parse validVec6" validVec6Hex
@@ -245,6 +253,7 @@ vec6Test = do
             singleton
                 (Key 0x0f (fromJust $ decodeHex "010203040506070809"))
                 (fromJust $ decodeHex "0102030405060708090a0b0c0d0e0f")
+
 
 complexPsbtTest :: Assertion
 complexPsbtTest = do
@@ -265,6 +274,7 @@ complexPsbtTest = do
     stripRedundantUtxo input
         | Just{} <- witnessUtxo input = input{nonWitnessUtxo = Nothing}
         | otherwise = input
+
 
 psbtSignerTest :: Assertion
 psbtSignerTest = do
@@ -298,12 +308,14 @@ psbtSignerTest = do
     directPathSecKey = xPrvKey $ derivePath directPath xprv
     directPathPubKey = PubKeyI{pubKeyPoint = derivePubKey directPathSecKey, pubKeyCompressed = True}
 
+
 expectedOut :: ScriptOutput
 expectedOut =
     fromRight (error "could not decode expected output")
         . decodeOutputBS
         . fromJust
         $ decodeHex "a9143545e6e33b832c47050f24d3eeb93c9c03948bc787"
+
 
 witnessScriptPubKey :: Input -> ScriptOutput
 witnessScriptPubKey =
@@ -313,11 +325,14 @@ witnessScriptPubKey =
         . fromJust
         . witnessUtxo
 
+
 decodeHexPSBT :: Text -> Either String PartiallySignedTransaction
 decodeHexPSBT = S.decode . fromJust . decodeHex
 
+
 decodeHexPSBTM :: (Monad m, MonadFail m) => String -> Text -> m PartiallySignedTransaction
 decodeHexPSBTM errMsg = either (fail . (errMsg <>) . (": " <>)) return . decodeHexPSBT
+
 
 hexScript :: Text -> ByteString
 hexScript =
@@ -329,14 +344,18 @@ hexScript =
     encodeScript :: Script -> ByteString
     encodeScript = runPutS . serialize
 
+
 invalidVecTest :: Text -> Assertion
 invalidVecTest = assertBool "invalid psbt" . isLeft . decodeHexPSBT
+
 
 decodeVecTest :: Int -> Text -> Assertion
 decodeVecTest i = assertBool (show i <> " decodes correctly") . isRight . decodeHexPSBT
 
+
 encodeVecTest :: PartiallySignedTransaction -> Text -> Assertion
 encodeVecTest psbt hex = assertEqual "encodes correctly" (S.encode psbt) (fromJust $ decodeHex hex)
+
 
 trivialPSBT :: PartiallySignedTransaction
 trivialPSBT =
@@ -347,11 +366,14 @@ trivialPSBT =
         , outputs = []
         }
 
+
 trivialPSBTHex :: Text
 trivialPSBTHex = "70736274ff01000a0200000000000000000000"
 
+
 nonEmptyTransactionPSBT :: PartiallySignedTransaction
 nonEmptyTransactionPSBT = emptyPSBT testTx1
+
 
 verifyNonWitnessPSBT :: Network -> PartiallySignedTransaction -> Bool
 verifyNonWitnessPSBT net psbt = verifyStdTx net (finalTransaction (complete psbt)) sigData
@@ -362,6 +384,7 @@ verifyNonWitnessPSBT net psbt = verifyStdTx net (finalTransaction (complete psbt
         map
             (\(TxOut val script) -> (decodeOutScript script, val, prevOutput txInput))
             (txOut . fromJust $ nonWitnessUtxo input)
+
 
 unfinalizedPkhPSBT :: Network -> (SecKeyI, PubKeyI) -> PartiallySignedTransaction
 unfinalizedPkhPSBT net (prvKey, pubKey) =
@@ -380,11 +403,13 @@ unfinalizedPkhPSBT net (prvKey, pubKey) =
     h = txSigHash net currTx prevOutScript (outValue prevOut) 0 sigHashAll
     sig = encodeTxSig $ TxSignature (signHash (secKeyData prvKey) h) sigHashAll
 
+
 arbitraryMultiSig :: Gen ([(SecKeyI, PubKeyI)], Int)
 arbitraryMultiSig = do
     (m, n) <- arbitraryMSParam
     keys <- vectorOf n arbitraryKeyPair
     return (keys, m)
+
 
 unfinalizedMsPSBT :: Network -> ([(SecKeyI, PubKeyI)], Int) -> PartiallySignedTransaction
 unfinalizedMsPSBT net (keys, m) =
@@ -406,6 +431,7 @@ unfinalizedMsPSBT net (keys, m) =
     sigs = fromList $ map sig keys
     sig (prvKey, pubKey) = (pubKey, encodeTxSig $ TxSignature (signHash (secKeyData prvKey) h) sigHashAll)
 
+
 unfinalizedTx :: TxHash -> Tx
 unfinalizedTx prevHash =
     Tx
@@ -424,6 +450,7 @@ unfinalizedTx prevHash =
         , txWitness = []
         , txLockTime = 1257139
         }
+
 
 invalidVec :: [Text]
 invalidVec =
@@ -447,8 +474,10 @@ invalidVec =
     , "70736274ff0100730200000001301ae986e516a1ec8ac5b4bc6573d32f83b465e23ad76167d68b38e730b4dbdb0000000000ffffffff02747b01000000000017a91403aa17ae882b5d0d54b25d63104e4ffece7b9ea2876043993b0000000017a914b921b1ba6f722e4bfa83b6557a3139986a42ec8387000000000001011f00ca9a3b00000000160014d2d94b64ae08587eefc8eeb187c601e939f9037c00010016001462e9e982fff34dd8239610316b090cd2a3b747cb000100220020876bad832f1d168015ed41232a9ea65a1815d9ef13c0ef8759f64b5b2b278a6521010025512103b7ce23a01c5b4bf00a642537cdfabb315b668332867478ef51309d2bd57f8a8751ae00"
     ]
 
+
 validEncodeVec :: [(PartiallySignedTransaction, Text)]
 validEncodeVec = [(validVec1, validVec1Hex)]
+
 
 testTx1 :: Tx
 testTx1 =
@@ -468,6 +497,7 @@ testTx1 =
         , txWitness = []
         , txLockTime = 1257139
         }
+
 
 testUtxo :: [TxOut] -> Tx
 testUtxo prevOuts =
@@ -499,6 +529,7 @@ testUtxo prevOuts =
         , txLockTime = 0
         }
 
+
 testUtxo1 :: Tx
 testUtxo1 =
     testUtxo
@@ -506,33 +537,43 @@ testUtxo1 =
         , TxOut{outValue = 190303501938, scriptOutput = hexScript "a914339725ba21efd62ac753a9bcd067d6c7a6a39d0587"}
         ]
 
+
 validVec1 :: PartiallySignedTransaction
 validVec1 = (emptyPSBT testTx1){inputs = [emptyInput{nonWitnessUtxo = Just testUtxo1}]}
+
 
 validVec :: [Text]
 validVec = [validVec1Hex, validVec2Hex, validVec3Hex, validVec4Hex, validVec5Hex, validVec6Hex]
 
+
 validVec1Hex :: Text
 validVec1Hex = "70736274ff0100750200000001268171371edff285e937adeea4b37b78000c0566cbb3ad64641713ca42171bf60000000000feffffff02d3dff505000000001976a914d0c59903c5bac2868760e90fd521a4665aa7652088ac00e1f5050000000017a9143545e6e33b832c47050f24d3eeb93c9c03948bc787b32e1300000100fda5010100000000010289a3c71eab4d20e0371bbba4cc698fa295c9463afa2e397f8533ccb62f9567e50100000017160014be18d152a9b012039daf3da7de4f53349eecb985ffffffff86f8aa43a71dff1448893a530a7237ef6b4608bbb2dd2d0171e63aec6a4890b40100000017160014fe3e9ef1a745e974d902c4355943abcb34bd5353ffffffff0200c2eb0b000000001976a91485cff1097fd9e008bb34af709c62197b38978a4888ac72fef84e2c00000017a914339725ba21efd62ac753a9bcd067d6c7a6a39d05870247304402202712be22e0270f394f568311dc7ca9a68970b8025fdd3b240229f07f8a5f3a240220018b38d7dcd314e734c9276bd6fb40f673325bc4baa144c800d2f2f02db2765c012103d2e15674941bad4a996372cb87e1856d3652606d98562fe39c5e9e7e413f210502483045022100d12b852d85dcd961d2f5f4ab660654df6eedcc794c0c33ce5cc309ffb5fce58d022067338a8e0e1725c197fb1a88af59f51e44e4255b20167c8684031c05d1f2592a01210223b72beef0965d10be0778efecd61fcac6f79a4ea169393380734464f84f2ab300000000000000"
+
 
 validVec2Hex :: Text
 validVec2Hex = "70736274ff0100a00200000002ab0949a08c5af7c49b8212f417e2f15ab3f5c33dcf153821a8139f877a5b7be40000000000feffffffab0949a08c5af7c49b8212f417e2f15ab3f5c33dcf153821a8139f877a5b7be40100000000feffffff02603bea0b000000001976a914768a40bbd740cbe81d988e71de2a4d5c71396b1d88ac8e240000000000001976a9146f4620b553fa095e721b9ee0efe9fa039cca459788ac000000000001076a47304402204759661797c01b036b25928948686218347d89864b719e1f7fcf57d1e511658702205309eabf56aa4d8891ffd111fdf1336f3a29da866d7f8486d75546ceedaf93190121035cdc61fc7ba971c0b501a646a2a83b102cb43881217ca682dc86e2d73fa882920001012000e1f5050000000017a9143545e6e33b832c47050f24d3eeb93c9c03948bc787010416001485d13537f2e265405a34dbafa9e3dda01fb82308000000"
 
+
 validVec3Hex :: Text
 validVec3Hex = "70736274ff0100750200000001268171371edff285e937adeea4b37b78000c0566cbb3ad64641713ca42171bf60000000000feffffff02d3dff505000000001976a914d0c59903c5bac2868760e90fd521a4665aa7652088ac00e1f5050000000017a9143545e6e33b832c47050f24d3eeb93c9c03948bc787b32e1300000100fda5010100000000010289a3c71eab4d20e0371bbba4cc698fa295c9463afa2e397f8533ccb62f9567e50100000017160014be18d152a9b012039daf3da7de4f53349eecb985ffffffff86f8aa43a71dff1448893a530a7237ef6b4608bbb2dd2d0171e63aec6a4890b40100000017160014fe3e9ef1a745e974d902c4355943abcb34bd5353ffffffff0200c2eb0b000000001976a91485cff1097fd9e008bb34af709c62197b38978a4888ac72fef84e2c00000017a914339725ba21efd62ac753a9bcd067d6c7a6a39d05870247304402202712be22e0270f394f568311dc7ca9a68970b8025fdd3b240229f07f8a5f3a240220018b38d7dcd314e734c9276bd6fb40f673325bc4baa144c800d2f2f02db2765c012103d2e15674941bad4a996372cb87e1856d3652606d98562fe39c5e9e7e413f210502483045022100d12b852d85dcd961d2f5f4ab660654df6eedcc794c0c33ce5cc309ffb5fce58d022067338a8e0e1725c197fb1a88af59f51e44e4255b20167c8684031c05d1f2592a01210223b72beef0965d10be0778efecd61fcac6f79a4ea169393380734464f84f2ab30000000001030401000000000000"
+
 
 validVec4Hex :: Text
 validVec4Hex = "70736274ff0100a00200000002ab0949a08c5af7c49b8212f417e2f15ab3f5c33dcf153821a8139f877a5b7be40000000000feffffffab0949a08c5af7c49b8212f417e2f15ab3f5c33dcf153821a8139f877a5b7be40100000000feffffff02603bea0b000000001976a914768a40bbd740cbe81d988e71de2a4d5c71396b1d88ac8e240000000000001976a9146f4620b553fa095e721b9ee0efe9fa039cca459788ac00000000000100df0200000001268171371edff285e937adeea4b37b78000c0566cbb3ad64641713ca42171bf6000000006a473044022070b2245123e6bf474d60c5b50c043d4c691a5d2435f09a34a7662a9dc251790a022001329ca9dacf280bdf30740ec0390422422c81cb45839457aeb76fc12edd95b3012102657d118d3357b8e0f4c2cd46db7b39f6d9c38d9a70abcb9b2de5dc8dbfe4ce31feffffff02d3dff505000000001976a914d0c59903c5bac2868760e90fd521a4665aa7652088ac00e1f5050000000017a9143545e6e33b832c47050f24d3eeb93c9c03948bc787b32e13000001012000e1f5050000000017a9143545e6e33b832c47050f24d3eeb93c9c03948bc787010416001485d13537f2e265405a34dbafa9e3dda01fb8230800220202ead596687ca806043edc3de116cdf29d5e9257c196cd055cf698c8d02bf24e9910b4a6ba670000008000000080020000800022020394f62be9df19952c5587768aeb7698061ad2c4a25c894f47d8c162b4d7213d0510b4a6ba6700000080010000800200008000"
 
+
 validVec5Hex :: Text
 validVec5Hex = "70736274ff0100550200000001279a2323a5dfb51fc45f220fa58b0fc13e1e3342792a85d7e36cd6333b5cbc390000000000ffffffff01a05aea0b000000001976a914ffe9c0061097cc3b636f2cb0460fa4fc427d2b4588ac0000000000010120955eea0b0000000017a9146345200f68d189e1adc0df1c4d16ea8f14c0dbeb87220203b1341ccba7683b6af4f1238cd6e97e7167d569fac47f1e48d47541844355bd4646304302200424b58effaaa694e1559ea5c93bbfd4a89064224055cdf070b6771469442d07021f5c8eb0fea6516d60b8acb33ad64ede60e8785bfb3aa94b99bdf86151db9a9a010104220020771fd18ad459666dd49f3d564e3dbc42f4c84774e360ada16816a8ed488d5681010547522103b1341ccba7683b6af4f1238cd6e97e7167d569fac47f1e48d47541844355bd462103de55d1e1dac805e3f8a58c1fbf9b94c02f3dbaafe127fefca4995f26f82083bd52ae220603b1341ccba7683b6af4f1238cd6e97e7167d569fac47f1e48d47541844355bd4610b4a6ba67000000800000008004000080220603de55d1e1dac805e3f8a58c1fbf9b94c02f3dbaafe127fefca4995f26f82083bd10b4a6ba670000008000000080050000800000"
+
 
 validVec6Hex :: Text
 validVec6Hex = "70736274ff01003f0200000001ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000ffffffff010000000000000000036a010000000000000a0f0102030405060708090f0102030405060708090a0b0c0d0e0f0000"
 
+
 -- Example of a PSBT with a `finalWitnessScript`
 validVec7Hex :: Text
 validVec7Hex = "70736274ff0100520200000001815dd29e16fd2f567a040ce24f5337fb9cfd0c05bacd8890714a33edc7cbbc920000000000ffffffff0192f1052a01000000160014ef9ade26f63015d57f4ecdb268d1a9b8d6cd8872000000000001008402000000010000000000000000000000000000000000000000000000000000000000000000ffffffff03510101ffffffff0200f2052a010000001600145f4ffa19dbbe464561c50fc4d8d8ac0b41009dd20000000000000000266a24aa21a9ede2f61c3f71d1defd3fa999dfa36953755c690689799962b48bebd836974e8cf90000000001011f00f2052a010000001600145f4ffa19dbbe464561c50fc4d8d8ac0b41009dd201086b02473044022026a9f7afdb0128970bb3577e536ec3d3dc10c1e82650d11c9da1df9003b31d0202202258b11f962f12e0897c642cd6f38a0181db17197f3693a530c9431eb44dde7d0121033dc786e9628bb6c41c08fceb9b37458ad7a95e7e6b04e0bde45b6879398c3ac100220203a6affb58dda998a4ffdce652feb91038fdfc78c748ae687372e11292af8d312d101c4c5bfc00000080000000800100008000"
+
 
 data ComplexPsbtData = ComplexPsbtData
     { complexSignedPsbts :: [PartiallySignedTransaction]
@@ -541,6 +582,7 @@ data ComplexPsbtData = ComplexPsbtData
     , complexFinalTx :: Tx
     }
     deriving (Eq, Show)
+
 
 instance FromJSON ComplexPsbtData where
     parseJSON = withObject "ComplexPsbtData" $ \obj -> do

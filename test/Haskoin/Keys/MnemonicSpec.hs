@@ -19,6 +19,7 @@ import Test.HUnit
 import Test.Hspec
 import Test.QuickCheck hiding ((.&.))
 
+
 spec :: Spec
 spec =
     describe "mnemonic" $ do
@@ -45,6 +46,7 @@ spec =
         it "get bits" $ property getBitsByteCount
         it "get end bits" $ property getBitsEndBits
 
+
 toMnemonicTest :: Assertion
 toMnemonicTest = zipWithM_ f ents mss
   where
@@ -55,6 +57,7 @@ toMnemonicTest = zipWithM_ f ents mss
             . fromJust
             . decodeHex
 
+
 fromMnemonicTest :: Assertion
 fromMnemonicTest = zipWithM_ f ents mss
   where
@@ -63,6 +66,7 @@ fromMnemonicTest = zipWithM_ f ents mss
         encodeHex
             . fromRight (error "Could not decode mnemonic sentence")
             . fromMnemonic
+
 
 mnemonicToSeedTest :: Assertion
 mnemonicToSeedTest = zipWithM_ f mss seeds
@@ -73,6 +77,7 @@ mnemonicToSeedTest = zipWithM_ f mss seeds
             . fromRight (error "Could not decode mnemonic seed")
             . mnemonicToSeed "TREZOR"
 
+
 fromMnemonicInvalidTest :: Assertion
 fromMnemonicInvalidTest = mapM_ f invalidMss
   where
@@ -81,12 +86,14 @@ fromMnemonicInvalidTest = mapM_ f invalidMss
         Right _ -> False
         Left err -> "fromMnemonic: checksum failed:" `isPrefixOf` err
 
+
 emptyMnemonicTest :: Assertion
 emptyMnemonicTest =
     assertBool "" $
         case fromMnemonic "" of
             Right _ -> False
             Left err -> "fromMnemonic: empty mnemonic" `isPrefixOf` err
+
 
 ents :: [Text]
 ents =
@@ -115,6 +122,7 @@ ents =
     , "18a2e1d81b8ecfb2a333adcb0c17a5b9eb76cc5d05db91a4"
     , "15da872c95a13dd738fbf50e427583ad61f18fd99f628c417a61cf8343c90419"
     ]
+
 
 mss :: [Mnemonic]
 mss =
@@ -173,6 +181,7 @@ mss =
       \ coconut"
     ]
 
+
 seeds :: [Text]
 seeds =
     [ "c55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e9efa3708e53495531f09a69\
@@ -224,6 +233,7 @@ seeds =
     , "b15509eaa2d09d3efd3e006ef42151b30367dc6e3aa5e44caba3fe4d3e352e65101fbdb\
       \86a96776b91946ff06f8eac594dc6ee1d3e82a42dfe1b40fef6bcc3fd"
     ]
+
 
 invalidMss :: [Mnemonic]
 invalidMss =
@@ -282,10 +292,12 @@ invalidMss =
       \ zoo"
     ]
 
+
 binWordsToBS :: Serialize a => [a] -> BS.ByteString
 binWordsToBS = foldr f BS.empty
   where
     f b a = a `BS.append` encode b
+
 
 {- Encode mnemonic -}
 
@@ -299,6 +311,7 @@ toMnemonic128 (a, b) = l == 12
             . fromRight (error "Could not decode mnemonic senttence")
             $ toMnemonic bs
 
+
 toMnemonic160 :: (Word32, Word64, Word64) -> Bool
 toMnemonic160 (a, b, c) = l == 15
   where
@@ -309,6 +322,7 @@ toMnemonic160 (a, b, c) = l == 15
             . fromRight (error "Could not decode mnemonic sentence")
             $ toMnemonic bs
 
+
 toMnemonic256 :: (Word64, Word64, Word64, Word64) -> Bool
 toMnemonic256 (a, b, c, d) = l == 24
   where
@@ -318,6 +332,7 @@ toMnemonic256 (a, b, c, d) = l == 24
             . T.words
             . fromRight (error "Could not decode mnemonic sentence")
             $ toMnemonic bs
+
 
 toMnemonic512 ::
     ((Word64, Word64, Word64, Word64), (Word64, Word64, Word64, Word64)) -> Bool
@@ -340,6 +355,7 @@ toMnemonic512 ((a, b, c, d), (e, f, g, h)) = l == 48
             . fromRight (error "Could not decode mnemonic sentence")
             $ toMnemonic bs
 
+
 toMnemonicVar :: [Word32] -> Property
 toMnemonicVar ls = not (null ls) && length ls <= 8 ==> l == wc
   where
@@ -348,9 +364,11 @@ toMnemonicVar ls = not (null ls) && length ls <= 8 ==> l == wc
     cb = bl `div` 4
     wc = (cb + bl * 8) `div` 11
     l =
-        length . T.words
+        length
+            . T.words
             . fromRight (error "Could not decode mnemonic sentence")
             $ toMnemonic bs
+
 
 {- Encode/Decode -}
 
@@ -363,6 +381,7 @@ fromToMnemonic128 (a, b) = bs == bs'
             (error "Could not decode mnemonic entropy")
             (fromMnemonic =<< toMnemonic bs)
 
+
 fromToMnemonic160 :: (Word32, Word64, Word64) -> Bool
 fromToMnemonic160 (a, b, c) = bs == bs'
   where
@@ -372,6 +391,7 @@ fromToMnemonic160 (a, b, c) = bs == bs'
             (error "Could not decode mnemonic entropy")
             (fromMnemonic =<< toMnemonic bs)
 
+
 fromToMnemonic256 :: (Word64, Word64, Word64, Word64) -> Bool
 fromToMnemonic256 (a, b, c, d) = bs == bs'
   where
@@ -380,6 +400,7 @@ fromToMnemonic256 (a, b, c, d) = bs == bs'
         fromRight
             (error "Could not decode mnemonic entropy")
             (fromMnemonic =<< toMnemonic bs)
+
 
 fromToMnemonic512 ::
     ((Word64, Word64, Word64, Word64), (Word64, Word64, Word64, Word64)) -> Bool
@@ -401,6 +422,7 @@ fromToMnemonic512 ((a, b, c, d), (e, f, g, h)) = bs == bs'
             (error "Could not decode mnemonic entropy")
             (fromMnemonic =<< toMnemonic bs)
 
+
 fromToMnemonicVar :: [Word32] -> Property
 fromToMnemonicVar ls = not (null ls) && length ls <= 8 ==> bs == bs'
   where
@@ -409,6 +431,7 @@ fromToMnemonicVar ls = not (null ls) && length ls <= 8 ==> bs == bs'
         fromRight
             (error "Could not decode mnemonic entropy")
             (fromMnemonic =<< toMnemonic bs)
+
 
 {- Mnemonic to seed -}
 
@@ -422,6 +445,7 @@ mnemonicToSeed128 (a, b) = l == 64
             (mnemonicToSeed "" =<< toMnemonic bs)
     l = BS.length seed
 
+
 mnemonicToSeed160 :: (Word32, Word64, Word64) -> Bool
 mnemonicToSeed160 (a, b, c) = l == 64
   where
@@ -432,6 +456,7 @@ mnemonicToSeed160 (a, b, c) = l == 64
             (mnemonicToSeed "" =<< toMnemonic bs)
     l = BS.length seed
 
+
 mnemonicToSeed256 :: (Word64, Word64, Word64, Word64) -> Bool
 mnemonicToSeed256 (a, b, c, d) = l == 64
   where
@@ -441,6 +466,7 @@ mnemonicToSeed256 (a, b, c, d) = l == 64
             (error "Could not decode mnemonic seed")
             (mnemonicToSeed "" =<< toMnemonic bs)
     l = BS.length seed
+
 
 mnemonicToSeed512 ::
     ((Word64, Word64, Word64, Word64), (Word64, Word64, Word64, Word64)) -> Bool
@@ -463,6 +489,7 @@ mnemonicToSeed512 ((a, b, c, d), (e, f, g, h)) = l == 64
             (mnemonicToSeed "" =<< toMnemonic bs)
     l = BS.length seed
 
+
 mnemonicToSeedVar :: [Word32] -> Property
 mnemonicToSeedVar ls = not (null ls) && length ls <= 16 ==> l == 64
   where
@@ -473,9 +500,11 @@ mnemonicToSeedVar ls = not (null ls) && length ls <= 16 ==> l == 64
             (mnemonicToSeed "" =<< toMnemonic bs)
     l = BS.length seed
 
+
 {- Get bits from ByteString -}
 
 data ByteCountGen = ByteCountGen BS.ByteString Int deriving (Show)
+
 
 instance Arbitrary ByteCountGen where
     arbitrary = do
@@ -483,12 +512,14 @@ instance Arbitrary ByteCountGen where
         i <- choose (0, BS.length bs * 8)
         return $ ByteCountGen bs i
 
+
 getBitsByteCount :: ByteCountGen -> Bool
 getBitsByteCount (ByteCountGen bs i) = BS.length bits == l
   where
     (q, r) = i `quotRem` 8
     bits = getBits i bs
     l = if r == 0 then q else q + 1
+
 
 getBitsEndBits :: ByteCountGen -> Bool
 getBitsEndBits (ByteCountGen bs i) =

@@ -2,16 +2,11 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-{- |
-Module      : Haskoin.Script.Common
-Copyright   : No rights reserved
-License     : MIT
-Maintainer  : jprupp@protonmail.ch
-Stability   : experimental
-Portability : POSIX
-
-Common script-related functions and data types.
--}
+-- |
+-- Stability   : experimental
+-- Portability : POSIX
+--
+-- Common script-related functions and data types.
 module Haskoin.Script.Common (
     -- * Scripts
     ScriptOp (..),
@@ -37,21 +32,22 @@ import Data.Serialize (Serialize (..))
 import Data.Word (Word8)
 import GHC.Generics (Generic)
 
-{- | Data type representing a transaction script. Scripts are defined as lists
- of script operators 'ScriptOp'. Scripts are used to:
 
- * Define the spending conditions in the output of a transaction.
- * Provide signatures in the input of a transaction (except SegWit).
-
- SigWit only: the segregated witness data structure, and not the input script,
- contains signatures and redeem script for pay-to-witness-script and
- pay-to-witness-public-key-hash transactions.
--}
+-- | Data type representing a transaction script. Scripts are defined as lists
+-- of script operators 'ScriptOp'. Scripts are used to:
+--
+-- * Define the spending conditions in the output of a transaction.
+-- * Provide signatures in the input of a transaction (except SegWit).
+--
+-- SigWit only: the segregated witness data structure, and not the input script,
+-- contains signatures and redeem script for pay-to-witness-script and
+-- pay-to-witness-public-key-hash transactions.
 newtype Script = Script
-    { -- | script operators defining this script
-      scriptOps :: [ScriptOp]
+    { scriptOps :: [ScriptOp]
+    -- ^ script operators defining this script
     }
     deriving (Eq, Show, Read, Generic, Hashable, NFData)
+
 
 instance Serial Script where
     deserialize =
@@ -63,15 +59,19 @@ instance Serial Script where
                 then return []
                 else (:) <$> deserialize <*> getScriptOps
 
+
     serialize (Script ops) = forM_ ops serialize
+
 
 instance Binary Script where
     put = serialize
     get = deserialize
 
+
 instance Serialize Script where
     put = serialize
     get = deserialize
+
 
 -- | Data type representing the type of an OP_PUSHDATA opcode.
 data PushDataType
@@ -84,6 +84,7 @@ data PushDataType
     | -- | next four bytes contains the number of bytes to be pushed
       OPDATA4
     deriving (Show, Read, Eq, Generic, Hashable, NFData)
+
 
 -- | Data type representing an operator allowed inside a 'Script'.
 data ScriptOp
@@ -206,16 +207,12 @@ data ScriptOp
     | OP_NOP8
     | OP_NOP9
     | OP_NOP10
-    | -- Bitcoin Cash Nov 2018 hard fork
-      OP_CHECKDATASIG
-    | OP_CHECKDATASIGVERIFY
-    | -- Bitcoin Cash May 2020 hard fork
-      OP_REVERSEBYTES
     | -- Other
       OP_PUBKEYHASH
     | OP_PUBKEY
     | OP_INVALIDOPCODE !Word8
     deriving (Show, Read, Eq, Generic, Hashable, NFData)
+
 
 instance Serial ScriptOp where
     deserialize = go . fromIntegral =<< getWord8
@@ -351,15 +348,11 @@ instance Serial ScriptOp where
             | op == 0xb7 = return OP_NOP8
             | op == 0xb8 = return OP_NOP9
             | op == 0xb9 = return OP_NOP10
-            -- Bitcoin Cash Nov 2018 hard fork
-            | op == 0xba = return OP_CHECKDATASIG
-            | op == 0xbb = return OP_CHECKDATASIGVERIFY
-            -- Bitcoin Cash May 2020 hard fork
-            | op == 0xbc = return OP_REVERSEBYTES
             -- Constants
             | op == 0xfd = return OP_PUBKEYHASH
             | op == 0xfe = return OP_PUBKEY
             | otherwise = return $ OP_INVALIDOPCODE op
+
 
     serialize op = case op of
         (OP_PUSHDATA payload optype) -> do
@@ -507,19 +500,17 @@ instance Serial ScriptOp where
         OP_NOP8 -> putWord8 0xb7
         OP_NOP9 -> putWord8 0xb8
         OP_NOP10 -> putWord8 0xb9
-        -- Bitcoin Cash Nov 2018 hard fork
-        OP_CHECKDATASIG -> putWord8 0xba
-        OP_CHECKDATASIGVERIFY -> putWord8 0xbb
-        -- Bitcoin Cash May 2020 hard fork
-        OP_REVERSEBYTES -> putWord8 0xbc
+
 
 instance Binary ScriptOp where
     put = serialize
     get = deserialize
 
+
 instance Serialize ScriptOp where
     put = serialize
     get = deserialize
+
 
 -- | Check whether opcode is only data.
 isPushOp :: ScriptOp -> Bool
@@ -545,6 +536,7 @@ isPushOp op = case op of
     OP_16 -> True
     _ -> False
 
+
 -- | Optimally encode data using one of the 4 types of data pushing opcodes.
 opPushData :: ByteString -> ScriptOp
 opPushData bs
@@ -555,6 +547,7 @@ opPushData bs
     | otherwise = error "opPushData: payload size too big"
   where
     len = B.length bs
+
 
 -- | Transforms integers @[1 .. 16]@ to 'ScriptOp' @[OP_1 .. OP_16]@.
 intToScriptOp :: Int -> ScriptOp
@@ -570,9 +563,9 @@ intToScriptOp i
             $ i + 0x50
     err = error $ "intToScriptOp: Invalid integer " ++ show i
 
-{- | Decode 'ScriptOp' @[OP_1 .. OP_16]@ to integers @[1 .. 16]@. This functions
- fails for other values of 'ScriptOp'
--}
+
+-- | Decode 'ScriptOp' @[OP_1 .. OP_16]@ to integers @[1 .. 16]@. This functions
+-- fails for other values of 'ScriptOp'
 scriptOpToInt :: ScriptOp -> Either String Int
 scriptOpToInt s
     | res `elem` [1 .. 16] = return res

@@ -1,11 +1,6 @@
-{- |
-Module      : Haskoin.Test.Message
-Copyright   : No rights reserved
-License     : MIT
-Maintainer  : jprupp@protonmail.ch
-Stability   : experimental
-Portability : POSIX
--}
+-- |
+-- Stability   : experimental
+-- Portability : POSIX
 module Haskoin.Util.Arbitrary.Message where
 
 import Haskoin.Data
@@ -16,13 +11,16 @@ import Haskoin.Util.Arbitrary.Network
 import Haskoin.Util.Arbitrary.Transaction
 import Test.QuickCheck
 
+
 -- | Arbitrary 'MessageHeader'.
 arbitraryMessageHeader :: Gen MessageHeader
 arbitraryMessageHeader =
-    MessageHeader <$> arbitrary
+    MessageHeader
+        <$> arbitrary
         <*> arbitraryMessageCommand
         <*> arbitrary
         <*> arbitraryCheckSum32
+
 
 -- | Arbitrary 'Message'.
 arbitraryMessage :: Network -> Gen Message

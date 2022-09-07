@@ -27,12 +27,14 @@ import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck hiding ((.&.))
 
+
 serialVals :: [SerialBox]
 serialVals =
     [ SerialBox arbitraryDerivPath
     , SerialBox arbitraryHardPath
     , SerialBox arbitrarySoftPath
     ]
+
 
 readVals :: [ReadBox]
 readVals =
@@ -45,6 +47,7 @@ readVals =
     , ReadBox arbitraryBip32PathIndex
     ]
 
+
 jsonVals :: [JsonBox]
 jsonVals =
     [ JsonBox arbitraryDerivPath
@@ -52,6 +55,7 @@ jsonVals =
     , JsonBox arbitrarySoftPath
     , JsonBox arbitraryParsedPath
     ]
+
 
 netVals :: [NetBox]
 netVals =
@@ -68,6 +72,7 @@ netVals =
         , genNetData (snd <$> arbitraryXPubKey)
         )
     ]
+
 
 spec :: Spec
 spec = do
@@ -94,13 +99,17 @@ spec = do
         it "to json" testToJsonPath
     describe "Derivation Paths" $ do
         prop "from string derivation path" $
-            forAll arbitraryDerivPath $ \p -> fromString (cs $ pathToStr p) == p
+            forAll arbitraryDerivPath $
+                \p -> fromString (cs $ pathToStr p) == p
         prop "from string hard derivation path" $
-            forAll arbitraryHardPath $ \p -> fromString (cs $ pathToStr p) == p
+            forAll arbitraryHardPath $
+                \p -> fromString (cs $ pathToStr p) == p
         prop "from string soft derivation path" $
-            forAll arbitrarySoftPath $ \p -> fromString (cs $ pathToStr p) == p
+            forAll arbitrarySoftPath $
+                \p -> fromString (cs $ pathToStr p) == p
         prop "from and to lists of derivation paths" $
-            forAll arbitraryDerivPath $ \p -> listToPath (pathToList p) == p
+            forAll arbitraryDerivPath $
+                \p -> listToPath (pathToList p) == p
         prop "from and to lists of hard derivation paths" $
             forAll arbitraryHardPath $ \p ->
                 toHard (listToPath $ pathToList p) == Just p
@@ -118,11 +127,13 @@ spec = do
             forAll arbitraryXPubKey $ \(_, k) ->
                 xPubImport net (xPubExport net k) == Just k
 
+
 pubKeyOfSubKeyIsSubKeyOfPubKey :: XPrvKey -> Word32 -> Bool
 pubKeyOfSubKeyIsSubKeyOfPubKey k i =
     deriveXPubKey (prvSubKey k i') == pubSubKey (deriveXPubKey k) i'
   where
     i' = fromIntegral $ i .&. 0x7fffffff -- make it a public derivation
+
 
 testFromJsonPath :: Assertion
 testFromJsonPath =
@@ -134,6 +145,7 @@ testFromJsonPath =
                 (Just [fromString path :: DerivPath])
                 (A.decode $ B8.pack $ "[\"" ++ path ++ "\"]")
 
+
 testToJsonPath :: Assertion
 testToJsonPath =
     sequence_ $ do
@@ -143,6 +155,7 @@ testToJsonPath =
                 path
                 (B8.pack $ "[\"" ++ path ++ "\"]")
                 (A.encode [fromString path :: ParsedPath])
+
 
 jsonPathVectors :: [String]
 jsonPathVectors =
@@ -158,11 +171,13 @@ jsonPathVectors =
     , "M/1'/2'/3/4"
     ]
 
+
 testParsePath :: Assertion
 testParsePath =
     sequence_ $ do
         (path, t) <- parsePathVectors
         return $ assertBool path (t $ parsePath path)
+
 
 parsePathVectors :: [(String, Maybe ParsedPath -> Bool)]
 parsePathVectors =
@@ -186,19 +201,25 @@ parsePathVectors =
     , ("NaN", isNothing)
     ]
 
+
 testApplyPath :: Assertion
 testApplyPath =
     sequence_ $ do
         (key, path, final) <- applyPathVectors
         return $
-            assertEqual path final $ applyPath (fromJust $ parsePath path) key
+            assertEqual path final $
+                applyPath (fromJust $ parsePath path) key
+
 
 testBadApplyPath :: Assertion
 testBadApplyPath =
     sequence_ $ do
         (key, path) <- badApplyPathVectors
         return $
-            assertBool path $ isLeft $ applyPath (fromJust $ parsePath path) key
+            assertBool path $
+                isLeft $
+                    applyPath (fromJust $ parsePath path) key
+
 
 testDerivePubPath :: Assertion
 testDerivePubPath =
@@ -208,6 +229,7 @@ testDerivePubPath =
             assertEqual path final $
                 derivePubPath (fromString path :: SoftPath) key
 
+
 testDerivePrvPath :: Assertion
 testDerivePrvPath =
     sequence_ $ do
@@ -215,6 +237,7 @@ testDerivePrvPath =
         return $
             assertEqual path final $
                 derivePath (fromString path :: DerivPath) key
+
 
 derivePubPathVectors :: [(XPubKey, String, XPubKey)]
 derivePubPathVectors =
@@ -230,6 +253,7 @@ derivePubPathVectors =
                 "xprv9s21ZrQH143K46iDVRSyFfGfMgQjzC4BV3ZUfNbG7PHQrJjE53ofAn5gYkp6KQ\
                 \WzGmb8oageSRxBY8s4rjr9VXPVp2HQDbwPt4H31Gg4LpB"
     xpub = deriveXPubKey xprv
+
 
 derivePrvPathVectors :: [(XPrvKey, String, XPrvKey)]
 derivePrvPathVectors =
@@ -265,6 +289,7 @@ derivePrvPathVectors =
                 btc
                 "xprv9s21ZrQH143K46iDVRSyFfGfMgQjzC4BV3ZUfNbG7PHQrJjE53ofAn5gYkp6KQ\
                 \WzGmb8oageSRxBY8s4rjr9VXPVp2HQDbwPt4H31Gg4LpB"
+
 
 applyPathVectors :: [(XKey, String, Either String XKey)]
 applyPathVectors =
@@ -311,6 +336,7 @@ applyPathVectors =
                 \WzGmb8oageSRxBY8s4rjr9VXPVp2HQDbwPt4H31Gg4LpB"
     xpub = deriveXPubKey xprv
 
+
 badApplyPathVectors :: [(XKey, String)]
 badApplyPathVectors =
     [ (XPub xpub btc, "m/8'")
@@ -326,16 +352,19 @@ badApplyPathVectors =
                 \WzGmb8oageSRxBY8s4rjr9VXPVp2HQDbwPt4H31Gg4LpB"
     xpub = deriveXPubKey xprv
 
+
 -- BIP 0032 Test Vectors
 -- https://en.bitcoin.it/wiki/BIP_0032_TestVectors
 
 bip44Addr :: DerivPath
 bip44Addr = Deriv :| 44 :| 0 :| 0 :/ 0 :/ 0
 
+
 vectorSpec :: TestKey -> [TestVector] -> Spec
 vectorSpec mTxt vecTxt =
     forM_ (parseVector mTxt vecTxt) $ \(d, m, v) ->
         it ("chain " <> cs d) $ runVector m v
+
 
 runVector :: XPrvKey -> TestVector -> Assertion
 runVector m v = do
@@ -357,6 +386,7 @@ runVector m v = do
     assertBool "Base58 PubKey" $ xPubExport btc (deriveXPubKey m) == v !! 10
     assertBool "Base58 PrvKey" $ xPrvExport btc m == v !! 11
 
+
 -- This function was used to generate addition data for the test vectors
 genVector :: XPrvKey -> [(Text, Text)]
 genVector m =
@@ -376,6 +406,7 @@ genVector m =
     , ("Hex PrvKey", encodeHex (runPutS (putXPrvKey btc m)))
     ]
 
+
 parseVector :: TestKey -> [TestVector] -> [(Text, XPrvKey, TestVector)]
 parseVector mTxt vs =
     go <$> vs
@@ -386,11 +417,16 @@ parseVector mTxt vs =
          in (d, derivePath deriv mast, vec)
     go _ = undefined
 
+
 type TestVector = [Text]
+
+
 type TestKey = Text
+
 
 m1 :: TestKey
 m1 = "000102030405060708090a0b0c0d0e0f"
+
 
 vector1 :: [TestVector]
 vector1 =
@@ -486,8 +522,10 @@ vector1 =
         ]
     ]
 
+
 m2 :: TestKey
 m2 = "fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a29f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542"
+
 
 vector2 :: [TestVector]
 vector2 =
@@ -583,8 +621,10 @@ vector2 =
         ]
     ]
 
+
 m3 :: TestKey
 m3 = "4b381541583be4423346c643850da4b320e46a87ae3d2a4e6da11eba819cd4acba45d239319ac14f863b8d5ab5a0d0c64d2e8a1e7d1457df2e5a3c51c73235be"
+
 
 vector3 :: [TestVector]
 vector3 =

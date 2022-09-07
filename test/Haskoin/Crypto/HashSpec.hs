@@ -25,6 +25,7 @@ import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck
 
+
 serialVals :: [SerialBox]
 serialVals =
     [ SerialBox arbitraryBS
@@ -32,6 +33,7 @@ serialVals =
     , SerialBox arbitraryHash256
     , SerialBox arbitraryHash512
     ]
+
 
 readVals :: [ReadBox]
 readVals =
@@ -42,13 +44,15 @@ readVals =
     , ReadBox arbitraryHash512
     ]
 
+
 spec :: Spec
 spec =
     describe "Hash" $ do
         testIdentity serialVals readVals [] []
         describe "Property Tests" $ do
             prop "join512( split512(h) ) == h" $
-                forAll arbitraryHash256 $ forAll arbitraryHash256 . joinSplit512
+                forAll arbitraryHash256 $
+                    forAll arbitraryHash256 . joinSplit512
             prop "decodeCompact . encodeCompact i == i" decEncCompact
             prop "from string Hash512" $
                 forAll arbitraryHash512 $ \h ->
@@ -73,8 +77,10 @@ spec =
             it "Passes HMAC_SHA512 test vectors" $
                 mapM_ (testHMACVector hmac512 getHash512) hmacSha512Vectors
 
+
 joinSplit512 :: Hash256 -> Hash256 -> Bool
 joinSplit512 a b = split512 (join512 (a, b)) == (a, b)
+
 
 -- After encoding and decoding, we may loose precision so the new result is >=
 -- to the old one.
@@ -87,6 +93,7 @@ decEncCompact i
     | i >= 0 = fst (decodeCompact (encodeCompact i)) < i
     | otherwise = fst (decodeCompact (encodeCompact i)) > i
 
+
 -- Test vectors from:
 -- https://github.com/bitcoin/bitcoin/blob/master/src/test/crypto_tests.cpp
 
@@ -98,6 +105,7 @@ testVector ::
 testVector f1 f2 (i, res) =
     assertEqual "Hash matches" res (encodeHex (BSS.fromShort $ f2 $ f1 i))
 
+
 testHMACVector ::
     (ByteString -> ByteString -> a) ->
     (a -> BSS.ShortByteString) ->
@@ -108,6 +116,7 @@ testHMACVector f1 f2 (k, m, res) =
   where
     bsK = fromJust $ decodeHex k
     bsM = fromJust $ decodeHex m
+
 
 longTestString :: ByteString
 longTestString =
@@ -122,6 +131,7 @@ longTestString =
             i4 = fromIntegral $! i `shiftR` 12
             i5 = fromIntegral $! i `shiftR` 16
          in word8 i1 <> word8 i2 <> word8 i3 <> word8 i4 <> word8 i5 <> go is
+
 
 ripemd160Vectors :: [(ByteString, Text)]
 ripemd160Vectors =
@@ -149,6 +159,7 @@ ripemd160Vectors =
     , (longTestString, "464243587bd146ea835cdf57bdae582f25ec45f1")
     ]
 
+
 sha1Vectors :: [(ByteString, Text)]
 sha1Vectors =
     [ ("", "da39a3ee5e6b4b0d3255bfef95601890afd80709")
@@ -174,6 +185,7 @@ sha1Vectors =
     , (C.replicate 1000000 'a', "34aa973cd4c4daa4f61eeb2bdbad27316534016f")
     , (longTestString, "b7755760681cbfd971451668f32af5774f4656b5")
     ]
+
 
 sha256Vectors :: [(ByteString, Text)]
 sha256Vectors =
@@ -219,6 +231,7 @@ sha256Vectors =
         , "a316d55510b49662420f49d145d42fb83f31ef8dc016aa4e32df049991a91e26"
         )
     ]
+
 
 sha512Vectors :: [(ByteString, Text)]
 sha512Vectors =
@@ -279,6 +292,7 @@ sha512Vectors =
           \3ef5459d76a52cedc02dc499a3c9ed9dedbfb3281afd9653b8a112fafc"
         )
     ]
+
 
 -- test cases 1, 2, 3, 4, 6 and 7 of RFC 4231
 hmacSha256Vectors :: [(Text, Text, Text)]
@@ -348,6 +362,7 @@ hmacSha256Vectors =
         , "d06af337f359a2330deffb8e3cbe4b5b7aa8ca1f208528cdbd245d5dc63c4483"
         )
     ]
+
 
 -- test cases 1, 2, 3, 4, 6 and 7 of RFC 4231
 hmacSha512Vectors :: [(Text, Text, Text)]

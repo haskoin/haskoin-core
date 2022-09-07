@@ -42,6 +42,7 @@ import Haskoin.UtilSpec (readTestFile)
 import Test.HUnit (assertBool, (@?=))
 import Test.Hspec (Spec, describe, it, runIO)
 
+
 spec :: Spec
 spec = do
     TestVector{testScriptPubKey} <- runIO $ readTestFile "bip341.json"
@@ -51,6 +52,7 @@ spec = do
         it "should build the correct script output" $ mapM_ testScriptOutput testScriptPubKey
         it "should calculate the correct control blocks" $ mapM_ testControlBlocks testScriptPubKey
         it "should arrive at the correct address" $ mapM_ testAddress testScriptPubKey
+
 
 testHashes :: TestScriptPubKey -> IO ()
 testHashes testData =
@@ -67,6 +69,7 @@ testHashes testData =
         leaf@MASTLeaf{} -> [BA.convert $ mastCommitment leaf]
         MASTCommitment{} -> mempty -- The test vectors have complete trees
 
+
 testOutputKey :: TestScriptPubKey -> IO ()
 testOutputKey testData = do
     XOnlyPubKey (taprootOutputKey theOutput) @?= theOutputKey
@@ -74,9 +77,11 @@ testOutputKey testData = do
     theOutput = tspkGiven testData
     theOutputKey = XOnlyPubKey . spkiTweakedPubKey $ tspkIntermediary testData
 
+
 testScriptOutput :: TestScriptPubKey -> IO ()
 testScriptOutput testData =
     taprootScriptOutput (tspkGiven testData) @?= (spkeScriptPubKey . tspkExpected) testData
+
 
 testControlBlocks :: TestScriptPubKey -> IO ()
 testControlBlocks testData = do
@@ -105,17 +110,21 @@ testControlBlocks testData = do
     onExamples = zipWithM (@?=) calculatedControlBlocks
     checkVerification = assertBool "Script verifies" . verifyScriptPathData theOutputKey
 
+
 keyParity :: PubKey -> Word8
 keyParity key = case BS.unpack . runPutS . serialize $ PubKeyI key True of
     0x02 : _ -> 0x00
     _ -> 0x01
+
 
 testAddress :: TestScriptPubKey -> IO ()
 testAddress testData = computedAddress @?= (Just . spkeAddress . tspkExpected) testData
   where
     computedAddress = (addrToText btc <=< outputAddress) . taprootScriptOutput $ tspkGiven testData
 
+
 newtype SpkGiven = SpkGiven {unSpkGiven :: TaprootOutput}
+
 
 instance FromJSON SpkGiven where
     parseJSON = withObject "SpkGiven" $ \obj ->
@@ -138,11 +147,13 @@ instance FromJSON SpkGiven where
                 _ -> fail "ScriptTree branch"
         hexScript = either fail pure . runGetS deserialize <=< jsonHex
 
+
 data SpkIntermediary = SpkIntermediary
     { spkiLeafHashes :: Maybe [ByteString]
     , spkiMerkleRoot :: Maybe ByteString
     , spkiTweakedPubKey :: PubKey
     }
+
 
 instance FromJSON SpkIntermediary where
     parseJSON = withObject "SpkIntermediary" $ \obj ->
@@ -151,11 +162,13 @@ instance FromJSON SpkIntermediary where
             <*> (obj .: "merkleRoot" >>= traverse jsonHex)
             <*> (xOnlyPubKey <$> obj .: "tweakedPubkey")
 
+
 data SpkExpected = SpkExpected
     { spkeScriptPubKey :: ScriptOutput
     , spkeControlBlocks :: Maybe [ByteString]
     , spkeAddress :: Text
     }
+
 
 instance FromJSON SpkExpected where
     parseJSON = withObject "SpkExpected" $ \obj ->
@@ -164,11 +177,13 @@ instance FromJSON SpkExpected where
             <*> (obj .:? "scriptPathControlBlocks" >>= (traverse . traverse) jsonHex)
             <*> obj .: "bip350Address"
 
+
 data TestScriptPubKey = TestScriptPubKey
     { tspkGiven :: TaprootOutput
     , tspkIntermediary :: SpkIntermediary
     , tspkExpected :: SpkExpected
     }
+
 
 instance FromJSON TestScriptPubKey where
     parseJSON = withObject "TestScriptPubKey" $ \obj ->
@@ -177,13 +192,16 @@ instance FromJSON TestScriptPubKey where
             <*> obj .: "intermediary"
             <*> obj .: "expected"
 
+
 newtype TestVector = TestVector
     { testScriptPubKey :: [TestScriptPubKey]
     }
 
+
 instance FromJSON TestVector where
     parseJSON = withObject "TestVector" $ \obj ->
         TestVector <$> obj .: "scriptPubKey"
+
 
 jsonHex :: Text -> Parser ByteString
 jsonHex = maybe (fail "Unable to decode hex") pure . decodeHex

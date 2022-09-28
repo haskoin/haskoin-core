@@ -1,0 +1,52 @@
+---
+name: HLint
+
+concurrency:
+  group: ${{ github.ref }}-hlint
+  cancel-in-progress: true
+
+on:
+  pull_request:
+    branches:
+      - master
+    paths:
+      - stack.yaml
+      - .hlint.yaml
+      - "src/**/*.hs"
+      - "test/**/*.hs"
+      - ".github/workflows/hlint.yaml"
+    types:
+      - synchronize
+      - opened
+      - reopened
+      - ready_for_review
+  push:
+    branches:
+      - master
+    paths:
+      - stack.yaml
+      - .hlint.yaml
+      - "src/**/*.hs"
+      - "test/**/*.hs"
+      - ".github/workflows/hlint.yaml"
+  workflow_dispatch:
+    inputs: {}
+
+jobs:
+  hlint:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: 'Set up HLint'
+        uses: haskell/actions/hlint-setup@v2
+        with:
+          version: '3.5'
+
+      - name: 'Run HLint'
+        uses: haskell/actions/hlint-run@v2
+        with:
+          # For some reason this has to be a string containing JSON rather than a YAML sequence
+          path: '[ "src/", "test/"]'
+          fail-on: warning

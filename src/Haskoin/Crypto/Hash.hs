@@ -97,7 +97,7 @@ instance Show Hash512 where
 instance Read Hash512 where
     readPrec = do
         R.String str <- lexP
-        maybe pfail return $ Hash512 . BSS.toShort <$> decodeHex (cs str)
+        maybe pfail (return . Hash512 . BSS.toShort) (decodeHex (cs str))
 
 instance Show Hash256 where
     showsPrec _ = shows . encodeHex . BSS.fromShort . getHash256
@@ -105,7 +105,7 @@ instance Show Hash256 where
 instance Read Hash256 where
     readPrec = do
         R.String str <- lexP
-        maybe pfail return $ Hash256 . BSS.toShort <$> decodeHex (cs str)
+        maybe pfail (return . Hash256 . BSS.toShort) (decodeHex (cs str))
 
 instance Show Hash160 where
     showsPrec _ = shows . encodeHex . BSS.fromShort . getHash160
@@ -113,7 +113,7 @@ instance Show Hash160 where
 instance Read Hash160 where
     readPrec = do
         R.String str <- lexP
-        maybe pfail return $ Hash160 . BSS.toShort <$> decodeHex (cs str)
+        maybe pfail (return . Hash160 . BSS.toShort) (decodeHex (cs str))
 
 instance IsString Hash512 where
     fromString str =

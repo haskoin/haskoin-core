@@ -173,16 +173,16 @@ type KeyIndex = Word32
  parent node and an index to differentiate it from other siblings.
 -}
 data XPrvKey = XPrvKey
-    { -- | depth in the tree
-      xPrvDepth :: !Word8
-    , -- | fingerprint of parent
-      xPrvParent :: !Fingerprint
-    , -- | derivation index
-      xPrvIndex :: !KeyIndex
-    , -- | chain code
-      xPrvChain :: !ChainCode
-    , -- | private key of this node
-      xPrvKey :: !SecKey
+    { xPrvDepth :: !Word8
+    -- ^ depth in the tree
+    , xPrvParent :: !Fingerprint
+    -- ^ fingerprint of parent
+    , xPrvIndex :: !KeyIndex
+    -- ^ derivation index
+    , xPrvChain :: !ChainCode
+    -- ^ chain code
+    , xPrvKey :: !SecKey
+    -- ^ private key of this node
     }
     deriving (Generic, Eq, Show, Read, NFData, Hashable)
 
@@ -194,7 +194,8 @@ instance Serial XPrvKey where
         serialize $ xPrvChain k
         putPadPrvKey $ xPrvKey k
     deserialize =
-        XPrvKey <$> getWord8
+        XPrvKey
+            <$> getWord8
             <*> deserialize
             <*> getWord32be
             <*> deserialize
@@ -224,16 +225,16 @@ xPrvFromJSON net =
 
 -- | Data type representing an extended BIP32 public key.
 data XPubKey = XPubKey
-    { -- | depth in the tree
-      xPubDepth :: !Word8
-    , -- | fingerprint of parent
-      xPubParent :: !Fingerprint
-    , -- | derivation index
-      xPubIndex :: !KeyIndex
-    , -- | chain code
-      xPubChain :: !ChainCode
-    , -- | public key of this node
-      xPubKey :: !PubKey
+    { xPubDepth :: !Word8
+    -- ^ depth in the tree
+    , xPubParent :: !Fingerprint
+    -- ^ fingerprint of parent
+    , xPubIndex :: !KeyIndex
+    -- ^ derivation index
+    , xPubChain :: !ChainCode
+    -- ^ chain code
+    , xPubKey :: !PubKey
+    -- ^ public key of this node
     }
     deriving (Generic, Eq, Show, Read, NFData, Hashable)
 
@@ -245,7 +246,8 @@ instance Serial XPubKey where
         serialize $ xPubChain k
         serialize $ wrapPubKey True (xPubKey k)
     deserialize =
-        XPubKey <$> getWord8
+        XPubKey
+            <$> getWord8
             <*> deserialize
             <*> getWord32be
             <*> deserialize
@@ -804,7 +806,7 @@ instance Read DerivPath where
     readPrec = parens $ do
         R.Ident "DerivPath" <- lexP
         R.String str <- lexP
-        maybe pfail return $ getParsedPath <$> parsePath str
+        maybe pfail (return . getParsedPath) (parsePath str)
 
 instance Show HardPath where
     showsPrec d p =
@@ -961,14 +963,12 @@ instance Read Bip32PathIndex where
             parens $ do
                 R.Ident "Bip32HardIndex" <- lexP
                 R.Number n <- lexP
-                maybe pfail return $
-                    Bip32HardIndex . fromIntegral <$> numberToInteger n
+                maybe pfail (return . Bip32HardIndex . fromIntegral) (numberToInteger n)
         s =
             parens $ do
                 R.Ident "Bip32SoftIndex" <- lexP
                 R.Number n <- lexP
-                maybe pfail return $
-                    Bip32SoftIndex . fromIntegral <$> numberToInteger n
+                maybe pfail (return . Bip32SoftIndex . fromIntegral) (numberToInteger n)
 
 -- | Test whether the number could be a valid BIP32 derivation index.
 is31Bit :: (Integral a) => a -> Bool

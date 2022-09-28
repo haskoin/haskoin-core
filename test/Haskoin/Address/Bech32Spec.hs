@@ -27,32 +27,43 @@ spec = do
         it "should be invalid" $
             forM_ invalidChecksums testInvalidChecksum
         it "should be case-insensitive" $
-            all (== Just "test12hrzfj") $
-                map (flip (bech32Encode Bech32) []) hrpCaseVariants
+            all ((== Just "test12hrzfj") . flip (bech32Encode Bech32) []) hrpCaseVariants
     describe "bech32 address" $ do
         it "should be valid" $
             forM_ validChecksums (uncurry testValidChecksum)
         it "should be invalid" $
             forM_ invalidChecksums testInvalidChecksum
         it "should be case-insensitive" $
-            all (== Just "test12hrzfj") $
-                map (flip (bech32Encode Bech32) []) hrpCaseVariants
+            all ((== Just "test12hrzfj") . flip (bech32Encode Bech32) []) hrpCaseVariants
     describe "bech32 encoding/decoding" $ do
-        it "should not encode long data string" $
-            assert . isNothing $
-                bech32Encode Bech32 "bc" (replicate 82 (word5 (1 :: Word8)))
-        it "should not encode bad version number" $
-            assert $ isNothing $ segwitEncode "bc" 17 []
-        it "should not encode invalid length for version 0" $
-            assert $ isNothing $ segwitEncode "bc" 0 (replicate 30 1)
-        it "should relax length restrictions for versions other than 0" $
-            assert $ isJust $ segwitEncode "bc" 1 (replicate 30 1)
-        it "should not encode another long data string" $
-            assert $ isNothing $ segwitEncode "bc" 1 (replicate 41 1)
-        it "should not encode empty human readable part" $
-            assert $ isNothing $ bech32Encode Bech32 "" []
-        it "should not decode empty human-readable part" $
-            assert $ isNothing $ bech32Decode "10a06t8"
+        it "should not encode long data string"
+            . assert
+            . isNothing
+            $ bech32Encode Bech32 "bc" (replicate 82 (word5 (1 :: Word8)))
+        it "should not encode bad version number"
+            . assert
+            . isNothing
+            $ segwitEncode "bc" 17 []
+        it "should not encode invalid length for version 0"
+            . assert
+            . isNothing
+            $ segwitEncode "bc" 0 (replicate 30 1)
+        it "should relax length restrictions for versions other than 0"
+            . assert
+            . isJust
+            $ segwitEncode "bc" 1 (replicate 30 1)
+        it "should not encode another long data string"
+            . assert
+            . isNothing
+            $ segwitEncode "bc" 1 (replicate 41 1)
+        it "should not encode empty human readable part"
+            . assert
+            . isNothing
+            $ bech32Encode Bech32 "" []
+        it "should not decode empty human-readable part"
+            . assert
+            . isNothing
+            $ bech32Decode "10a06t8"
         it "human-readable part should be case-insensitive" $
             bech32Encode Bech32 "HRP" [] `shouldBe` bech32Encode Bech32 "hrp" []
 

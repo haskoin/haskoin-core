@@ -315,8 +315,12 @@ guessMSSize (m, n) =
     -- OP_M + n*PubKey + OP_N + OP_CHECKMULTISIG
 
     rdm =
-        fromIntegral $
-            B.length $ runPutS $ serialize $ opPushData $ B.replicate (n * 34 + 3) 0
+        fromIntegral
+            . B.length
+            . runPutS
+            . serialize
+            . opPushData
+            $ B.replicate (n * 34 + 3) 0
     -- Redeem + m*sig + OP_0
     scp = rdm + m * 73 + 1
 
@@ -453,8 +457,10 @@ mergeTxInput net txs tx ((so, val), i) = do
         case out of
             PayMulSig msPubs r ->
                 let sigs =
-                        take r $
-                            catMaybes $ matchTemplate allSigs msPubs $ f out
+                        take r
+                            . catMaybes
+                            . matchTemplate allSigs msPubs
+                            $ f out
                  in return $ RegularInput $ SpendMulSig sigs
             PayScriptHash _ ->
                 case rdmM of
@@ -510,9 +516,10 @@ verifyStdInput net tx i so0 val
 
     nestedScriptOutput :: Either String ScriptOutput
     nestedScriptOutput =
-        scriptOps <$> runGetS deserialize inp >>= \case
-            [OP_PUSHDATA bs _] -> decodeOutputBS bs
-            _ -> Left "nestedScriptOutput: not a nested output"
+        runGetS deserialize inp
+            >>= \case
+                Script [OP_PUSHDATA bs _] -> decodeOutputBS bs
+                _ -> Left "nestedScriptOutput: not a nested output"
 
     verifyLegacyInput :: ScriptOutput -> ScriptInput -> Bool
     verifyLegacyInput so si = case (so, si) of

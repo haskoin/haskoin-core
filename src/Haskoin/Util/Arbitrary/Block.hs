@@ -28,7 +28,8 @@ arbitraryBlock net = do
 -- | Block header with random hash.
 arbitraryBlockHeader :: Gen BlockHeader
 arbitraryBlockHeader =
-    BlockHeader <$> arbitrary
+    BlockHeader
+        <$> arbitrary
         <*> arbitraryBlockHash
         <*> arbitraryHash256
         <*> arbitrary
@@ -42,14 +43,16 @@ arbitraryBlockHash = BlockHash <$> arbitraryHash256
 -- | Arbitrary 'GetBlocks' object with at least one block hash.
 arbitraryGetBlocks :: Gen GetBlocks
 arbitraryGetBlocks =
-    GetBlocks <$> arbitrary
+    GetBlocks
+        <$> arbitrary
         <*> listOf1 arbitraryBlockHash
         <*> arbitraryBlockHash
 
 -- | Arbitrary 'GetHeaders' object with at least one block header.
 arbitraryGetHeaders :: Gen GetHeaders
 arbitraryGetHeaders =
-    GetHeaders <$> arbitrary
+    GetHeaders
+        <$> arbitrary
         <*> listOf1 arbitraryBlockHash
         <*> arbitraryBlockHash
 
@@ -71,13 +74,11 @@ arbitraryMerkleBlock = do
 -- | Arbitrary 'BlockNode'
 arbitraryBlockNode :: Gen BlockNode
 arbitraryBlockNode =
-    oneof
-        [ BlockNode
-            <$> arbitraryBlockHeader
-            <*> choose (0, maxBound)
-            <*> arbitrarySizedNatural
-            <*> arbitraryBlockHash
-        ]
+    BlockNode
+        <$> arbitraryBlockHeader
+        <*> choose (0, maxBound)
+        <*> arbitrarySizedNatural
+        <*> arbitraryBlockHash
 
 -- | Arbitrary 'HeaderMemory'
 arbitraryHeaderMemory :: Gen HeaderMemory

@@ -60,9 +60,11 @@ spec = do
     testIdentity serialVals readVals jsonVals []
     describe "Transaction properties" $ do
         prop "decode and encode txid" $
-            forAll arbitraryTxHash $ \h -> hexToTxHash (txHashToHex h) == Just h
+            forAll arbitraryTxHash $
+                \h -> hexToTxHash (txHashToHex h) == Just h
         prop "from string transaction id" $
-            forAll arbitraryTxHash $ \h -> fromString (cs $ txHashToHex h) == h
+            forAll arbitraryTxHash $
+                \h -> fromString (cs $ txHashToHex h) == h
         prop "building address tx" $
             forAll arbitraryNetwork $ \net ->
                 forAll arbitraryAddress $
@@ -246,7 +248,8 @@ testBuildAddrTx net a (TestCoin v)
     out =
         decodeOutputBS $
             scriptOutput $
-                head $ txOut (fromRight (error "Could not build transaction") tx)
+                head $
+                    txOut (fromRight (error "Could not build transaction") tx)
 
 -- We compute an upper bound but it should be close enough to the real size
 -- We give 2 bytes of slack on every signature (1 on r and 1 on s)
@@ -260,7 +263,8 @@ testGuessSize net tx =
     ins = map f $ txIn tx
     f i =
         fromRight (error "Could not decode input") $
-            decodeInputBS net $ scriptInput i
+            decodeInputBS net $
+                scriptInput i
     pki = length $ filter isSpendPKHash ins
     msi = concatMap shData ins
     shData (ScriptHashInput _ (PayMulSig keys r)) = [(r, length keys)]
@@ -277,8 +281,8 @@ testGuessSize net tx =
 
 testChooseCoins :: [TestCoin] -> Word64 -> Word64 -> Int -> Property
 testChooseCoins coins target byteFee nOut =
-    nOut >= 0
-        ==> case chooseCoins target byteFee nOut True coins of
+    nOut >= 0 ==>
+        case chooseCoins target byteFee nOut True coins of
             Right (chosen, change) ->
                 let outSum = sum $ map coinValue chosen
                     fee = guessTxFee byteFee nOut (length chosen)
@@ -297,8 +301,8 @@ testChooseMSCoins ::
     Int ->
     Property
 testChooseMSCoins (m, n) coins target byteFee nOut =
-    nOut >= 0
-        ==> case chooseMSCoins target byteFee (m, n) nOut True coins of
+    nOut >= 0 ==>
+        case chooseMSCoins target byteFee (m, n) nOut True coins of
             Right (chosen, change) ->
                 let outSum = sum $ map coinValue chosen
                     fee = guessMSTxFee byteFee (m, n) nOut (length chosen)
@@ -360,8 +364,10 @@ testMergeTx net (txs, os) =
     isValid = verifyStdTx net mergedTx outs
     enoughSigs = all (\(m, c) -> c >= m) sigMap
     sigMap =
-        map (\((_, _, _, m, _), inp) -> (m, sigCnt inp)) $
-            zip os $ txIn mergedTx
+        zipWith
+            (\(_, _, _, m, _) inp -> (m, sigCnt inp))
+            os
+            (txIn mergedTx)
     sigCnt inp =
         case decodeInputBS net $ scriptInput inp of
             Right (RegularInput (SpendMulSig sigs)) -> length sigs

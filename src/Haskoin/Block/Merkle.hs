@@ -1,16 +1,11 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 
-{- |
-Module      : Haskoin.Block.Merkle
-Copyright   : No rights reserved
-License     : MIT
-Maintainer  : jprupp@protonmail.ch
-Stability   : experimental
-Portability : POSIX
-
-Function to deal with Merkle trees inside blocks.
--}
+-- |
+-- Stability   : experimental
+-- Portability : POSIX
+--
+-- Function to deal with Merkle trees inside blocks.
 module Haskoin.Block.Merkle (
     -- * Merkle Blocks
     MerkleBlock (..),
@@ -54,29 +49,33 @@ import Haskoin.Data
 import Haskoin.Network.Common
 import Haskoin.Transaction.Common
 
+
 -- | Hash of the block's Merkle root.
 type MerkleRoot = Hash256
+
 
 -- | Bits that are used to rebuild partial merkle tree transaction hash list.
 type FlagBits = [Bool]
 
+
 -- | Partial Merkle tree for a filtered block.
 type PartialMerkleTree = [Hash256]
 
-{- | Filtered block: a block with a partial Merkle tree that only includes the
- transactions that pass a bloom filter that was negotiated.
--}
+
+-- | Filtered block: a block with a partial Merkle tree that only includes the
+-- transactions that pass a bloom filter that was negotiated.
 data MerkleBlock = MerkleBlock
-    { -- | block header
-      merkleHeader :: !BlockHeader
-    , -- | total number of transactions in block
-      merkleTotalTxns :: !Word32
-    , -- | hashes in depth-first order
-      mHashes :: !PartialMerkleTree
-    , -- | bits to rebuild partial merkle tree
-      mFlags :: !FlagBits
+    { merkleHeader :: !BlockHeader
+    -- ^ block header
+    , merkleTotalTxns :: !Word32
+    -- ^ total number of transactions in block
+    , mHashes :: !PartialMerkleTree
+    -- ^ hashes in depth-first order
+    , mFlags :: !FlagBits
+    -- ^ bits to rebuild partial merkle tree
     }
     deriving (Eq, Show, Read, Generic, Hashable, NFData)
+
 
 instance Serial MerkleBlock where
     deserialize = do
@@ -88,6 +87,7 @@ instance Serial MerkleBlock where
         ws <- replicateM (fromIntegral flagLen) getWord8
         return $ MerkleBlock header ntx hashes (decodeMerkleFlags ws)
 
+
     serialize (MerkleBlock h ntx hashes flags) = do
         serialize h
         putWord32le ntx
@@ -97,13 +97,16 @@ instance Serial MerkleBlock where
         putVarInt $ length ws
         forM_ ws putWord8
 
+
 instance Binary MerkleBlock where
     put = serialize
     get = deserialize
 
+
 instance Serialize MerkleBlock where
     put = serialize
     get = deserialize
+
 
 -- | Unpack Merkle flags into 'FlagBits' structure.
 decodeMerkleFlags :: [Word8] -> FlagBits
@@ -111,9 +114,11 @@ decodeMerkleFlags ws =
     [ b | p <- [0 .. length ws * 8 - 1], b <- [testBit (ws !! (p `div` 8)) (p `mod` 8)]
     ]
 
+
 -- | Pack Merkle flags from 'FlagBits'.
 encodeMerkleFlags :: FlagBits -> [Word8]
 encodeMerkleFlags bs = map boolsToWord8 $ splitIn 8 bs
+
 
 -- | Computes the height of a Merkle tree.
 calcTreeHeight ::
@@ -126,9 +131,9 @@ calcTreeHeight ntx
     | even ntx = 1 + calcTreeHeight (ntx `div` 2)
     | otherwise = calcTreeHeight $ ntx + 1
 
-{- | Computes the width of a Merkle tree at a specific height. The transactions
- are at height 0.
--}
+
+-- | Computes the width of a Merkle tree at a specific height. The transactions
+-- are at height 0.
 calcTreeWidth ::
     -- | number of transactions (leaf nodes)
     Int ->
@@ -138,6 +143,7 @@ calcTreeWidth ::
     Int
 calcTreeWidth ntx h = (ntx + (1 `shiftL` h) - 1) `shiftR` h
 
+
 -- | Computes the root of a Merkle tree from a list of leaf node hashes.
 buildMerkleRoot ::
     -- | transaction hashes (leaf nodes)
@@ -146,9 +152,11 @@ buildMerkleRoot ::
     MerkleRoot
 buildMerkleRoot txs = calcHash (calcTreeHeight $ length txs) 0 txs
 
+
 -- | Concatenate and compute double SHA256.
 hash2 :: Hash256 -> Hash256 -> Hash256
 hash2 a b = doubleSHA256 $ runPutS (serialize a) <> runPutS (serialize b)
+
 
 -- | Computes the hash of a specific node in a Merkle tree.
 calcHash ::
@@ -171,11 +179,11 @@ calcHash height pos txs
             calcHash (height - 1) (pos * 2 + 1) txs
         | otherwise = left
 
-{- | Build a partial Merkle tree. Provide a list of tuples with all transaction
- hashes in the block, and whether the transaction is to be included in the
- partial tree. Returns a flag bits structure and the computed partial Merkle
- tree.
--}
+
+-- | Build a partial Merkle tree. Provide a list of tuples with all transaction
+-- hashes in the block, and whether the transaction is to be included in the
+-- partial tree. Returns a flag bits structure and the computed partial Merkle
+-- tree.
 buildPartialMerkle ::
     -- | transaction hash and whether to include
     [(TxHash, Bool)] ->
@@ -183,9 +191,9 @@ buildPartialMerkle ::
     (FlagBits, PartialMerkleTree)
 buildPartialMerkle hs = traverseAndBuild (calcTreeHeight $ length hs) 0 hs
 
-{- | Helper function to build partial Merkle tree. Used by 'buildPartialMerkle'
- above.
--}
+
+-- | Helper function to build partial Merkle tree. Used by 'buildPartialMerkle'
+-- above.
 traverseAndBuild ::
     Int -> Int -> [(TxHash, Bool)] -> (FlagBits, PartialMerkleTree)
 traverseAndBuild height pos txs
@@ -202,6 +210,7 @@ traverseAndBuild height pos txs
         | (pos * 2 + 1) < calcTreeWidth (length txs) (height - 1) =
             traverseAndBuild (height - 1) (pos * 2 + 1) txs
         | otherwise = ([], [])
+
 
 -- | Helper function to extract transaction hashes from partial Merkle tree.
 traverseAndExtract ::
@@ -238,10 +247,10 @@ traverseAndExtract height pos ntx flags hashes
     (rh, rm, rcf, rch) = fromMaybe e rightM
     e = error "traverseAndExtract: unexpected error extracting a Maybe value"
 
-{- | Extracts the matching hashes from a partial merkle tree. This will return
- the list of transaction hashes that have been included (set to true) in
- a call to 'buildPartialMerkle'.
--}
+
+-- | Extracts the matching hashes from a partial merkle tree. This will return
+-- the list of transaction hashes that have been included (set to true) in
+-- a call to 'buildPartialMerkle'.
 extractMatches ::
     Network ->
     FlagBits ->
@@ -278,19 +287,21 @@ extractMatches net flags hashes ntx
     (merkRoot, matches, nBitsUsed, nHashUsed) = fromMaybe e resM
     e = error "extractMatches: unexpected error extracting a Maybe value"
 
-{- | Helper function to split a list in chunks 'Int' length. Last chunk may be
- smaller.
--}
+
+-- | Helper function to split a list in chunks 'Int' length. Last chunk may be
+-- smaller.
 splitIn :: Int -> [a] -> [[a]]
 splitIn _ [] = []
 splitIn c xs = xs1 : splitIn c xs2
   where
     (xs1, xs2) = splitAt c xs
 
+
 -- | Pack up to eight bools in a byte.
 boolsToWord8 :: [Bool] -> Word8
 boolsToWord8 [] = 0
 boolsToWord8 xs = foldl setBit 0 (map snd $ filter fst $ zip xs [0 .. 7])
+
 
 -- | Get matching transactions from Merkle block.
 merkleBlockTxs :: Network -> MerkleBlock -> Either String [TxHash]
@@ -303,6 +314,7 @@ merkleBlockTxs net b =
             (root, ths) <- extractMatches net flags hs n
             when (root /= merkle) $ Left "merkleBlockTxs: Merkle root incorrect"
             return ths
+
 
 -- | Check if Merkle block root is valid against the block header.
 testMerkleRoot :: Network -> MerkleBlock -> Bool

@@ -1,19 +1,14 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 
-{- |
-Module      : Haskoin.Network.Bloom
-Copyright   : No rights reserved
-License     : MIT
-Maintainer  : jprupp@protonmail.ch
-Stability   : experimental
-Portability : POSIX
-
-Bloom filters are used to reduce data transfer when synchronizing thin cients.
-When bloom filters are used a client will obtain filtered blocks that only
-contain transactions that pass the bloom filter. Transactions announced via inv
-messages also pass the filter.
--}
+-- |
+-- Stability   : experimental
+-- Portability : POSIX
+--
+-- Bloom filters are used to reduce data transfer when synchronizing thin cients.
+-- When bloom filters are used a client will obtain filtered blocks that only
+-- contain transactions that pass the bloom filter. Transactions announced via inv
+-- messages also pass the filter.
 module Haskoin.Network.Bloom (
     -- * Bloom Filters
     BloomFlags (..),
@@ -50,25 +45,30 @@ import Haskoin.Network.Common
 import Haskoin.Script.Standard
 import Haskoin.Transaction.Common
 
+
 -- | 20,000 items with fp rate < 0.1% or 10,000 items and <0.0001%
 maxBloomSize :: Int
 maxBloomSize = 36000
 
+
 maxHashFuncs :: Word32
 maxHashFuncs = 50
+
 
 ln2Squared :: Double
 ln2Squared = 0.4804530139182014246671025263266649717305529515945455
 
+
 ln2 :: Double
 ln2 = 0.6931471805599453094172321214581765680755001343602552
+
 
 bitMask :: [Word8]
 bitMask = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80]
 
-{- | The bloom flags are used to tell the remote peer how to auto-update
- the provided bloom filter.
--}
+
+-- | The bloom flags are used to tell the remote peer how to auto-update
+-- the provided bloom filter.
 data BloomFlags
     = -- | never update
       BloomUpdateNone
@@ -78,6 +78,7 @@ data BloomFlags
       BloomUpdateP2PubKeyOnly
     deriving (Eq, Show, Read, Generic, NFData)
 
+
 instance Serial BloomFlags where
     deserialize = go =<< getWord8
       where
@@ -86,37 +87,41 @@ instance Serial BloomFlags where
         go 2 = return BloomUpdateP2PubKeyOnly
         go _ = fail "BloomFlags get: Invalid bloom flag"
 
+
     serialize f = putWord8 $ case f of
         BloomUpdateNone -> 0
         BloomUpdateAll -> 1
         BloomUpdateP2PubKeyOnly -> 2
 
+
 instance Binary BloomFlags where
     get = deserialize
     put = serialize
+
 
 instance Serialize BloomFlags where
     get = deserialize
     put = serialize
 
-{- | A bloom filter is a probabilistic data structure that SPV clients send to
- other peers to filter the set of transactions received from them. Bloom
- filters can have false positives but not false negatives. Some transactions
- that pass the filter may not be relevant to the receiving peer. By
- controlling the false positive rate, SPV nodes can trade off bandwidth
- versus privacy.
--}
+
+-- | A bloom filter is a probabilistic data structure that SPV clients send to
+-- other peers to filter the set of transactions received from them. Bloom
+-- filters can have false positives but not false negatives. Some transactions
+-- that pass the filter may not be relevant to the receiving peer. By
+-- controlling the false positive rate, SPV nodes can trade off bandwidth
+-- versus privacy.
 data BloomFilter = BloomFilter
-    { -- | bloom filter data
-      bloomData :: !(S.Seq Word8)
-    , -- | number of hash functions for this filter
-      bloomHashFuncs :: !Word32
-    , -- | hash function random nonce
-      bloomTweak :: !Word32
-    , -- | bloom filter auto-update flags
-      bloomFlags :: !BloomFlags
+    { bloomData :: !(S.Seq Word8)
+    -- ^ bloom filter data
+    , bloomHashFuncs :: !Word32
+    -- ^ number of hash functions for this filter
+    , bloomTweak :: !Word32
+    -- ^ hash function random nonce
+    , bloomFlags :: !BloomFlags
+    -- ^ bloom filter auto-update flags
     }
     deriving (Eq, Show, Read, Generic, NFData)
+
 
 instance Serial BloomFilter where
     deserialize =
@@ -128,6 +133,7 @@ instance Serial BloomFilter where
       where
         readDat (VarInt len) = replicateM (fromIntegral len) getWord8
 
+
     serialize (BloomFilter dat hashFuncs tweak flags) = do
         putVarInt $ S.length dat
         forM_ (F.toList dat) putWord8
@@ -135,35 +141,42 @@ instance Serial BloomFilter where
         putWord32le tweak
         serialize flags
 
+
 instance Binary BloomFilter where
     put = serialize
     get = deserialize
+
 
 instance Serialize BloomFilter where
     put = serialize
     get = deserialize
 
+
 -- | Set a new bloom filter on the peer connection.
 newtype FilterLoad = FilterLoad {filterLoadBloomFilter :: BloomFilter}
     deriving (Eq, Show, Read, Generic, NFData)
+
 
 instance Serial FilterLoad where
     deserialize = FilterLoad <$> deserialize
     serialize (FilterLoad f) = serialize f
 
+
 instance Binary FilterLoad where
     put = serialize
     get = deserialize
+
 
 instance Serialize FilterLoad where
     put = serialize
     get = deserialize
 
-{- | Add the given data element to the connections current filter without
- requiring a completely new one to be set.
--}
+
+-- | Add the given data element to the connections current filter without
+-- requiring a completely new one to be set.
 newtype FilterAdd = FilterAdd {getFilterData :: ByteString}
     deriving (Eq, Show, Read, Generic, NFData)
+
 
 instance Serial FilterAdd where
     deserialize = do
@@ -171,21 +184,24 @@ instance Serial FilterAdd where
         dat <- getByteString $ fromIntegral len
         return $ FilterAdd dat
 
+
     serialize (FilterAdd bs) = do
         putVarInt $ BS.length bs
         putByteString bs
+
 
 instance Binary FilterAdd where
     put = serialize
     get = deserialize
 
+
 instance Serialize FilterAdd where
     put = serialize
     get = deserialize
 
-{- | Build a bloom filter that will provide the given false positive rate when
- the given number of elements have been inserted.
--}
+
+-- | Build a bloom filter that will provide the given false positive rate when
+-- the given number of elements have been inserted.
 bloomCreate ::
     -- | number of elements
     Int ->
@@ -210,15 +226,16 @@ bloomCreate numElem fpRate =
     -- Suggested number of hash functions
     c = fromIntegral bloomSize * 8 / fromIntegral numElem * ln2
 
+
 bloomHash :: BloomFilter -> Word32 -> ByteString -> Word32
 bloomHash bfilter hashNum bs =
     murmur3 seed bs `mod` (fromIntegral (S.length (bloomData bfilter)) * 8)
   where
     seed = hashNum * 0xfba4c795 + bloomTweak bfilter
 
-{- | Insert arbitrary data into a bloom filter. Returns the new bloom filter
- containing the new data.
--}
+
+-- | Insert arbitrary data into a bloom filter. Returns the new bloom filter
+-- containing the new data.
 bloomInsert ::
     -- | Original bloom filter
     BloomFilter ->
@@ -238,9 +255,9 @@ bloomInsert bfilter bs
             s
     newData = foldl upd (bloomData bfilter) idxs
 
-{- | Tests if some arbitrary data matches the filter. This can be either because
- the data was inserted into the filter or because it is a false positive.
--}
+
+-- | Tests if some arbitrary data matches the filter. This can be either because
+-- the data was inserted into the filter or because it is a false positive.
 bloomContains ::
     -- | Bloom filter
     BloomFilter ->
@@ -257,12 +274,13 @@ bloomContains bfilter bs
     idxs = map (\i -> bloomHash bfilter i bs) [0 .. bloomHashFuncs bfilter - 1]
     isSet i =
         S.index s (fromIntegral $ i `shiftR` 3)
-            .&. (bitMask !! fromIntegral (7 .&. i)) /= 0
+            .&. (bitMask !! fromIntegral (7 .&. i))
+            /= 0
 
-{- | Checks if any of the outputs of a tx is in the current bloom filter.
- If it is, add the txid and vout as an outpoint (i.e. so that
- a future tx that spends the output won't be missed).
--}
+
+-- | Checks if any of the outputs of a tx is in the current bloom filter.
+-- If it is, add the txid and vout as an outpoint (i.e. so that
+-- a future tx that spends the output won't be missed).
 bloomRelevantUpdate ::
     -- | Bloom filter
     BloomFilter ->
@@ -305,13 +323,16 @@ bloomRelevantUpdate bfilter tx
     encodeScriptOut (DataCarrier getOutputDat) = runPutS $ serialize getOutputDat
     encodeScriptOut outputHash = (runPutS . serialize . getOutputHash) outputHash
 
+
 -- | Returns True if the filter is empty (all bytes set to 0x00)
 isBloomEmpty :: BloomFilter -> Bool
 isBloomEmpty bfilter = all (== 0x00) $ F.toList $ bloomData bfilter
 
+
 -- | Returns True if the filter is full (all bytes set to 0xff)
 isBloomFull :: BloomFilter -> Bool
 isBloomFull bfilter = all (== 0xff) $ F.toList $ bloomData bfilter
+
 
 -- | Tests if a given bloom filter is valid.
 isBloomValid ::
@@ -322,6 +343,7 @@ isBloomValid ::
 isBloomValid bfilter =
     S.length (bloomData bfilter) <= maxBloomSize
         && bloomHashFuncs bfilter <= maxHashFuncs
+
 
 -- | Does the peer with these version services accept bloom filters?
 acceptsFilters :: Word64 -> Bool

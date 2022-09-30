@@ -34,24 +34,30 @@ import GHC.Generics (Generic)
 import Haskoin.Util (decodeHex, encodeHex)
 import Text.Read (readEither, readPrec)
 
+
 -- | Fingerprint of parent
 newtype Fingerprint = Fingerprint {unFingerprint :: Word32}
     deriving (Eq, Ord, Hashable, Typeable, Generic, NFData)
 
+
 fingerprintToText :: Fingerprint -> Text
 fingerprintToText = encodeHex . S.encode
+
 
 textToFingerprint :: Text -> Either String Fingerprint
 textToFingerprint = maybe (Left "Fingerprint: invalid hex") Right . decodeHex >=> S.decode
 
+
 instance Show Fingerprint where
     show = show . Text.unpack . encodeHex . S.encode
+
 
 instance Read Fingerprint where
     readPrec =
         readPrec
             >>= maybe (fail "Fingerprint: invalid hex") pure . decodeHex
             >>= either (fail . ("Fingerprint: " <>)) pure . S.decode
+
 
 instance IsString Fingerprint where
     fromString =
@@ -64,20 +70,25 @@ instance IsString Fingerprint where
         decodeError = error "Fingerprint literal: Unable to decode"
         hexError = error "Fingerprint literal: Invalid hex"
 
+
 instance Serial Fingerprint where
     serialize = putWord32be . unFingerprint
     deserialize = Fingerprint <$> getWord32be
+
 
 instance Binary Fingerprint where
     put = serialize
     get = deserialize
 
+
 instance Serialize Fingerprint where
     put = serialize
     get = deserialize
 
+
 instance FromJSON Fingerprint where
     parseJSON = withText "Fingerprint" $ either fail pure . textToFingerprint
+
 
 instance ToJSON Fingerprint where
     toJSON = toJSON . fingerprintToText

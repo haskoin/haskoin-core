@@ -1,11 +1,6 @@
-{- |
-Module      : Haskoin.Test.Transaction
-Copyright   : No rights reserved
-License     : MIT
-Maintainer  : jprupp@protonmail.ch
-Stability   : experimental
-Portability : POSIX
--}
+-- |
+-- Stability   : experimental
+-- Portability : POSIX
 module Haskoin.Util.Arbitrary.Transaction where
 
 import Control.Monad
@@ -25,49 +20,62 @@ import Haskoin.Util.Arbitrary.Script
 import Haskoin.Util.Arbitrary.Util
 import Test.QuickCheck
 
+
 -- | Wrapped coin value for testing.
 newtype TestCoin = TestCoin {getTestCoin :: Word64}
     deriving (Eq, Show)
 
+
 instance Coin TestCoin where
     coinValue = getTestCoin
+
 
 -- | Arbitrary transaction hash (for non-existent transaction).
 arbitraryTxHash :: Gen TxHash
 arbitraryTxHash = TxHash <$> arbitraryHash256
 
+
 -- | Arbitrary amount of Satoshi as 'Word64' (Between 1 and 21e14)
 arbitrarySatoshi :: Network -> Gen TestCoin
 arbitrarySatoshi net = TestCoin <$> choose (1, getMaxSatoshi net)
+
 
 -- | Arbitrary 'OutPoint'.
 arbitraryOutPoint :: Gen OutPoint
 arbitraryOutPoint = OutPoint <$> arbitraryTxHash <*> arbitrary
 
+
 -- | Arbitrary 'TxOut'.
 arbitraryTxOut :: Network -> Gen TxOut
 arbitraryTxOut net =
-    TxOut <$> (getTestCoin <$> arbitrarySatoshi net)
+    TxOut
+        <$> (getTestCoin <$> arbitrarySatoshi net)
         <*> (encodeOutputBS <$> arbitraryScriptOutput net)
+
 
 -- | Arbitrary 'TxIn'.
 arbitraryTxIn :: Network -> Gen TxIn
 arbitraryTxIn net =
-    TxIn <$> arbitraryOutPoint
+    TxIn
+        <$> arbitraryOutPoint
         <*> (encodeInputBS <$> arbitraryScriptInput net)
         <*> arbitrary
+
 
 -- | Arbitrary transaction. Can be regular or with witnesses.
 arbitraryTx :: Network -> Gen Tx
 arbitraryTx net = oneof [arbitraryLegacyTx net, arbitraryWitnessTx net]
 
+
 -- | Arbitrary regular transaction.
 arbitraryLegacyTx :: Network -> Gen Tx
 arbitraryLegacyTx net = arbitraryWLTx net False
 
+
 -- | Arbitrary witness transaction (witness data is fake).
 arbitraryWitnessTx :: Network -> Gen Tx
 arbitraryWitnessTx net = arbitraryWLTx net True
+
 
 -- | Arbitrary witness or legacy transaction.
 arbitraryWLTx :: Network -> Bool -> Gen Tx
@@ -83,10 +91,10 @@ arbitraryWLTx net wit = do
             else return []
     Tx <$> arbitrary <*> pure uniqueInps <*> pure outs <*> pure w <*> arbitrary
 
-{- | Arbitrary transaction containing only inputs of type 'SpendPKHash',
- 'SpendScriptHash' (multisig) and outputs of type 'PayPKHash' and 'PaySH'.
- Only compressed public keys are used.
--}
+
+-- | Arbitrary transaction containing only inputs of type 'SpendPKHash',
+-- 'SpendScriptHash' (multisig) and outputs of type 'PayPKHash' and 'PaySH'.
+-- Only compressed public keys are used.
 arbitraryAddrOnlyTx :: Network -> Gen Tx
 arbitraryAddrOnlyTx net = do
     ni <- choose (1, 5)
@@ -94,6 +102,7 @@ arbitraryAddrOnlyTx net = do
     inps <- vectorOf ni (arbitraryAddrOnlyTxIn net)
     outs <- vectorOf no (arbitraryAddrOnlyTxOut net)
     Tx <$> arbitrary <*> pure inps <*> pure outs <*> pure [] <*> arbitrary
+
 
 -- | Like 'arbitraryAddrOnlyTx' without empty signatures in the inputs.
 arbitraryAddrOnlyTxFull :: Network -> Gen Tx
@@ -104,13 +113,14 @@ arbitraryAddrOnlyTxFull net = do
     outs <- vectorOf no (arbitraryAddrOnlyTxOut net)
     Tx <$> arbitrary <*> pure inps <*> pure outs <*> pure [] <*> arbitrary
 
-{- | Arbitrary TxIn that can only be of type 'SpendPKHash' or 'SpendScriptHash'
- (multisig). Only compressed public keys are used.
--}
+
+-- | Arbitrary TxIn that can only be of type 'SpendPKHash' or 'SpendScriptHash'
+-- (multisig). Only compressed public keys are used.
 arbitraryAddrOnlyTxIn :: Network -> Gen TxIn
 arbitraryAddrOnlyTxIn net = do
     inp <- oneof [arbitraryPKHashInput net, arbitraryMulSigSHInput net]
     TxIn <$> arbitraryOutPoint <*> pure (encodeInputBS inp) <*> arbitrary
+
 
 -- | like 'arbitraryAddrOnlyTxIn' with no empty signatures.
 arbitraryAddrOnlyTxInFull :: Network -> Gen TxIn
@@ -119,6 +129,7 @@ arbitraryAddrOnlyTxInFull net = do
         oneof [arbitraryPKHashInputFullC net, arbitraryMulSigSHInputFullC net]
     TxIn <$> arbitraryOutPoint <*> pure (encodeInputBS inp) <*> arbitrary
 
+
 -- | Arbitrary 'TxOut' that can only be of type 'PayPKHash' or 'PaySH'.
 arbitraryAddrOnlyTxOut :: Network -> Gen TxOut
 arbitraryAddrOnlyTxOut net = do
@@ -126,9 +137,9 @@ arbitraryAddrOnlyTxOut net = do
     out <- oneof [arbitraryPKHashOutput, arbitrarySHOutput]
     return $ TxOut v $ encodeOutputBS out
 
-{- | Arbitrary 'SigInput' with the corresponding private keys used
- to generate the 'ScriptOutput' or 'RedeemScript'.
--}
+
+-- | Arbitrary 'SigInput' with the corresponding private keys used
+-- to generate the 'ScriptOutput' or 'RedeemScript'.
 arbitrarySigInput :: Network -> Gen (SigInput, [SecKeyI])
 arbitrarySigInput net =
     oneof
@@ -140,13 +151,16 @@ arbitrarySigInput net =
         , arbitraryWSHSigInput net
         ]
 
+
 -- | Arbitrary 'SigInput' with a 'ScriptOutput' of type 'PayPK'.
 arbitraryPKSigInput :: Network -> Gen (SigInput, SecKeyI)
 arbitraryPKSigInput net = arbitraryAnyInput net False
 
+
 -- | Arbitrary 'SigInput' with a 'ScriptOutput' of type 'PayPKHash'.
 arbitraryPKHashSigInput :: Network -> Gen (SigInput, SecKeyI)
 arbitraryPKHashSigInput net = arbitraryAnyInput net True
+
 
 -- | Arbitrary 'SigInput'.
 arbitraryAnyInput :: Network -> Bool -> Gen (SigInput, SecKeyI)
@@ -158,6 +172,7 @@ arbitraryAnyInput net pkh = do
     (val, op, sh) <- arbitraryInputStuff net
     return (SigInput out val op sh Nothing, k)
 
+
 -- | Arbitrary value, out point and sighash for an input.
 arbitraryInputStuff :: Network -> Gen (Word64, OutPoint, SigHash)
 arbitraryInputStuff net = do
@@ -165,6 +180,7 @@ arbitraryInputStuff net = do
     op <- arbitraryOutPoint
     sh <- arbitraryValidSigHash net
     return (val, op, sh)
+
 
 -- | Arbitrary 'SigInput' with a 'ScriptOutput' of type 'PayMulSig'.
 arbitraryMSSigInput :: Network -> Gen (SigInput, [SecKeyI])
@@ -177,9 +193,9 @@ arbitraryMSSigInput net = do
     let ksPerm = map fst $ take m $ permutations ks !! perm
     return (SigInput out val op sh Nothing, ksPerm)
 
-{- | Arbitrary 'SigInput' with 'ScriptOutput' of type 'PaySH' and a
- 'RedeemScript'.
--}
+
+-- | Arbitrary 'SigInput' with 'ScriptOutput' of type 'PaySH' and a
+-- 'RedeemScript'.
 arbitrarySHSigInput :: Network -> Gen (SigInput, [SecKeyI])
 arbitrarySHSigInput net = do
     (SigInput rdm val op sh _, ks) <-
@@ -191,12 +207,14 @@ arbitrarySHSigInput net = do
     let out = PayScriptHash $ getAddrHash160 $ payToScriptAddress rdm
     return (SigInput out val op sh $ Just rdm, ks)
 
+
 arbitraryWPKHSigInput :: Network -> Gen (SigInput, SecKeyI)
 arbitraryWPKHSigInput net = do
     (k, p) <- arbitraryKeyPair
     (val, op, sh) <- arbitraryInputStuff net
     let out = PayWitnessPKHash . getAddrHash160 $ pubKeyAddr p
     return (SigInput out val op sh Nothing, k)
+
 
 arbitraryWSHSigInput :: Network -> Gen (SigInput, [SecKeyI])
 arbitraryWSHSigInput net = do
@@ -209,9 +227,9 @@ arbitraryWSHSigInput net = do
     let out = PayWitnessScriptHash . getAddrHash256 $ payToWitnessScriptAddress rdm
     return (SigInput out val op sh $ Just rdm, ks)
 
-{- | Arbitrary 'Tx' (empty 'TxIn'), 'SigInputs' and private keys that can be
- passed to 'signTx' or 'detSignTx' to fully sign the 'Tx'.
--}
+
+-- | Arbitrary 'Tx' (empty 'TxIn'), 'SigInputs' and private keys that can be
+-- passed to 'signTx' or 'detSignTx' to fully sign the 'Tx'.
 arbitrarySigningData :: Network -> Gen (Tx, [SigInput], [SecKeyI])
 arbitrarySigningData net = do
     v <- arbitrary
@@ -227,6 +245,7 @@ arbitrarySigningData net = do
         keys = concatMap snd uSigis
     return (tx, map fst uSigis, keys)
 
+
 -- | Arbitrary transaction with empty inputs.
 arbitraryEmptyTx :: Network -> Gen Tx
 arbitraryEmptyTx net = do
@@ -238,6 +257,7 @@ arbitraryEmptyTx net = do
     t <- arbitrary
     s <- arbitrary
     return $ Tx v (map (\op -> TxIn op BS.empty s) (nub ops)) outs [] t
+
 
 -- | Arbitrary partially-signed transactions.
 arbitraryPartialTxs ::
@@ -276,6 +296,7 @@ arbitraryPartialTxs net = do
                 , n
                 )
             ]
+
 
 wrapKey :: (SigInput, SecKeyI) -> (SigInput, [SecKeyI])
 wrapKey (s, k) = (s, [k])

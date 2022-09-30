@@ -1,11 +1,6 @@
-{- |
-Module      : Haskoin.Test.Block
-Copyright   : No rights reserved
-License     : MIT
-Maintainer  : jprupp@protonmail.ch
-Stability   : experimental
-Portability : POSIX
--}
+-- |
+-- Stability   : experimental
+-- Portability : POSIX
 module Haskoin.Util.Arbitrary.Block where
 
 import qualified Data.HashMap.Strict as HashMap
@@ -17,6 +12,7 @@ import Haskoin.Util.Arbitrary.Transaction
 import Haskoin.Util.Arbitrary.Util
 import Test.QuickCheck
 
+
 -- | Block full or arbitrary transactions.
 arbitraryBlock :: Network -> Gen Block
 arbitraryBlock net = do
@@ -24,6 +20,7 @@ arbitraryBlock net = do
     c <- choose (0, 10)
     txs <- vectorOf c (arbitraryTx net)
     return $ Block h txs
+
 
 -- | Block header with random hash.
 arbitraryBlockHeader :: Gen BlockHeader
@@ -36,9 +33,11 @@ arbitraryBlockHeader =
         <*> arbitrary
         <*> arbitrary
 
+
 -- | Arbitrary block hash.
 arbitraryBlockHash :: Gen BlockHash
 arbitraryBlockHash = BlockHash <$> arbitraryHash256
+
 
 -- | Arbitrary 'GetBlocks' object with at least one block hash.
 arbitraryGetBlocks :: Gen GetBlocks
@@ -48,6 +47,7 @@ arbitraryGetBlocks =
         <*> listOf1 arbitraryBlockHash
         <*> arbitraryBlockHash
 
+
 -- | Arbitrary 'GetHeaders' object with at least one block header.
 arbitraryGetHeaders :: Gen GetHeaders
 arbitraryGetHeaders =
@@ -56,10 +56,12 @@ arbitraryGetHeaders =
         <*> listOf1 arbitraryBlockHash
         <*> arbitraryBlockHash
 
+
 -- | Arbitrary 'Headers' object with at least one block header.
 arbitraryHeaders :: Gen Headers
 arbitraryHeaders =
     Headers <$> listOf1 ((,) <$> arbitraryBlockHeader <*> arbitraryVarInt)
+
 
 -- | Arbitrary 'MerkleBlock' with at least one hash.
 arbitraryMerkleBlock :: Gen MerkleBlock
@@ -71,6 +73,7 @@ arbitraryMerkleBlock = do
     flags <- vectorOf (c * 8) arbitrary
     return $ MerkleBlock bh ntx hashes flags
 
+
 -- | Arbitrary 'BlockNode'
 arbitraryBlockNode :: Gen BlockNode
 arbitraryBlockNode =
@@ -79,6 +82,7 @@ arbitraryBlockNode =
         <*> choose (0, maxBound)
         <*> arbitrarySizedNatural
         <*> arbitraryBlockHash
+
 
 -- | Arbitrary 'HeaderMemory'
 arbitraryHeaderMemory :: Gen HeaderMemory

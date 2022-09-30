@@ -25,6 +25,7 @@ import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck
 
+
 serialVals :: [SerialBox]
 serialVals =
     [ SerialBox $ arbitraryTx =<< arbitraryNetwork
@@ -35,6 +36,7 @@ serialVals =
     , SerialBox arbitraryOutPoint
     ]
 
+
 readVals :: [ReadBox]
 readVals =
     [ ReadBox arbitraryTxHash
@@ -43,6 +45,7 @@ readVals =
     , ReadBox $ arbitraryTxOut =<< arbitraryNetwork
     , ReadBox arbitraryOutPoint
     ]
+
 
 jsonVals :: [JsonBox]
 jsonVals =
@@ -54,6 +57,7 @@ jsonVals =
     , JsonBox $ arbitraryTxOut =<< arbitraryNetwork
     , JsonBox arbitraryOutPoint
     ]
+
 
 spec :: Spec
 spec = do
@@ -93,6 +97,7 @@ spec = do
         it "build pkhash transaction (generated from bitcoind)" $
             mapM_ testPKHashVector pkHashVectors
 
+
 -- Txid Vectors
 
 testTxidVector :: (Text, Text) -> Assertion
@@ -100,6 +105,7 @@ testTxidVector (tid, tx) =
     assertEqual "txid" (Just tid) (txHashToHex . txHash <$> txM)
   where
     txM = eitherToMaybe . runGetS deserialize =<< decodeHex tx
+
 
 txidVectors :: [(Text, Text)]
 txidVectors =
@@ -161,6 +167,7 @@ txidVectors =
         )
     ]
 
+
 -- Build address transactions vectors generated from bitcoin-core raw tx API
 
 testPKHashVector :: ([(Text, Word32)], [(Text, Word64)], Text) -> Assertion
@@ -172,6 +179,7 @@ testPKHashVector (is, os, res) =
   where
     txE = buildAddrTx btc (map f is) os
     f (tid, ix) = OutPoint (fromJust $ hexToTxHash tid) ix
+
 
 pkHashVectors :: [([(Text, Word32)], [(Text, Word64)], Text)]
 pkHashVectors =
@@ -236,6 +244,7 @@ pkHashVectors =
         )
     ]
 
+
 -- Transaction Properties --
 
 testBuildAddrTx :: Network -> Address -> TestCoin -> Bool
@@ -250,6 +259,7 @@ testBuildAddrTx net a (TestCoin v)
             scriptOutput $
                 head $
                     txOut (fromRight (error "Could not build transaction") tx)
+
 
 -- We compute an upper bound but it should be close enough to the real size
 -- We give 2 bytes of slack on every signature (1 on r and 1 on s)
@@ -279,6 +289,7 @@ testGuessSize net tx =
     pkout = length $ filter isPayPKHash out
     msout = length $ filter isPayScriptHash out
 
+
 testChooseCoins :: [TestCoin] -> Word64 -> Word64 -> Int -> Property
 testChooseCoins coins target byteFee nOut =
     nOut >= 0 ==>
@@ -292,6 +303,7 @@ testChooseCoins coins target byteFee nOut =
                  in target == 0 || s < target + fee
   where
     s = sum $ map coinValue coins
+
 
 testChooseMSCoins ::
     (Int, Int) ->
@@ -313,6 +325,7 @@ testChooseMSCoins (m, n) coins target byteFee nOut =
   where
     s = sum $ map coinValue coins
 
+
 {- Signing Transactions -}
 
 testDetSignTx :: Network -> (Tx, [SigInput], [SecKeyI]) -> Bool
@@ -328,6 +341,7 @@ testDetSignTx net (tx, sigis, prv) =
         fromRight (error "Could not decode transaction") $
             signTx net txSigP sigis [secKeyData (head prv)]
     verData = map (\(SigInput s v o _ _) -> (s, v, o)) sigis
+
 
 testDetSignNestedTx :: Network -> (Tx, [SigInput], [SecKeyI]) -> Bool
 testDetSignNestedTx net (tx, sigis, prv) =
@@ -345,6 +359,7 @@ testDetSignNestedTx net (tx, sigis, prv) =
     handleSegwit (SigInput s v o _ _)
         | isSegwit s = (toP2SH $ encodeOutput s, v, o)
         | otherwise = (s, v, o)
+
 
 testMergeTx :: Network -> ([Tx], [(ScriptOutput, Word64, OutPoint, Int, Int)]) -> Bool
 testMergeTx net (txs, os) =

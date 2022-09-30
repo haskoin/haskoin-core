@@ -1,18 +1,19 @@
-name: haskoin-core
-version: 0.21.2
-synopsis: Bitcoin & Bitcoin Cash library for Haskell
-description: Please see the README on GitHub at <https://github.com/haskoin/haskoin-core#readme>
+name: bitcoin
+version: 0.1.0
+synopsis: Bitcoin library for Haskell
+description: Please see the README on GitHub at <https://github.com/haskell-bitcoin/bitcoin#readme>
 category: Bitcoin, Finance, Network
 author:
   - Philippe Laprade
   - Jean-Pierre Rupp
   - Matthew Wraith
-maintainer: jprupp@protonmail.ch
-license: MIT
+  - Keagan McClelland
+maintainer: keagan.mcclelland@gmail.com
+license: BSD3
 license-file: LICENSE
-homepage: http://github.com/haskoin/haskoin#readme
-git: git://github.com/haskoin/haskoin.git
-bug-reports: http://github.com/haskoin/haskoin/issues
+homepage: http://github.com/haskell-bitcoin/bitcoin#readme
+git: git://github.com/haskell-bitcoin/bitcoin.git
+bug-reports: http://github.com/haskell-bitcoin/bitcoin/issues
 extra-source-files:
   - data/*.json
   - README.md
@@ -50,21 +51,19 @@ dependencies:
   - vector >= 0.12.1.2
 library:
   source-dirs: src
-  other-modules:
-    Haskoin.Keys.Extended.Internal
+  other-modules: Haskoin.Keys.Extended.Internal
   when:
     - condition: false
-      other-modules: Paths_haskoin_core
+      other-modules: Paths_bitcoin
 tests:
   spec:
     main: Spec.hs
     source-dirs: test
     verbatim:
-      build-tool-depends:
-          hspec-discover:hspec-discover
+      build-tool-depends: hspec-discover:hspec-discover
     dependencies:
       - base64 ^>= 0.4
-      - haskoin-core
+      - bitcoin
       - hspec >= 2.7.1
       - HUnit >= 1.6.0.0
       - QuickCheck >= 2.13.2

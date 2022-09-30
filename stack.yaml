@@ -1,5 +1,8 @@
-resolver: lts-19.3
+resolver: lts-19.22
+system-ghc: true
 nix:
   packages:
     - secp256k1
     - pkg-config
+extra-deps:
+  - fourmolu-0.8.2.0

@@ -2,19 +2,14 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TupleSections #-}
 
-{- |
-Module      : Haskoin.Transaction.Segwit
-Copyright   : No rights reserved
-License     : MIT
-Maintainer  : jprupp@protonmail.ch
-Stability   : experimental
-Portability : POSIX
-
-Types to represent segregated witness data and auxilliary functions to
-manipulate it.  See [BIP 141](https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki)
-and [BIP 143](https://github.com/bitcoin/bips/blob/master/bip-0143.mediawiki) for
-details.
--}
+-- |
+-- Stability   : experimental
+-- Portability : POSIX
+--
+-- Types to represent segregated witness data and auxilliary functions to
+-- manipulate it.  See [BIP 141](https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki)
+-- and [BIP 143](https://github.com/bitcoin/bips/blob/master/bip-0143.mediawiki) for
+-- details.
 module Haskoin.Transaction.Segwit (
     -- * Segwit
     WitnessProgram (..),
@@ -37,60 +32,60 @@ import Haskoin.Keys.Common
 import Haskoin.Script
 import Haskoin.Transaction.Common
 
-{- | Test if a 'ScriptOutput' is P2WPKH or P2WSH
 
- @since 0.11.0.0
--}
+-- | Test if a 'ScriptOutput' is P2WPKH or P2WSH
+--
+-- @since 0.11.0.0
 isSegwit :: ScriptOutput -> Bool
 isSegwit = \case
     PayWitnessPKHash{} -> True
     PayWitnessScriptHash{} -> True
     _ -> False
 
-{- | High level represenation of a (v0) witness program
 
- @since 0.11.0.0
--}
+-- | High level represenation of a (v0) witness program
+--
+-- @since 0.11.0.0
 data WitnessProgram
     = P2WPKH WitnessProgramPKH
     | P2WSH WitnessProgramSH
     | EmptyWitnessProgram
     deriving (Eq, Show)
 
-{- | Encode a witness program
 
- @since 0.11.0.0
--}
+-- | Encode a witness program
+--
+-- @since 0.11.0.0
 toWitnessStack :: WitnessProgram -> WitnessStack
 toWitnessStack = \case
     P2WPKH (WitnessProgramPKH sig key) -> [encodeTxSig sig, runPutS (serialize key)]
     P2WSH (WitnessProgramSH stack scr) -> stack <> [runPutS (serialize scr)]
     EmptyWitnessProgram -> mempty
 
-{- | High level representation of a P2WPKH witness
 
- @since 0.11.0.0
--}
+-- | High level representation of a P2WPKH witness
+--
+-- @since 0.11.0.0
 data WitnessProgramPKH = WitnessProgramPKH
     { witnessSignature :: !TxSignature
     , witnessPubKey :: !PubKeyI
     }
     deriving (Eq, Show)
 
-{- | High-level representation of a P2WSH witness
 
- @since 0.11.0.0
--}
+-- | High-level representation of a P2WSH witness
+--
+-- @since 0.11.0.0
 data WitnessProgramSH = WitnessProgramSH
     { witnessScriptHashStack :: ![ByteString]
     , witnessScriptHashScript :: !Script
     }
     deriving (Eq, Show)
 
-{- | Calculate the witness program from the transaction data
 
- @since 0.11.0.0
--}
+-- | Calculate the witness program from the transaction data
+--
+-- @since 0.11.0.0
 viewWitnessProgram ::
     Network -> ScriptOutput -> WitnessStack -> Either String WitnessProgram
 viewWitnessProgram net so witness = case so of
@@ -105,10 +100,10 @@ viewWitnessProgram net so witness = case so of
         | null witness -> return EmptyWitnessProgram
         | otherwise -> Left "viewWitnessProgram: Invalid witness program"
 
-{- | Analyze the witness, trying to match it with standard input structures
 
- @since 0.11.0.0
--}
+-- | Analyze the witness, trying to match it with standard input structures
+--
+-- @since 0.11.0.0
 decodeWitnessInput ::
     Network ->
     WitnessProgram ->
@@ -127,10 +122,10 @@ decodeWitnessInput net = \case
             _ -> Left "decodeWitnessInput: Non-standard script output"
     EmptyWitnessProgram -> Left "decodeWitnessInput: Empty witness program"
 
-{- | Create the witness program for a standard input
 
- @since 0.11.0.0
--}
+-- | Create the witness program for a standard input
+--
+-- @since 0.11.0.0
 calcWitnessProgram :: ScriptOutput -> ScriptInput -> Either String WitnessProgram
 calcWitnessProgram so si = case (so, si) of
     (PayWitnessPKHash{}, RegularInput (SpendPKHash sig pk)) -> p2wpkh sig pk
@@ -142,10 +137,10 @@ calcWitnessProgram so si = case (so, si) of
     p2wpkh sig = return . P2WPKH . WitnessProgramPKH sig
     p2wsh i o = return . P2WSH $ WitnessProgramSH (simpleInputStack i) (encodeOutput o)
 
-{- | Create the witness stack required to spend a standard P2WSH input
 
- @since 0.11.0.0
--}
+-- | Create the witness stack required to spend a standard P2WSH input
+--
+-- @since 0.11.0.0
 simpleInputStack :: SimpleInput -> [ByteString]
 simpleInputStack = \case
     SpendPK sig -> [f sig]

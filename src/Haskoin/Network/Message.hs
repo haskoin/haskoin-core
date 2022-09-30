@@ -1,16 +1,11 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 
-{- |
-Module      : Haskoin.Network.Message
-Copyright   : No rights reserved
-License     : MIT
-Maintainer  : jprupp@protonmail.ch
-Stability   : experimental
-Portability : POSIX
-
-Peer-to-peer network message serialization.
--}
+-- |
+-- Stability   : experimental
+-- Portability : POSIX
+--
+-- Peer-to-peer network message serialization.
 module Haskoin.Network.Message (
     -- * Network Message
     Message (..),
@@ -39,20 +34,21 @@ import Haskoin.Network.Bloom
 import Haskoin.Network.Common
 import Haskoin.Transaction.Common
 
-{- | Data type representing the header of a 'Message'. All messages sent between
- nodes contain a message header.
--}
+
+-- | Data type representing the header of a 'Message'. All messages sent between
+-- nodes contain a message header.
 data MessageHeader = MessageHeader
-    { -- | magic bytes identify network
-      headMagic :: !Word32
-    , -- | message type
-      headCmd :: !MessageCommand
-    , -- | length of payload
-      headPayloadSize :: !Word32
-    , -- | checksum of payload
-      headChecksum :: !CheckSum32
+    { headMagic :: !Word32
+    -- ^ magic bytes identify network
+    , headCmd :: !MessageCommand
+    -- ^ message type
+    , headPayloadSize :: !Word32
+    -- ^ length of payload
+    , headChecksum :: !CheckSum32
+    -- ^ checksum of payload
     }
     deriving (Eq, Show, Generic, NFData)
+
 
 instance Serial MessageHeader where
     deserialize =
@@ -62,27 +58,30 @@ instance Serial MessageHeader where
             <*> getWord32le
             <*> deserialize
 
+
     serialize (MessageHeader m c l chk) = do
         putWord32be m
         serialize c
         putWord32le l
         serialize chk
 
+
 instance Binary MessageHeader where
     put = serialize
     get = deserialize
+
 
 instance Serialize MessageHeader where
     put = serialize
     get = deserialize
 
-{- | The 'Message' type is used to identify all the valid messages that can be
- sent between bitcoin peers. Only values of type 'Message' will be accepted
- by other bitcoin peers as bitcoin protocol messages need to be correctly
- serialized with message headers. Serializing a 'Message' value will
- include the 'MessageHeader' with the correct checksum value automatically.
- No need to add the 'MessageHeader' separately.
--}
+
+-- | The 'Message' type is used to identify all the valid messages that can be
+-- sent between bitcoin peers. Only values of type 'Message' will be accepted
+-- by other bitcoin peers as bitcoin protocol messages need to be correctly
+-- serialized with message headers. Serializing a 'Message' value will
+-- include the 'MessageHeader' with the correct checksum value automatically.
+-- No need to add the 'MessageHeader' separately.
 data Message
     = MVersion !Version
     | MVerAck
@@ -109,6 +108,7 @@ data Message
     | MOther !ByteString !ByteString
     deriving (Eq, Show, Generic, NFData)
 
+
 -- | Get 'MessageCommand' assocated with a message.
 msgType :: Message -> MessageCommand
 msgType (MVersion _) = MCVersion
@@ -134,6 +134,7 @@ msgType (MReject _) = MCReject
 msgType MSendHeaders = MCSendHeaders
 msgType MGetAddr = MCGetAddr
 msgType (MOther c _) = MCOther c
+
 
 -- | Deserializer for network messages.
 getMessage :: MonadGet m => Network -> m Message
@@ -170,7 +171,8 @@ getMessage net = do
                     MCOther c -> MOther c <$> getByteString (fromIntegral len)
                     _ ->
                         fail $
-                            "get: command " ++ show cmd
+                            "get: command "
+                                ++ show cmd
                                 ++ " should not carry a payload"
             either fail return (runGetS f bs)
         else case cmd of
@@ -182,8 +184,10 @@ getMessage net = do
             MCOther c -> return (MOther c BS.empty)
             _ ->
                 fail $
-                    "get: command " ++ show cmd
+                    "get: command "
+                        ++ show cmd
                         ++ " is expected to carry a payload"
+
 
 -- | Serializer for network messages.
 putMessage :: MonadPut m => Network -> Message -> m ()

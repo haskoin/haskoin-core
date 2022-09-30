@@ -3,16 +3,11 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-{- |
-Module      : Haskoin.Transaction.Builder.Sign
-Copyright   : No rights reserved
-License     : MIT
-Maintainer  : jprupp@protonmail.ch
-Stability   : experimental
-Portability : POSIX
-
-Types and logic for signing transactions.
--}
+-- |
+-- Stability   : experimental
+-- Portability : POSIX
+--
+-- Types and logic for signing transactions.
 module Haskoin.Transaction.Builder.Sign (
     SigInput (..),
     makeSignature,
@@ -66,28 +61,29 @@ import Haskoin.Transaction.Common
 import Haskoin.Transaction.Segwit
 import Haskoin.Util (matchTemplate, updateIndex)
 
-{- | Data type used to specify the signing parameters of a transaction input.
- To sign an input, the previous output script, outpoint and sighash are
- required. When signing a pay to script hash output, an additional redeem
- script is required.
--}
+
+-- | Data type used to specify the signing parameters of a transaction input.
+-- To sign an input, the previous output script, outpoint and sighash are
+-- required. When signing a pay to script hash output, an additional redeem
+-- script is required.
 data SigInput = SigInput
-    { -- | output script to spend
-      -- ^ output script value
-      sigInputScript :: !ScriptOutput
-    , -- | output script value
-      -- ^ outpoint to spend
-      sigInputValue :: !Word64
-    , -- | outpoint to spend
-      -- ^ signature type
-      sigInputOP :: !OutPoint
-    , -- | signature type
-      -- ^ redeem script
-      sigInputSH :: !SigHash
-    , -- | redeem script
-      sigInputRedeem :: !(Maybe RedeemScript)
+    { sigInputScript :: !ScriptOutput
+    -- ^ output script to spend
+    -- ^ output script value
+    , sigInputValue :: !Word64
+    -- ^ output script value
+    -- ^ outpoint to spend
+    , sigInputOP :: !OutPoint
+    -- ^ outpoint to spend
+    -- ^ signature type
+    , sigInputSH :: !SigHash
+    -- ^ signature type
+    -- ^ redeem script
+    , sigInputRedeem :: !(Maybe RedeemScript)
+    -- ^ redeem script
     }
     deriving (Eq, Show, Read, Generic, Hashable, NFData)
+
 
 instance ToJSON SigInput where
     toJSON (SigInput so val op sh rdm) =
@@ -106,19 +102,21 @@ instance ToJSON SigInput where
                 <> "sighash" .= sh
                 <> maybe mempty ("redeem" .=) rdm
 
+
 instance FromJSON SigInput where
     parseJSON =
         withObject "SigInput" $ \o ->
-            SigInput <$> o .: "pkscript"
+            SigInput
+                <$> o .: "pkscript"
                 <*> o .: "value"
                 <*> o .: "outpoint"
                 <*> o .: "sighash"
                 <*> o .:? "redeem"
 
-{- | Sign a transaction by providing the 'SigInput' signing parameters and a
- list of private keys. The signature is computed deterministically as defined
- in RFC-6979.
--}
+
+-- | Sign a transaction by providing the 'SigInput' signing parameters and a
+-- list of private keys. The signature is computed deterministically as defined
+-- in RFC-6979.
 signTx ::
     Network ->
     -- | transaction to sign
@@ -138,9 +136,9 @@ signTx net otx sigis allKeys
         keys <- sigKeys so rdmM allKeys
         foldM (\t k -> signInput net t i sigi k) tx keys
 
-{- | Sign a single input in a transaction deterministically (RFC-6979).  The
- nesting flag only affects the behavior of segwit inputs.
--}
+
+-- | Sign a single input in a transaction deterministically (RFC-6979).  The
+-- nesting flag only affects the behavior of segwit inputs.
 signInput ::
     Network ->
     Tx ->
@@ -167,10 +165,10 @@ signInput net tx i (sigIn@(SigInput so val _ _ rdmM), nest) key = do
         | isSegwit so' = txIn tx
         | otherwise = updateIndex i txis (f si)
 
-{- | Add the witness data of the transaction given segwit parameters for an input.
 
- @since 0.11.0.0
--}
+-- | Add the witness data of the transaction given segwit parameters for an input.
+--
+-- @since 0.11.0.0
 updatedWitnessData :: Tx -> Int -> ScriptOutput -> ScriptInput -> Either String WitnessData
 updatedWitnessData tx i so si
     | isSegwit so = updateWitness . toWitnessStack =<< calcWitnessProgram so si
@@ -182,6 +180,7 @@ updatedWitnessData tx i so si
         | otherwise = return $ updateIndex i (txWitness tx) (const w)
     defaultStack = replicate n $ toWitnessStack EmptyWitnessProgram
     n = length $ txIn tx
+
 
 -- | Associate an input index to each value in a list
 findInputIndex ::
@@ -199,9 +198,9 @@ findInputIndex getOutPoint as ti =
     g (Just s, i) = Just (s, i)
     g (Nothing, _) = Nothing
 
-{- | Find from the list of provided private keys which one is required to sign
- the 'ScriptOutput'.
--}
+
+-- | Find from the list of provided private keys which one is required to sign
+-- the 'ScriptOutput'.
 sigKeys ::
     ScriptOutput ->
     Maybe RedeemScript ->
@@ -229,9 +228,9 @@ sigKeys so rdmM keys =
     keyByHash h = fmap fst . maybeToList . findKey h $ zipKeys
     findKey h = find $ (== h) . getAddrHash160 . pubKeyAddr . snd
 
-{- | Construct an input for a transaction given a signature, public key and data
- about the previous output.
--}
+
+-- | Construct an input for a transaction given a signature, public key and data
+-- about the previous output.
 buildInput ::
     Network ->
     -- | transaction where input will be added
@@ -271,11 +270,11 @@ buildInput net tx i so val rdmM sig pub = do
         verifyHashSig (makeSigHash net tx i so val sh rdmM) x (pubKeyPoint p)
     f TxSignatureEmpty _ = False
 
-{- | Apply heuristics to extract the signatures for a particular input that are
- embedded in the transaction.
 
- @since 0.11.0.0
--}
+-- | Apply heuristics to extract the signatures for a particular input that are
+-- embedded in the transaction.
+--
+-- @since 0.11.0.0
 parseExistingSigs :: Network -> Tx -> ScriptOutput -> Int -> [TxSignature]
 parseExistingSigs net tx so i = insSigs <> witSigs
   where
@@ -289,6 +288,7 @@ parseExistingSigs net tx so i = insSigs <> witSigs
         | null $ txWitness tx = []
         | otherwise = rights $ decodeTxSig net <$> (txWitness tx !! i)
 
+
 -- | Produce a structured representation of a deterministic (RFC-6979) signature over an input.
 makeSignature :: Network -> Tx -> Int -> SigInput -> SecKeyI -> TxSignature
 makeSignature net tx i (SigInput so val _ sh rdmM) key =
@@ -296,10 +296,10 @@ makeSignature net tx i (SigInput so val _ sh rdmM) key =
   where
     m = makeSigHash net tx i so val sh rdmM
 
-{- | A function which selects the digest algorithm and parameters as appropriate
 
- @since 0.11.0.0
--}
+-- | A function which selects the digest algorithm and parameters as appropriate
+--
+-- @since 0.11.0.0
 makeSigHash ::
     Network ->
     Tx ->
@@ -315,5 +315,5 @@ makeSigHash net tx i so val sh rdmM = h net tx (encodeOutput so') val i sh
         PayWitnessPKHash h' -> PayPKHash h'
         _ -> fromMaybe so rdmM
     h
-        | isSegwit so = txSigHashForkId
+        | isSegwit so = txSigHashSegwitV0
         | otherwise = txSigHash

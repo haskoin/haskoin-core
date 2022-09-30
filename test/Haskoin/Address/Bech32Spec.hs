@@ -20,6 +20,7 @@ import Haskoin.Util
 import Test.HUnit
 import Test.Hspec
 
+
 spec = do
     describe "bech32 checksum" $ do
         it "should be valid" $
@@ -67,6 +68,7 @@ spec = do
         it "human-readable part should be case-insensitive" $
             bech32Encode Bech32 "HRP" [] `shouldBe` bech32Encode Bech32 "hrp" []
 
+
 testValidChecksum :: Bech32Encoding -> Bech32 -> Assertion
 testValidChecksum enc checksum = case bech32Decode checksum of
     Nothing -> assertFailure (show checksum)
@@ -86,9 +88,11 @@ testValidChecksum enc checksum = case bech32Decode checksum of
             expectedChecksum
             checksumEncoded
 
+
 testInvalidChecksum :: Bech32 -> Assertion
 testInvalidChecksum checksum =
     assertBool (show checksum) (isNothing $ bech32Decode checksum)
+
 
 testValidAddress :: (Text, Text) -> Assertion
 testValidAddress (address, hexscript) = do
@@ -107,16 +111,19 @@ testValidAddress (address, hexscript) = do
                 (Just address')
                 (segwitEncode hrp witver witprog)
 
+
 testInvalidAddress :: Text -> Assertion
 testInvalidAddress address = do
     assertBool (show address) (isNothing $ segwitDecode "bc" address)
     assertBool (show address) (isNothing $ segwitDecode "tb" address)
+
 
 segwitScriptPubkey :: Word8 -> [Word8] -> ByteString
 segwitScriptPubkey witver witprog =
     B.pack $ witver' : fromIntegral (length witprog) : witprog
   where
     witver' = if witver == 0 then 0 else witver + 0x50
+
 
 validChecksums :: [(Bech32Encoding, Text)]
 validChecksums =
@@ -170,6 +177,7 @@ validChecksums =
         )
     ]
 
+
 invalidChecksums :: [Text]
 invalidChecksums =
     [ " 1nwldj5"
@@ -181,6 +189,7 @@ invalidChecksums =
     , "li1dgmt3"
     , "de1lg7wt\xFF"
     ]
+
 
 validAddresses :: [(Text, Text)]
 validAddresses =
@@ -230,6 +239,7 @@ validAddresses =
         )
     ]
 
+
 invalidAddresses :: [Text]
 invalidAddresses =
     [ "tc1qw508d6qejxtdg4y5r3zarvary0c5xw7kg3g4ty"
@@ -257,8 +267,10 @@ invalidAddresses =
     , "tb1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vpggkg4j"
     ]
 
+
 hrpCaseVariants :: [Text]
 hrpCaseVariants = map T.pack hrpTestPermutations
+
 
 hrpTestPermutations :: [String]
 hrpTestPermutations = do

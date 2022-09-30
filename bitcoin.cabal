@@ -4,18 +4,19 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 
-name:           haskoin-core
-version:        0.21.2
-synopsis:       Bitcoin & Bitcoin Cash library for Haskell
-description:    Please see the README on GitHub at <https://github.com/haskoin/haskoin-core#readme>
+name:           bitcoin
+version:        0.1.0
+synopsis:       Bitcoin library for Haskell
+description:    Please see the README on GitHub at <https://github.com/haskell-bitcoin/bitcoin#readme>
 category:       Bitcoin, Finance, Network
-homepage:       http://github.com/haskoin/haskoin#readme
-bug-reports:    http://github.com/haskoin/haskoin/issues
+homepage:       http://github.com/haskell-bitcoin/bitcoin#readme
+bug-reports:    http://github.com/haskell-bitcoin/bitcoin/issues
 author:         Philippe Laprade,
                 Jean-Pierre Rupp,
-                Matthew Wraith
-maintainer:     jprupp@protonmail.ch
-license:        MIT
+                Matthew Wraith,
+                Keagan McClelland
+maintainer:     keagan.mcclelland@gmail.com
+license:        BSD3
 license-file:   LICENSE
 build-type:     Simple
 extra-source-files:
@@ -38,7 +39,7 @@ extra-source-files:
 
 source-repository head
   type: git
-  location: git://github.com/haskoin/haskoin.git
+  location: git://github.com/haskell-bitcoin/bitcoin.git
 
 library
   exposed-modules:
@@ -46,7 +47,6 @@ library
       Haskoin.Address
       Haskoin.Address.Base58
       Haskoin.Address.Bech32
-      Haskoin.Address.CashAddr
       Haskoin.Block
       Haskoin.Block.Common
       Haskoin.Block.Headers
@@ -129,7 +129,6 @@ test-suite spec
   main-is: Spec.hs
   other-modules:
       Haskoin.Address.Bech32Spec
-      Haskoin.Address.CashAddrSpec
       Haskoin.AddressSpec
       Haskoin.BlockSpec
       Haskoin.Crypto.HashSpec
@@ -143,7 +142,7 @@ test-suite spec
       Haskoin.Transaction.TaprootSpec
       Haskoin.TransactionSpec
       Haskoin.UtilSpec
-      Paths_haskoin_core
+      Paths_bitcoin
   hs-source-dirs:
       test
   build-depends:
@@ -155,6 +154,7 @@ test-suite spec
     , base16 >=0.3.0.1
     , base64 ==0.4.*
     , binary >=0.8.8
+    , bitcoin
     , bytes >=0.17
     , bytestring >=0.10.10.0
     , cereal >=0.5.8
@@ -164,7 +164,6 @@ test-suite spec
     , deepseq >=1.4.4.0
     , entropy >=0.4.1.5
     , hashable >=1.3.0.0
-    , haskoin-core
     , hspec >=2.7.1
     , lens >=4.18.1
     , lens-aeson >=1.1

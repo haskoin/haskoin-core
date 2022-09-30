@@ -21,6 +21,7 @@ import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck
 
+
 serialVals :: [SerialBox]
 serialVals =
     [ SerialBox arbitraryVarInt
@@ -46,6 +47,7 @@ serialVals =
     , SerialBox arbitraryFilterAdd
     ]
 
+
 spec :: Spec
 spec = do
     testIdentity serialVals [] [] []
@@ -62,11 +64,13 @@ spec = do
         it "Relevant Update" relevantOutputUpdated
         it "Irrelevant Update" irrelevantOutputNotUpdated
 
+
 bloomFilter :: Word32 -> Text -> Assertion
 bloomFilter n x = do
     assertBool "Bloom filter doesn't contain vector 1" $ bloomContains f1 v1
     assertBool "Bloom filter contains something it should not" $
-        not $ bloomContains f1 v2
+        not $
+            bloomContains f1 v2
     assertBool "Bloom filter doesn't contain vector 3" $ bloomContains f3 v3
     assertBool "Bloom filter doesn't contain vector 4" $ bloomContains f4 v4
     assertBool "Bloom filter serialization is incorrect" $
@@ -82,11 +86,14 @@ bloomFilter n x = do
     v4 = fromJust $ decodeHex "b9300670b4c5366e95b2699e8b18bc75e5f729c5"
     bs = fromJust $ decodeHex x
 
+
 bloomFilter1 :: Assertion
 bloomFilter1 = bloomFilter 0 "03614e9b050000000000000001"
 
+
 bloomFilter2 :: Assertion
 bloomFilter2 = bloomFilter 2147483649 "03ce4299050000000100008001"
+
 
 bloomFilter3 :: Assertion
 bloomFilter3 =
@@ -100,6 +107,7 @@ bloomFilter3 =
     p = derivePubKeyI k
     bs = fromJust $ decodeHex "038fc16b080000000000000001"
 
+
 relevantOutputUpdated :: Assertion
 relevantOutputUpdated =
     assertBool "Bloom filter output updated" $
@@ -111,6 +119,7 @@ relevantOutputUpdated =
     bf2 = fromJust $ bloomRelevantUpdate bf1 relevantTx
     spendTxInput = runPutS . serialize . prevOutput <$> txIn spendRelevantTx
 
+
 irrelevantOutputNotUpdated :: Assertion
 irrelevantOutputNotUpdated = assertEqual "Bloom filter not updated" Nothing bf2
   where
@@ -118,6 +127,7 @@ irrelevantOutputNotUpdated = assertEqual "Bloom filter not updated" Nothing bf2
     relevantOutputHash = fromJust $ decodeHex "03f47604ea2736334151081e13265b4fe38e6fa8"
     bf1 = bloomInsert bf0 relevantOutputHash
     bf2 = bloomRelevantUpdate bf1 unrelatedTx
+
 
 -- Random transaction (57dc904f32ad4daab7b321dd469e8791ad09df784cdd273a73985150a4f225e9)
 relevantTx :: Tx
@@ -138,6 +148,7 @@ relevantTx =
         , txWitness = []
         , txLockTime = 0
         }
+
 
 -- Transaction that spends above (fd6e3b693b844aa431fad46765c1aa019a6b13aebfa9dae916b3ffa43283a300)
 spendRelevantTx :: Tx
@@ -163,6 +174,7 @@ spendRelevantTx =
         , txWitness = []
         , txLockTime = 0
         }
+
 
 -- This random transaction is unrelated to the others
 unrelatedTx :: Tx

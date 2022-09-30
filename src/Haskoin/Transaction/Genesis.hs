@@ -1,15 +1,14 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-{- |
-Module      : Haskoin.Transaction.Genesis
-Copyright   : No rights reserved
-License     : UNLICENSE
-Maintainer  : jprupp@protonmail.ch
-Stability   : experimental
-Portability : POSIX
-
-Code related to transactions parsing and serialization.
--}
+-- |
+--Module      : Haskoin.Transaction.Genesis
+--Copyright   : No rights reserved
+--License     : UNLICENSE
+--Maintainer  : jprupp@protonmail.ch
+--Stability   : experimental
+--Portability : POSIX
+--
+--Code related to transactions parsing and serialization.
 module Haskoin.Transaction.Genesis (
     genesisTx,
 ) where
@@ -18,6 +17,7 @@ import Data.String (fromString)
 import Haskoin.Script.Standard
 import Haskoin.Transaction.Common
 import Haskoin.Util
+
 
 -- | Transaction from Genesis block.
 genesisTx :: Tx

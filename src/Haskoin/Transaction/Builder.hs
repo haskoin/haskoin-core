@@ -2,17 +2,12 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-{- |
-Module      : Haskoin.Transaction.Builder
-Copyright   : No rights reserved
-License     : MIT
-Maintainer  : jprupp@protonmail.ch
-Stability   : experimental
-Portability : POSIX
-
-Code to simplify transaction creation, signing, fee calculation and coin
-selection.
--}
+-- |
+-- Stability   : experimental
+-- Portability : POSIX
+--
+-- Code to simplify transaction creation, signing, fee calculation and coin
+-- selection.
 module Haskoin.Transaction.Builder (
     -- * Transaction Builder
     buildAddrTx,
@@ -90,16 +85,16 @@ import Haskoin.Transaction.Segwit (
  )
 import Haskoin.Util
 
-{- | Any type can be used as a Coin if it can provide a value in Satoshi.
- The value is used in coin selection algorithms.
--}
+
+-- | Any type can be used as a Coin if it can provide a value in Satoshi.
+-- The value is used in coin selection algorithms.
 class Coin c where
     coinValue :: c -> Word64
 
-{- | Coin selection algorithm for normal (non-multisig) transactions. This
- function returns the selected coins together with the amount of change to
- send back to yourself, taking the fee into account.
--}
+
+-- | Coin selection algorithm for normal (non-multisig) transactions. This
+-- function returns the selected coins together with the amount of change to
+-- send back to yourself, taking the fee into account.
 chooseCoins ::
     Coin c =>
     -- | value to send
@@ -118,11 +113,11 @@ chooseCoins target fee nOut continue coins =
     runIdentity . runConduit $
         sourceList coins .| chooseCoinsSink target fee nOut continue
 
-{- | Coin selection algorithm for normal (non-multisig) transactions. This
- function returns the selected coins together with the amount of change to
- send back to yourself, taking the fee into account. This version uses a Sink
- for conduit-based coin selection.
--}
+
+-- | Coin selection algorithm for normal (non-multisig) transactions. This
+-- function returns the selected coins together with the amount of change to
+-- send back to yourself, taking the fee into account. This version uses a Sink
+-- for conduit-based coin selection.
 chooseCoinsSink ::
     (Monad m, Coin c) =>
     -- | value to send
@@ -143,11 +138,11 @@ chooseCoinsSink target fee nOut continue
   where
     err = "chooseCoins: No solution found"
 
-{- | Coin selection algorithm for multisig transactions. This function returns
- the selected coins together with the amount of change to send back to
- yourself, taking the fee into account. This function assumes all the coins
- are script hash outputs that send funds to a multisignature address.
--}
+
+-- | Coin selection algorithm for multisig transactions. This function returns
+-- the selected coins together with the amount of change to send back to
+-- yourself, taking the fee into account. This function assumes all the coins
+-- are script hash outputs that send funds to a multisignature address.
 chooseMSCoins ::
     Coin c =>
     -- | value to send
@@ -167,12 +162,12 @@ chooseMSCoins target fee ms nOut continue coins =
     runIdentity . runConduit $
         sourceList coins .| chooseMSCoinsSink target fee ms nOut continue
 
-{- | Coin selection algorithm for multisig transactions. This function returns
- the selected coins together with the amount of change to send back to
- yourself, taking the fee into account. This function assumes all the coins
- are script hash outputs that send funds to a multisignature address. This
- version uses a Sink if you need conduit-based coin selection.
--}
+
+-- | Coin selection algorithm for multisig transactions. This function returns
+-- the selected coins together with the amount of change to send back to
+-- yourself, taking the fee into account. This function assumes all the coins
+-- are script hash outputs that send funds to a multisignature address. This
+-- version uses a Sink if you need conduit-based coin selection.
 chooseMSCoinsSink ::
     (Monad m, Coin c) =>
     -- | value to send
@@ -195,13 +190,13 @@ chooseMSCoinsSink target fee ms nOut continue
   where
     err = "chooseMSCoins: No solution found"
 
-{- | Select coins greedily by starting from an empty solution. If the 'continue'
- flag is set, the algorithm will try to find a better solution in the stream
- after a solution is found. If the next solution found is not strictly better
- than the previously found solution, the algorithm stops and returns the
- previous solution. If the continue flag is not set, the algorithm will return
- the first solution it finds in the stream.
--}
+
+-- | Select coins greedily by starting from an empty solution. If the 'continue'
+-- flag is set, the algorithm will try to find a better solution in the stream
+-- after a solution is found. If the next solution found is not strictly better
+-- than the previously found solution, the algorithm stops and returns the
+-- previous solution. If the continue flag is not set, the algorithm will return
+-- the first solution it finds in the stream.
 greedyAddSink ::
     (Monad m, Coin c) =>
     -- | value to send
@@ -253,19 +248,21 @@ greedyAddSink target guessFee continue =
                         else -- If we have a solution, return it
                             Just (ps, pTot - goal (length ps))
 
+
 -- | Estimate tranasction fee to pay based on transaction size estimation.
 guessTxFee :: Word64 -> Int -> Int -> Word64
 guessTxFee byteFee nOut nIn =
     byteFee * fromIntegral (guessTxSize nIn [] nOut 0)
+
 
 -- | Same as 'guessTxFee' but for multisig transactions.
 guessMSTxFee :: Word64 -> (Int, Int) -> Int -> Int -> Word64
 guessMSTxFee byteFee ms nOut nIn =
     byteFee * fromIntegral (guessTxSize 0 (replicate nIn ms) nOut 0)
 
-{- | Computes an upper bound on the size of a transaction based on some known
- properties of the transaction.
--}
+
+-- | Computes an upper bound on the size of a transaction based on some known
+-- properties of the transaction.
 guessTxSize ::
     -- | number of regular transaction inputs
     Int ->
@@ -304,6 +301,7 @@ guessTxSize pki msi pkout msout =
             -- (1: script len) + (8: Word64)
             msout * 32
 
+
 -- | Size of a multisig P2SH input.
 guessMSSize :: (Int, Int) -> Int
 guessMSSize (m, n) =
@@ -324,11 +322,11 @@ guessMSSize (m, n) =
     -- Redeem + m*sig + OP_0
     scp = rdm + m * 73 + 1
 
+
 {- Build a new Tx -}
 
-{- | Build a transaction by providing a list of outpoints as inputs
- and a list of recipient addresses and amounts as outputs.
--}
+-- | Build a transaction by providing a list of outpoints as inputs
+-- and a list of recipient addresses and amounts as outputs.
 buildAddrTx :: Network -> [OutPoint] -> [(Text, Word64)] -> Either String Tx
 buildAddrTx net ops rcps =
     buildTx ops <$> mapM f rcps
@@ -339,9 +337,9 @@ buildAddrTx net ops rcps =
             let o = addressToOutput a
             return (o, v)
 
-{- | Build a transaction by providing a list of outpoints as inputs
- and a list of 'ScriptOutput' and amounts as outputs.
--}
+
+-- | Build a transaction by providing a list of outpoints as inputs
+-- and a list of 'ScriptOutput' and amounts as outputs.
 buildTx :: [OutPoint] -> [(ScriptOutput, Word64)] -> Tx
 buildTx ops rcpts =
     Tx 1 (toIn <$> ops) (toOut <$> rcpts) [] 0
@@ -349,20 +347,20 @@ buildTx ops rcpts =
     toIn op = TxIn op B.empty maxBound
     toOut (o, v) = TxOut v $ encodeOutputBS o
 
-{- | Sign a transaction by providing the 'SigInput' signing parameters and a
- list of private keys. The signature is computed deterministically as defined
- in RFC-6979.
 
- Example: P2SH-P2WKH
-
- > sigIn = SigInput (PayWitnessPKHash h) 100000 op sigHashAll Nothing
- > signedTx = signTx btc unsignedTx [sigIn] [key]
-
- Example: P2SH-P2WSH multisig
-
- > sigIn = SigInput (PayWitnessScriptHash h) 100000 op sigHashAll (Just $ PayMulSig [p1,p2,p3] 2)
- > signedTx = signTx btc unsignedTx [sigIn] [k1,k3]
--}
+-- | Sign a transaction by providing the 'SigInput' signing parameters and a
+-- list of private keys. The signature is computed deterministically as defined
+-- in RFC-6979.
+--
+-- Example: P2SH-P2WKH
+--
+-- > sigIn = SigInput (PayWitnessPKHash h) 100000 op sigHashAll Nothing
+-- > signedTx = signTx btc unsignedTx [sigIn] [key]
+--
+-- Example: P2SH-P2WSH multisig
+--
+-- > sigIn = SigInput (PayWitnessScriptHash h) 100000 op sigHashAll (Just $ PayMulSig [p1,p2,p3] 2)
+-- > signedTx = signTx btc unsignedTx [sigIn] [k1,k3]
 signTx ::
     Network ->
     -- | transaction to sign
@@ -377,9 +375,9 @@ signTx net tx si = S.signTx net tx $ notNested <$> si
   where
     notNested s = (s, False)
 
-{- | This function differs from 'signTx' by assuming all segwit inputs are
- P2SH-nested.  Use the same signing parameters for segwit inputs as in 'signTx'.
--}
+
+-- | This function differs from 'signTx' by assuming all segwit inputs are
+-- P2SH-nested.  Use the same signing parameters for segwit inputs as in 'signTx'.
 signNestedWitnessTx ::
     Network ->
     -- | transaction to sign
@@ -395,27 +393,29 @@ signNestedWitnessTx net tx si = S.signTx net tx $ nested <$> si
     -- NOTE: the nesting flag is ignored for non-segwit inputs
     nested s = (s, True)
 
+
 -- | Sign a single input in a transaction deterministically (RFC-6979).
 signInput :: Network -> Tx -> Int -> SigInput -> SecKeyI -> Either String Tx
 signInput net tx i si = S.signInput net tx i (si, False)
+
 
 -- | Like 'signInput' but treat segwit inputs as nested
 signNestedInput :: Network -> Tx -> Int -> SigInput -> SecKeyI -> Either String Tx
 signNestedInput net tx i si = S.signInput net tx i (si, True)
 
-{- | Order the 'SigInput' with respect to the transaction inputs. This allows
- the user to provide the 'SigInput' in any order. Users can also provide only
- a partial set of 'SigInput' entries.
--}
+
+-- | Order the 'SigInput' with respect to the transaction inputs. This allows
+-- the user to provide the 'SigInput' in any order. Users can also provide only
+-- a partial set of 'SigInput' entries.
 findSigInput :: [SigInput] -> [TxIn] -> [(SigInput, Int)]
 findSigInput = S.findInputIndex sigInputOP
 
+
 {- Merge multisig transactions -}
 
-{- | Merge partially-signed multisig transactions.  This function does not
- support segwit and P2SH-segwit inputs.  Use PSBTs to merge transactions with
- segwit inputs.
--}
+-- | Merge partially-signed multisig transactions.  This function does not
+-- support segwit and P2SH-segwit inputs.  Use PSBTs to merge transactions with
+-- segwit inputs.
 mergeTxs ::
     Network -> [Tx] -> [(ScriptOutput, Word64, OutPoint)] -> Either String Tx
 mergeTxs net txs os
@@ -434,9 +434,9 @@ mergeTxs net txs os
     clearInput tx (_, i) =
         Tx (txVersion tx) (ins (txIn tx) i) (txOut tx) [] (txLockTime tx)
 
-{- | Merge input from partially-signed multisig transactions.  This function
- does not support segwit and P2SH-segwit inputs.
--}
+
+-- | Merge input from partially-signed multisig transactions.  This function
+-- does not support segwit and P2SH-segwit inputs.
 mergeTxInput ::
     Network ->
     [Tx] ->
@@ -482,6 +482,7 @@ mergeTxInput net txs tx ((so, val), i) = do
             (pubKeyPoint p)
     f _ TxSignatureEmpty _ = False
 
+
 {- Tx verification -}
 
 -- | Verify if a transaction is valid and all of its inputs are standard.
@@ -492,6 +493,7 @@ verifyStdTx net tx xs =
     f (_, _, o) txin = o == prevOutput txin
     go (Just (so, val, _), i) = verifyStdInput net tx i so val
     go _ = False
+
 
 -- | Verify if a transaction input is valid and standard.
 verifyStdInput :: Network -> Tx -> Int -> ScriptOutput -> Word64 -> Bool
@@ -560,6 +562,7 @@ verifyStdInput net tx i so0 val
         PayScriptHash h -> payToScriptAddress so' == p2shAddr h && verifySegwitInput so' x
         _ -> False
 
+
 -- | Count the number of valid signatures for a multi-signature transaction.
 countMulSig ::
     Network ->
@@ -574,6 +577,7 @@ countMulSig net tx out val i =
     countMulSig' h
   where
     h = txSigHash net tx out val i
+
 
 countMulSig' :: (SigHash -> Hash256) -> [PubKey] -> [TxSignature] -> Int
 countMulSig' _ [] _ = 0

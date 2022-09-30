@@ -18,15 +18,19 @@ import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck
 
+
 serialVals :: [SerialBox]
 serialVals = [SerialBox arbitraryAddressAll]
+
 
 readVals :: [ReadBox]
 readVals = [ReadBox arbitraryAddressAll]
 
+
 netVals :: [NetBox]
 netVals =
     [NetBox (addrToJSON, addrToEncoding, addrFromJSON, arbitraryNetAddress)]
+
 
 spec :: Spec
 spec = do
@@ -56,6 +60,7 @@ spec = do
         it "Passes addresses witness p2sh(pwpkh) vectors" $
             mapM_ testCompatWitnessVector compatWitnessVectors
 
+
 testVector :: (ByteString, Text, Text) -> Assertion
 testVector (bs, e, chk) = do
     assertEqual "encodeBase58" e b58
@@ -65,6 +70,7 @@ testVector (bs, e, chk) = do
   where
     b58 = encodeBase58 bs
     b58Chk = encodeBase58Check bs
+
 
 vectors :: [(ByteString, Text, Text)]
 vectors =
@@ -93,6 +99,7 @@ vectors =
         )
     ]
 
+
 -- Test vectors from:
 -- https://github.com/bitcoin/bitcoin/blob/master/src/test/data/base58_encode_decode.json
 
@@ -104,6 +111,7 @@ testBase58Vector (a, b) = do
   where
     bsA = fromJust $ decodeHex a
     bsB = fromJust $ decodeBase58 b
+
 
 base58Vectors :: [(Text, Text)]
 base58Vectors =
@@ -149,12 +157,14 @@ base58Vectors =
         )
     ]
 
+
 -- Test vectors from:
 -- https://github.com/bitcoin/bitcoin/blob/master/src/test/base58_tests.cpp
 
 testBase58InvalidVector :: (Text, Maybe Text) -> Assertion
 testBase58InvalidVector (a, resM) =
     assertEqual "decodeBase58 invalid match" resM (encodeHex <$> decodeBase58 a)
+
 
 base58InvalidVectors :: [(Text, Maybe Text)]
 base58InvalidVectors =
@@ -169,12 +179,14 @@ base58InvalidVectors =
     -- , (" \t\n\v\f\r skip \r\f\v\n\t ", Just "971a55")
     ]
 
+
 testBase58ChkInvalidVector :: (Text, Maybe Text) -> Assertion
 testBase58ChkInvalidVector (a, resM) =
     assertEqual
         "decodeBase58Check invalid match"
         resM
         (encodeHex <$> decodeBase58Check a)
+
 
 base58ChkInvalidVectors :: [(Text, Maybe Text)]
 base58ChkInvalidVectors =
@@ -184,6 +196,7 @@ base58ChkInvalidVectors =
     , ("3vQB7B6MrGQZaxCuFg4oh\00IOl", Nothing)
     ]
 
+
 testCompatWitnessVector :: (Network, Text, Text) -> Assertion
 testCompatWitnessVector (net, seckey, addr) = do
     let seckeyM = fromWif net seckey
@@ -192,6 +205,7 @@ testCompatWitnessVector (net, seckey, addr) = do
     let addrM = addrToText btcTest (pubKeyCompatWitnessAddr pubkey)
     assertBool "address can be encoded" (isJust addrM)
     assertEqual "witness address matches" addr (fromJust addrM)
+
 
 compatWitnessVectors :: [(Network, Text, Text)]
 compatWitnessVectors =

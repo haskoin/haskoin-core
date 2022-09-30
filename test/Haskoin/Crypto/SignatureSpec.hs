@@ -26,6 +26,7 @@ import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck
 
+
 spec :: Spec
 spec = do
     describe "Signature properties" $ do
@@ -33,9 +34,11 @@ spec = do
             forAll arbitrarySignature $ \(m, key', sig) ->
                 verifyHashSig m sig (derivePubKey key')
         prop "s component less than half order" $
-            forAll arbitrarySignature $ isCanonicalHalfOrder . lst3
+            forAll arbitrarySignature $
+                isCanonicalHalfOrder . lst3
         prop "encoded signature is canonical" $
-            forAll arbitrarySignature $ testIsCanonical . lst3
+            forAll arbitrarySignature $
+                testIsCanonical . lst3
         prop "decodeStrictSig . exportSig identity" $
             forAll arbitrarySignature $
                 (\s -> decodeStrictSig (exportSig s) == Just s) . lst3
@@ -58,6 +61,7 @@ spec = do
         it "agrees with BIP143 p2sh-p2wpkh example" testBip143p2shp2wpkh
         it "builds a p2wsh multisig transaction" testP2WSHMulsig
         it "agrees with BIP143 p2sh-p2wsh multisig example" testBip143p2shp2wpkhMulsig
+
 
 -- github.com/bitcoin/bitcoin/blob/master/src/script.cpp
 -- from function IsCanonicalSignature
@@ -117,6 +121,7 @@ testIsCanonical sig =
     rlen = BS.index s 3
     slen = BS.index s (fromIntegral rlen + 5)
 
+
 -- RFC6979 note: Different libraries of libsecp256k1 use different constants
 -- to produce a nonce. Thus, their deterministric signatures will be different.
 -- We still want to test against fixed signatures so we need a way to switch
@@ -126,6 +131,7 @@ data ValidImpl
     = ImplCore
     | ImplABC
 
+
 implSig :: Text
 implSig =
     encodeHex $
@@ -133,6 +139,7 @@ implSig =
             signMsg
                 "0000000000000000000000000000000000000000000000000000000000000001"
                 "0000000000000000000000000000000000000000000000000000000000000000"
+
 
 -- We have test vectors for these cases
 validImplMap :: Map Text ValidImpl
@@ -152,12 +159,15 @@ validImplMap =
             )
         ]
 
+
 getImpl :: Maybe ValidImpl
 getImpl = implSig `Map.lookup` validImplMap
+
 
 rfc6979files :: ValidImpl -> (FilePath, FilePath)
 rfc6979files ImplCore = ("rfc6979core.json", "rfc6979DERcore.json")
 rfc6979files ImplABC = ("rfc6979abc.json", "rfc6979DERabc.json")
+
 
 checkDistSig :: (FilePath -> FilePath -> Spec) -> Spec
 checkDistSig go =
@@ -165,13 +175,16 @@ checkDistSig go =
         Just (file1, file2) -> go file1 file2
         _ ->
             it "Passes rfc6979 test vectors" $
-                void $ assertFailure "Invalid rfc6979 signature"
+                void $
+                    assertFailure "Invalid rfc6979 signature"
+
 
 {- Trezor RFC 6979 Test Vectors -}
 -- github.com/trezor/python-ecdsa/blob/master/ecdsa/test_pyecdsa.py
 
 toVector :: (Text, Text, Text) -> (SecKey, ByteString, Text)
 toVector (prv, m, res) = (fromJust $ (secKey <=< decodeHex) prv, cs m, res)
+
 
 testRFC6979Vector :: (SecKey, ByteString, Text) -> Assertion
 testRFC6979Vector (prv, m, res) = do
@@ -182,6 +195,7 @@ testRFC6979Vector (prv, m, res) = do
   where
     h = sha256 m
     s = signHash prv h
+
 
 -- Test vectors from:
 -- https://crypto.stackexchange.com/questions/20838/request-for-data-to-test-deterministic-ecdsa-signature-algorithm-for-secp256k1
@@ -195,6 +209,7 @@ testRFC6979DERVector (prv, m, res) = do
   where
     h = sha256 m
     s = signHash prv h
+
 
 -- Reproduce the P2WPKH example from BIP 143
 testBip143p2wpkh :: Assertion
@@ -249,6 +264,7 @@ testBip143p2wpkh =
     sigIn1 = SigInput (PayWitnessPKHash h) 600000000 op1 sigHashAll Nothing
     generatedSignedTx = signTx btc unsignedTx [sigIn0, sigIn1] [key0, key1]
 
+
 -- Reproduce the P2SH-P2WPKH example from BIP 143
 testBip143p2shp2wpkh :: Assertion
 testBip143p2shp2wpkh =
@@ -289,6 +305,7 @@ testBip143p2shp2wpkh =
     WitnessPubKeyAddress h = pubKeyWitnessAddr $ toPubKey key0
     sigIn0 = SigInput (PayWitnessPKHash h) 1000000000 op0 sigHashAll Nothing
     generatedSignedTx = signNestedWitnessTx btc unsignedTx [sigIn0] [key0]
+
 
 -- P2WSH multisig example (tested against bitcoin-core 0.19.0.1)
 testP2WSHMulsig :: Assertion
@@ -345,6 +362,7 @@ testP2WSHMulsig =
             sigHashAll
             (Just rdm)
     generatedSignedTx = signTx btc unsignedTx [sigIn] (take 2 keys)
+
 
 -- Reproduce the P2SH-P2WSH multisig example from BIP 143
 testBip143p2shp2wpkhMulsig :: Assertion
@@ -437,8 +455,10 @@ testBip143p2shp2wpkhMulsig =
     generatedSignedTx = foldM addSig unsignedTx $ zip sigIns keys
     addSig tx (sigIn', key') = signNestedWitnessTx btc tx [sigIn'] [key']
 
+
 secHexKey :: Text -> Maybe SecKey
 secHexKey = decodeHex >=> secKey
+
 
 toPubKey :: SecKey -> PubKeyI
 toPubKey = derivePubKeyI . wrapSecKey True

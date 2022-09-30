@@ -31,11 +31,13 @@ import Test.Hspec.QuickCheck
 import Test.QuickCheck
 import Text.Read
 
+
 serialVals :: [SerialBox]
 serialVals =
     [ SerialBox arbitraryScriptOp
     , SerialBox arbitraryScript
     ]
+
 
 readVals :: [ReadBox]
 readVals =
@@ -47,6 +49,7 @@ readVals =
     , ReadBox (arbitraryScriptOutput =<< arbitraryNetwork)
     ]
 
+
 jsonVals :: [JsonBox]
 jsonVals =
     [ JsonBox $ arbitraryScriptOutput =<< arbitraryNetwork
@@ -55,30 +58,31 @@ jsonVals =
     , JsonBox $ fst <$> (arbitrarySigInput =<< arbitraryNetwork)
     ]
 
+
 spec :: Spec
 spec = do
     testIdentity serialVals readVals jsonVals []
     describe "btc scripts" $ props btc
-    describe "bch scripts" $ props bch
     describe "multi signatures" $
         zipWithM_ (curry mapMulSigVector) mulSigVectors [0 ..]
     describe "signature decoding" $
         zipWithM_ (curry (sigDecodeMap btc)) scriptSigSignatures [0 ..]
     describe "SigHashFlag fromEnum/toEnum" $
         prop "fromEnum/toEnum" $
-            forAll arbitrarySigHashFlag $ \f -> toEnum (fromEnum f) `shouldBe` f
+            forAll arbitrarySigHashFlag $
+                \f -> toEnum (fromEnum f) `shouldBe` f
     describe "Script vectors" $
         it "Can encode script vectors" encodeScriptVector
+
 
 props :: Network -> Spec
 props net = do
     standardSpec net
     strictSigSpec net
     scriptSpec net
-    txSigHashForkIdSpec net
-    forkIdScriptSpec net
     sigHashSpec net
     txSigHashSpec net
+
 
 standardSpec :: Network -> Spec
 standardSpec net = do
@@ -104,13 +108,17 @@ standardSpec net = do
             `shouldBe` Right (RegularInput (SpendPK TxSignatureEmpty))
         let pk =
                 derivePubKeyI $
-                    wrapSecKey True $ fromJust $ secKey $ B.replicate 32 1
+                    wrapSecKey True $
+                        fromJust $
+                            secKey $
+                                B.replicate 32 1
         decodeInput net (Script [OP_0, opPushData $ runPutS $ serialize pk])
             `shouldBe` Right (RegularInput (SpendPKHash TxSignatureEmpty pk))
         decodeInput net (Script [OP_0, OP_0])
             `shouldBe` Right (RegularInput (SpendMulSig [TxSignatureEmpty]))
         decodeInput net (Script [OP_0, OP_0, OP_0, OP_0])
             `shouldBe` Right (RegularInput (SpendMulSig $ replicate 3 TxSignatureEmpty))
+
 
 scriptSpec :: Network -> Spec
 scriptSpec net =
@@ -145,9 +153,12 @@ scriptSpec net =
 
                 unless ("DISABLED" `isInfixOf` flags) $ do
                     let _strict =
-                            "DERSIG" `isInfixOf` flags
-                                || "STRICTENC" `isInfixOf` flags
-                                || "NULLDUMMY" `isInfixOf` flags
+                            "DERSIG"
+                                `isInfixOf` flags
+                                || "STRICTENC"
+                                `isInfixOf` flags
+                                || "NULLDUMMY"
+                                `isInfixOf` flags
                         scriptSig = parseScript siStr
                         scriptPubKey = parseScript soStr
                         decodedOutput = decodeOutputBS scriptPubKey
@@ -162,39 +173,6 @@ scriptSpec net =
                         "OK" -> assertBool desc $ ver decodedOutput
                         _ -> assertBool desc (not $ ver decodedOutput)
 
-forkIdScriptSpec :: Network -> Spec
-forkIdScriptSpec net =
-    when (isJust (getSigHashForkId net)) $
-        it "can verify scripts from forkid_script_tests.json file" $ do
-            xs <- readTestFile "forkid_script_tests.json" :: IO [A.Value]
-            let vectors =
-                    mapMaybe (A.decode . A.encode) xs ::
-                        [ ( [Word64]
-                          , String
-                          , String
-                          , String
-                          , String
-                          , String
-                          )
-                        ]
-            length vectors `shouldBe` 3
-            forM_ vectors $ \([valBTC], siStr, soStr, _, res, _) -> do
-                let val = valBTC * 100000000
-                    scriptSig = parseScript siStr
-                    scriptPubKey = parseScript soStr
-                    decodedOutput =
-                        fromRight (error $ "Could not decode output: " <> soStr) $
-                            decodeOutputBS scriptPubKey
-                    ver =
-                        verifyStdInput
-                            net
-                            (spendTx scriptPubKey val scriptSig)
-                            0
-                            decodedOutput
-                            val
-                case res of
-                    "OK" -> ver `shouldBe` True
-                    _ -> ver `shouldBe` False
 
 creditTx :: ByteString -> Word64 -> Tx
 creditTx scriptPubKey val =
@@ -208,6 +186,7 @@ creditTx scriptPubKey val =
             , txInSequence = maxBound
             }
 
+
 spendTx :: ByteString -> Word64 -> ByteString -> Tx
 spendTx scriptPubKey val scriptSig =
     Tx 1 [txI] [txO] [] 0
@@ -220,6 +199,7 @@ spendTx scriptPubKey val scriptSig =
             , txInSequence = maxBound
             }
 
+
 parseScript :: String -> ByteString
 parseScript str =
     B.concat $ fromMaybe err $ mapM f $ words str
@@ -229,10 +209,12 @@ parseScript str =
     dropHex xs = xs
     err = error $ "Could not decode script: " <> str
 
+
 replaceToken :: String -> String
 replaceToken str = case readMaybe $ "OP_" <> str of
     Just opcode -> "0x" <> cs (encodeHex $ runPutS $ serialize (opcode :: ScriptOp))
     _ -> str
+
 
 strictSigSpec :: Network -> Spec
 strictSigSpec net =
@@ -249,6 +231,7 @@ strictSigSpec net =
             length vectors `shouldBe` 17
             forM_ vectors $ \sig ->
                 decodeTxSig net sig `shouldSatisfy` isLeft
+
 
 txSigHashSpec :: Network -> Spec
 txSigHashSpec net =
@@ -276,30 +259,6 @@ txSigHashSpec net =
                             =<< decodeHex (cs resStr)
                 Just (txSigHash net tx s 0 i sh) `shouldBe` res
 
-txSigHashForkIdSpec :: Network -> Spec
-txSigHashForkIdSpec net =
-    when (getNetworkName net == "btc") $
-        it "can produce valid sighashes from forkid_sighash.json test vectors" $ do
-            xs <- readTestFile "forkid_sighash.json" :: IO [A.Value]
-            let vectors =
-                    mapMaybe (A.decode . A.encode) xs ::
-                        [ ( String
-                          , String
-                          , Int
-                          , Word64
-                          , Integer
-                          , String
-                          )
-                        ]
-            length vectors `shouldBe` 13
-            forM_ vectors $ \(txStr, scpStr, i, val, shI, resStr) -> do
-                let tx = fromString txStr
-                    s =
-                        fromMaybe (error $ "Could not decode script: " <> cs scpStr) $
-                            eitherToMaybe . runGetS deserialize =<< decodeHex (cs scpStr)
-                    sh = fromIntegral shI
-                    res = eitherToMaybe . runGetS deserialize =<< decodeHex (cs resStr)
-                Just (txSigHashForkId net tx s val i sh) `shouldBe` res
 
 sigHashSpec :: Network -> Spec
 sigHashSpec net = do
@@ -307,31 +266,15 @@ sigHashSpec net = do
         show (0x00 :: SigHash) `shouldBe` "SigHash " <> show (0x00 :: Word32)
         show (0x01 :: SigHash) `shouldBe` "SigHash " <> show (0x01 :: Word32)
         show (0xff :: SigHash) `shouldBe` "SigHash " <> show (0xff :: Word32)
-        show (0xabac3344 :: SigHash) `shouldBe` "SigHash "
-            <> show (0xabac3344 :: Word32)
-    it "can add a forkid" $ do
-        0x00 `sigHashAddForkId` 0x00 `shouldBe` 0x00
-        0xff `sigHashAddForkId` 0x00ffffff `shouldBe` 0xffffffff
-        0xffff `sigHashAddForkId` 0x00aaaaaa `shouldBe` 0xaaaaaaff
-        0xffff `sigHashAddForkId` 0xaaaaaaaa `shouldBe` 0xaaaaaaff
-        0xffff `sigHashAddForkId` 0x00004444 `shouldBe` 0x004444ff
-        0xff01 `sigHashAddForkId` 0x44440000 `shouldBe` 0x44000001
-        0xff03 `sigHashAddForkId` 0x00550000 `shouldBe` 0x55000003
-    it "can extract a forkid" $ do
-        sigHashGetForkId 0x00000000 `shouldBe` 0x00000000
-        sigHashGetForkId 0x80000000 `shouldBe` 0x00800000
-        sigHashGetForkId 0xffffffff `shouldBe` 0x00ffffff
-        sigHashGetForkId 0xabac3403 `shouldBe` 0x00abac34
+        show (0xabac3344 :: SigHash)
+            `shouldBe` "SigHash "
+                <> show (0xabac3344 :: Word32)
     it "can build some vectors" $ do
         sigHashAll `shouldBe` 0x01
         sigHashNone `shouldBe` 0x02
         sigHashSingle `shouldBe` 0x03
-        setForkIdFlag sigHashAll `shouldBe` 0x41
         setAnyoneCanPayFlag sigHashAll `shouldBe` 0x81
-        setAnyoneCanPayFlag (setForkIdFlag sigHashAll) `shouldBe` 0xc1
     it "can test flags" $ do
-        hasForkIdFlag sigHashAll `shouldBe` False
-        hasForkIdFlag (setForkIdFlag sigHashAll) `shouldBe` True
         hasAnyoneCanPayFlag sigHashAll `shouldBe` False
         hasAnyoneCanPayFlag (setAnyoneCanPayFlag sigHashAll) `shouldBe` True
         isSigHashAll sigHashNone `shouldBe` False
@@ -351,12 +294,14 @@ sigHashSpec net = do
                 decodeTxSig net (encodeTxSig ts) `shouldBe` Right ts
     it "can produce the sighash one" $
         property $
-            forAll (arbitraryTx net) $ forAll arbitraryScript . testSigHashOne net
+            forAll (arbitraryTx net) $
+                forAll arbitraryScript . testSigHashOne net
+
 
 testSigHashOne :: Network -> Tx -> Script -> Word64 -> Bool -> Property
 testSigHashOne net tx s val acp =
-    not (null $ txIn tx)
-        ==> if length (txIn tx) > length (txOut tx)
+    not (null $ txIn tx) ==>
+        if length (txIn tx) > length (txOut tx)
             then res `shouldBe` one
             else res `shouldNotBe` one
   where
@@ -367,6 +312,7 @@ testSigHashOne net tx s val acp =
             then setAnyoneCanPayFlag
             else id
 
+
 {- Parse tests from bitcoin-qt repository -}
 
 mapMulSigVector :: ((Text, Text), Int) -> Spec
@@ -374,6 +320,7 @@ mapMulSigVector (v, i) =
     it name $ runMulSigVector v
   where
     name = "check multisig vector " <> show i
+
 
 runMulSigVector :: (Text, Text) -> Assertion
 runMulSigVector (a, ops) = assertBool "multisig vector" $ Just a == b
@@ -386,11 +333,13 @@ runMulSigVector (a, ops) = assertBool "multisig vector" $ Just a == b
         d <- eitherToMaybe $ decodeOutput o
         addrToText btc $ payToScriptAddress d
 
+
 sigDecodeMap :: Network -> (Text, Int) -> Spec
 sigDecodeMap net (_, i) =
     it ("check signature " ++ show i) func
   where
     func = testSigDecode net $ scriptSigSignatures !! i
+
 
 testSigDecode :: Network -> Text -> Assertion
 testSigDecode net str =
@@ -403,6 +352,7 @@ testSigDecode net str =
                 ]
             )
             $ isRight eitherSig
+
 
 mulSigVectors :: [(Text, Text)]
 mulSigVectors =
@@ -417,6 +367,7 @@ mulSigVectors =
           \322a1863d4621353ae"
         )
     ]
+
 
 scriptSigSignatures :: [Text]
 scriptSigSignatures =
@@ -433,6 +384,7 @@ scriptSigSignatures =
       -- \b4b14e736602220000334a96676e58b1bb01784cb7c556dd8ce1c220171904da22\
       -- \e18fe1e7d1510db501"
     ]
+
 
 encodeScriptVector :: Assertion
 encodeScriptVector =

@@ -43,52 +43,52 @@ source-repository head
 
 library
   exposed-modules:
-      Haskoin
-      Haskoin.Address
-      Haskoin.Address.Base58
-      Haskoin.Address.Bech32
-      Haskoin.Block
-      Haskoin.Block.Common
-      Haskoin.Block.Headers
-      Haskoin.Block.Merkle
-      Haskoin.Constants
-      Haskoin.Crypto
-      Haskoin.Crypto.Hash
-      Haskoin.Crypto.Signature
-      Haskoin.Data
-      Haskoin.Keys
-      Haskoin.Keys.Common
-      Haskoin.Keys.Extended
-      Haskoin.Keys.Mnemonic
-      Haskoin.Network
-      Haskoin.Network.Bloom
-      Haskoin.Network.Common
-      Haskoin.Network.Message
-      Haskoin.Script
-      Haskoin.Script.Common
-      Haskoin.Script.SigHash
-      Haskoin.Script.Standard
-      Haskoin.Transaction
-      Haskoin.Transaction.Builder
-      Haskoin.Transaction.Builder.Sign
-      Haskoin.Transaction.Common
-      Haskoin.Transaction.Genesis
-      Haskoin.Transaction.Partial
-      Haskoin.Transaction.Segwit
-      Haskoin.Transaction.Taproot
-      Haskoin.Util
-      Haskoin.Util.Arbitrary
-      Haskoin.Util.Arbitrary.Address
-      Haskoin.Util.Arbitrary.Block
-      Haskoin.Util.Arbitrary.Crypto
-      Haskoin.Util.Arbitrary.Keys
-      Haskoin.Util.Arbitrary.Message
-      Haskoin.Util.Arbitrary.Network
-      Haskoin.Util.Arbitrary.Script
-      Haskoin.Util.Arbitrary.Transaction
-      Haskoin.Util.Arbitrary.Util
+      Bitcoin
+      Bitcoin.Address
+      Bitcoin.Address.Base58
+      Bitcoin.Address.Bech32
+      Bitcoin.Block
+      Bitcoin.Block.Common
+      Bitcoin.Block.Headers
+      Bitcoin.Block.Merkle
+      Bitcoin.Constants
+      Bitcoin.Crypto
+      Bitcoin.Crypto.Hash
+      Bitcoin.Crypto.Signature
+      Bitcoin.Data
+      Bitcoin.Keys
+      Bitcoin.Keys.Common
+      Bitcoin.Keys.Extended
+      Bitcoin.Keys.Mnemonic
+      Bitcoin.Network
+      Bitcoin.Network.Bloom
+      Bitcoin.Network.Common
+      Bitcoin.Network.Message
+      Bitcoin.Script
+      Bitcoin.Script.Common
+      Bitcoin.Script.SigHash
+      Bitcoin.Script.Standard
+      Bitcoin.Transaction
+      Bitcoin.Transaction.Builder
+      Bitcoin.Transaction.Builder.Sign
+      Bitcoin.Transaction.Common
+      Bitcoin.Transaction.Genesis
+      Bitcoin.Transaction.Partial
+      Bitcoin.Transaction.Segwit
+      Bitcoin.Transaction.Taproot
+      Bitcoin.Util
+      Bitcoin.Util.Arbitrary
+      Bitcoin.Util.Arbitrary.Address
+      Bitcoin.Util.Arbitrary.Block
+      Bitcoin.Util.Arbitrary.Crypto
+      Bitcoin.Util.Arbitrary.Keys
+      Bitcoin.Util.Arbitrary.Message
+      Bitcoin.Util.Arbitrary.Network
+      Bitcoin.Util.Arbitrary.Script
+      Bitcoin.Util.Arbitrary.Transaction
+      Bitcoin.Util.Arbitrary.Util
   other-modules:
-      Haskoin.Keys.Extended.Internal
+      Bitcoin.Keys.Extended.Internal
   hs-source-dirs:
       src
   build-depends:
@@ -128,20 +128,20 @@ test-suite spec
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
-      Haskoin.Address.Bech32Spec
-      Haskoin.AddressSpec
-      Haskoin.BlockSpec
-      Haskoin.Crypto.HashSpec
-      Haskoin.Crypto.SignatureSpec
-      Haskoin.Keys.ExtendedSpec
-      Haskoin.Keys.MnemonicSpec
-      Haskoin.KeysSpec
-      Haskoin.NetworkSpec
-      Haskoin.ScriptSpec
-      Haskoin.Transaction.PartialSpec
-      Haskoin.Transaction.TaprootSpec
-      Haskoin.TransactionSpec
-      Haskoin.UtilSpec
+      Bitcoin.Address.Bech32Spec
+      Bitcoin.AddressSpec
+      Bitcoin.BlockSpec
+      Bitcoin.Crypto.HashSpec
+      Bitcoin.Crypto.SignatureSpec
+      Bitcoin.Keys.ExtendedSpec
+      Bitcoin.Keys.MnemonicSpec
+      Bitcoin.KeysSpec
+      Bitcoin.NetworkSpec
+      Bitcoin.ScriptSpec
+      Bitcoin.Transaction.PartialSpec
+      Bitcoin.Transaction.TaprootSpec
+      Bitcoin.TransactionSpec
+      Bitcoin.UtilSpec
       Paths_bitcoin
   hs-source-dirs:
       test

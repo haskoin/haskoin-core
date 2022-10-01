@@ -207,6 +207,8 @@ data ScriptOp
     | OP_NOP8
     | OP_NOP9
     | OP_NOP10
+    -- BIP 342 (Tapscript)
+    | OP_CHECKSIGADD
     | -- Other
       OP_PUBKEYHASH
     | OP_PUBKEY
@@ -348,6 +350,8 @@ instance Serial ScriptOp where
             | op == 0xb7 = return OP_NOP8
             | op == 0xb8 = return OP_NOP9
             | op == 0xb9 = return OP_NOP10
+            -- BIP 342 (Tapscript)
+            | op == 0xba = return OP_CHECKSIGADD
             -- Constants
             | op == 0xfd = return OP_PUBKEYHASH
             | op == 0xfe = return OP_PUBKEY
@@ -500,6 +504,8 @@ instance Serial ScriptOp where
         OP_NOP8 -> putWord8 0xb7
         OP_NOP9 -> putWord8 0xb8
         OP_NOP10 -> putWord8 0xb9
+        -- BIP 342 (Tapscript)
+        OP_CHECKSIGADD -> putWord8 0xba
 
 
 instance Binary ScriptOp where

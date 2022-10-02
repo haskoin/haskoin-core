@@ -191,7 +191,7 @@ taprootOutputKey TaprootOutput{taprootInternalKey, taprootMAST} =
     fromMaybe keyFail $ tweak commitment >>= tweakAddPubKey taprootInternalKey
   where
     commitment = taprootCommitment taprootInternalKey $ mastCommitment <$> taprootMAST
-    keyFail = error "haskoin-core taprootOutputKey: key derivation failed"
+    keyFail = error "bitcoin taprootOutputKey: key derivation failed"
 
 
 taprootCommitment :: PubKey -> Maybe (Digest SHA256) -> ByteString

@@ -66,7 +66,7 @@
 [
     "0x47 0x304402204e2eb034be7b089534ac9e798cf6a2c79f38bcb34d1b179efd6f2de0841735db022071461beb056b5a7be1819da6a3e3ce3662831ecc298419ca101eb6887b5dd6a401 0x19 0x76a9147cf9c846cd4882efec4bf07e44ebdad495c94f4b88ac",
     "HASH160 0x14 0x2df519943d5acc0ef5222091f9dfe3543f489a82 EQUAL",
-    "DISABLED (haskoin does only full P2SH validation)",
+    "DISABLED (this bitcoin library does only full P2SH validation)",
     "OK",
     "P2SH(P2PKH), bad sig but no VERIFY_P2SH"
 ],
@@ -157,21 +157,21 @@
 [
     "0x47 0x30440220005ece1335e7f757a1a1f476a7fb5bd90964e8a022489f890614a04acfb734c002206c12b8294a6513c7710e8c82d3c23d75cdbfe83200eb7efb495701958501a5d601",
     "0x21 0x03363d90d447b00c9c99ceac05b6262ee053441c7e55552ffe526bad8f83ff4640 CHECKSIG NOT",
-    "DERSIG, DISABLED (haskoin can not parse non-standard scripts)",
+    "DERSIG, DISABLED (this bitcoin library can not parse non-standard scripts)",
     "SIG_DER",
     "P2PK NOT with bad sig with too much R padding"
 ],
 [
     "0x47 0x30440220005ece1335e7f657a1a1f476a7fb5bd90964e8a022489f890614a04acfb734c002206c12b8294a6513c7710e8c82d3c23d75cdbfe83200eb7efb495701958501a5d601",
     "0x21 0x03363d90d447b00c9c99ceac05b6262ee053441c7e55552ffe526bad8f83ff4640 CHECKSIG NOT",
-    "DISABLED (haskoin can not parse non-standard scripts)",
+    "DISABLED (this bitcoin library can not parse non-standard scripts)",
     "EVAL_FALSE",
     "P2PK NOT with too much R padding but no DERSIG"
 ],
 [
     "0x47 0x30440220005ece1335e7f657a1a1f476a7fb5bd90964e8a022489f890614a04acfb734c002206c12b8294a6513c7710e8c82d3c23d75cdbfe83200eb7efb495701958501a5d601",
     "0x21 0x03363d90d447b00c9c99ceac05b6262ee053441c7e55552ffe526bad8f83ff4640 CHECKSIG NOT",
-    "DERSIG, DISABLED (haskoin can not parse non-standard scripts)",
+    "DERSIG, DISABLED (this bitcoin library can not parse non-standard scripts)",
     "SIG_DER",
     "P2PK NOT with too much R padding"
 ],
@@ -192,14 +192,14 @@
 [
     "0x47 0x304402208e43c0b91f7c1e5bc58e41c8185f8a6086e111b0090187968a86f2822462d3c902200a58f4076b1133b18ff1dc83ee51676e44c60cc608d9534e0df5ace0424fc0be01",
     "0x21 0x038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508 CHECKSIG NOT",
-    "DISABLED (haskoin can not parse non-standard scripts)",
+    "DISABLED (this bitcoin library can not parse non-standard scripts)",
     "EVAL_FALSE",
     "BIP66 example 2, without DERSIG"
 ],
 [
     "0x47 0x304402208e43c0b91f7c1e5bc58e41c8185f8a6086e111b0090187968a86f2822462d3c902200a58f4076b1133b18ff1dc83ee51676e44c60cc608d9534e0df5ace0424fc0be01",
     "0x21 0x038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508 CHECKSIG NOT",
-    "DERSIG, DISABLED (haskoin can not parse non-standard scripts)",
+    "DERSIG, DISABLED (this bitcoin library can not parse non-standard scripts)",
     "SIG_DER",
     "BIP66 example 2, with DERSIG"
 ],
@@ -220,35 +220,35 @@
 [
     "0",
     "0x21 0x038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508 CHECKSIG NOT",
-    "DISABLED (haskoin can not parse non-standard scripts)",
+    "DISABLED (this bitcoin library can not parse non-standard scripts)",
     "OK",
     "BIP66 example 4, without DERSIG"
 ],
 [
     "0",
     "0x21 0x038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508 CHECKSIG NOT",
-    "DERSIG, DISABLED (haskoin can not parse non-standard scripts)",
+    "DERSIG, DISABLED (this bitcoin library can not parse non-standard scripts)",
     "OK",
     "BIP66 example 4, with DERSIG"
 ],
 [
     "0x09 0x300602010102010101",
     "0x21 0x038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508 CHECKSIG NOT",
-    "DERSIG, DISABLED (haskoin can not parse non-standard scripts)",
+    "DERSIG, DISABLED (this bitcoin library can not parse non-standard scripts)",
     "OK",
     "BIP66 example 4, with DERSIG, non-null DER-compliant signature"
 ],
 [
     "0",
     "0x21 0x038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508 CHECKSIG NOT",
-    "DERSIG,NULLFAIL,DISABLED (haskoin can not parse non-standard scripts)",
+    "DERSIG,NULLFAIL,DISABLED (this bitcoin library can not parse non-standard scripts)",
     "OK",
     "BIP66 example 4, with DERSIG and NULLFAIL"
 ],
 [
     "0x09 0x300602010102010101",
     "0x21 0x038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508 CHECKSIG NOT",
-    "DERSIG,NULLFAIL,DISABLED (haskoin can not parse non-standard scripts)",
+    "DERSIG,NULLFAIL,DISABLED (this bitcoin library can not parse non-standard scripts)",
     "NULLFAIL",
     "BIP66 example 4, with DERSIG and NULLFAIL, non-null DER-compliant signature"
 ],
@@ -269,14 +269,14 @@
 [
     "1",
     "0x21 0x038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508 CHECKSIG NOT",
-    "DISABLED (haskoin can not parse non-standard scripts)",
+    "DISABLED (this bitcoin library can not parse non-standard scripts)",
     "OK",
     "BIP66 example 6, without DERSIG"
 ],
 [
     "1",
     "0x21 0x038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508 CHECKSIG NOT",
-    "DERSIG,DISABLED (haskoin can not parse non-standard scripts)",
+    "DERSIG,DISABLED (this bitcoin library can not parse non-standard scripts)",
     "SIG_DER",
     "BIP66 example 6, with DERSIG"
 ],
@@ -297,14 +297,14 @@
 [
     "0 0x47 0x30440220b119d67d389315308d1745f734a51ff3ec72e06081e84e236fdf9dc2f5d2a64802204b04e3bc38674c4422ea317231d642b56dc09d214a1ecbbf16ecca01ed996e2201 0x47 0x3044022079ea80afd538d9ada421b5101febeb6bc874e01dde5bca108c1d0479aec339a4022004576db8f66130d1df686ccf00935703689d69cf539438da1edab208b0d63c4801",
     "2 0x21 0x038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508 0x21 0x03363d90d447b00c9c99ceac05b6262ee053441c7e55552ffe526bad8f83ff4640 2 CHECKMULTISIG NOT",
-    "DISABLED (haskoin can not parse non-standard scripts)",
+    "DISABLED (this bitcoin library can not parse non-standard scripts)",
     "EVAL_FALSE",
     "BIP66 example 8, without DERSIG"
 ],
 [
     "0 0x47 0x30440220b119d67d389315308d1745f734a51ff3ec72e06081e84e236fdf9dc2f5d2a64802204b04e3bc38674c4422ea317231d642b56dc09d214a1ecbbf16ecca01ed996e2201 0x47 0x3044022079ea80afd538d9ada421b5101febeb6bc874e01dde5bca108c1d0479aec339a4022004576db8f66130d1df686ccf00935703689d69cf539438da1edab208b0d63c4801",
     "2 0x21 0x038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508 0x21 0x03363d90d447b00c9c99ceac05b6262ee053441c7e55552ffe526bad8f83ff4640 2 CHECKMULTISIG NOT",
-    "DERSIG,DISABLED (haskoin can not parse non-standard scripts)",
+    "DERSIG,DISABLED (this bitcoin library can not parse non-standard scripts)",
     "SIG_DER",
     "BIP66 example 8, with DERSIG"
 ],
@@ -325,14 +325,14 @@
 [
     "0 0 0x47 0x30440220da6f441dc3b4b2c84cfa8db0cd5b34ed92c9e01686de5a800d40498b70c0dcac02207c2cf91b0c32b860c4cd4994be36cfb84caf8bb7c3a8e4d96a31b2022c5299c501",
     "2 0x21 0x038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508 0x21 0x03363d90d447b00c9c99ceac05b6262ee053441c7e55552ffe526bad8f83ff4640 2 CHECKMULTISIG NOT",
-    "DISABLED (haskoin can not parse non-standard scripts)",
+    "DISABLED (this bitcoin library can not parse non-standard scripts)",
     "OK",
     "BIP66 example 10, without DERSIG"
 ],
 [
     "0 0 0x47 0x30440220da6f441dc3b4b2c84cfa8db0cd5b34ed92c9e01686de5a800d40498b70c0dcac02207c2cf91b0c32b860c4cd4994be36cfb84caf8bb7c3a8e4d96a31b2022c5299c501",
     "2 0x21 0x038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508 0x21 0x03363d90d447b00c9c99ceac05b6262ee053441c7e55552ffe526bad8f83ff4640 2 CHECKMULTISIG NOT",
-    "DERSIG,DISABLED (haskoin can not parse non-standard scripts)",
+    "DERSIG,DISABLED (this bitcoin library can not parse non-standard scripts)",
     "SIG_DER",
     "BIP66 example 10, with DERSIG"
 ],
@@ -353,14 +353,14 @@
 [
     "0 0x47 0x30440220b119d67d389315308d1745f734a51ff3ec72e06081e84e236fdf9dc2f5d2a64802204b04e3bc38674c4422ea317231d642b56dc09d214a1ecbbf16ecca01ed996e2201 0",
     "2 0x21 0x038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508 0x21 0x03363d90d447b00c9c99ceac05b6262ee053441c7e55552ffe526bad8f83ff4640 2 CHECKMULTISIG NOT",
-    "DISABLED (haskoin can not parse non-standard scripts)",
+    "DISABLED (this bitcoin library can not parse non-standard scripts)",
     "OK",
     "BIP66 example 12, without DERSIG"
 ],
 [
     "0 0x47 0x30440220b119d67d389315308d1745f734a51ff3ec72e06081e84e236fdf9dc2f5d2a64802204b04e3bc38674c4422ea317231d642b56dc09d214a1ecbbf16ecca01ed996e2201 0",
     "2 0x21 0x038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508 0x21 0x03363d90d447b00c9c99ceac05b6262ee053441c7e55552ffe526bad8f83ff4640 2 CHECKMULTISIG NOT",
-    "DERSIG,DISABLED (haskoin can not parse non-standard scripts)",
+    "DERSIG,DISABLED (this bitcoin library can not parse non-standard scripts)",
     "OK",
     "BIP66 example 12, with DERSIG"
 ],
@@ -388,70 +388,70 @@
 [
     "0x48 0x304502203e4516da7253cf068effec6b95c41221c0cf3a8e6ccb8cbf1725b562e9afde2c022100ab1e3da73d67e32045a20e0b999e049978ea8d6ee5480d485fcf2ce0d03b2ef001",
     "0x21 0x03363d90d447b00c9c99ceac05b6262ee053441c7e55552ffe526bad8f83ff4640 CHECKSIG",
-    "LOW_S, DISABLED (haskoin does not check LOW_S decoding)",
+    "LOW_S, DISABLED (this bitcoin library does not check LOW_S decoding)",
     "SIG_HIGH_S",
     "P2PK with high S"
 ],
 [
     "0x47 0x3044022057292e2d4dfe775becdd0a9e6547997c728cdf35390f6a017da56d654d374e4902206b643be2fc53763b4e284845bfea2c597d2dc7759941dce937636c9d341b71ed01",
     "0x41 0x0679be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8 CHECKSIG",
-    "DISABLED (haskoin can not parse hybrid pubkeys)",
+    "DISABLED (this bitcoin library can not parse hybrid pubkeys)",
     "OK",
     "P2PK with hybrid pubkey but no STRICTENC"
 ],
 [
     "0x47 0x3044022057292e2d4dfe775becdd0a9e6547997c728cdf35390f6a017da56d654d374e4902206b643be2fc53763b4e284845bfea2c597d2dc7759941dce937636c9d341b71ed01",
     "0x41 0x0679be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8 CHECKSIG",
-    "STRICTENC,DISABLED (haskoin can not parse hybrid pubkeys)",
+    "STRICTENC,DISABLED (this bitcoin library can not parse hybrid pubkeys)",
     "PUBKEYTYPE",
     "P2PK with hybrid pubkey"
 ],
 [
     "0x47 0x30440220035d554e3153c14950c9993f41c496607a8e24093db0595be7bf875cf64fcf1f02204731c8c4e5daf15e706cec19cdd8f2c5b1d05490e11dab8465ed426569b6e92101",
     "0x41 0x0679be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8 CHECKSIG NOT",
-    "DISABLED (haskoin can not parse non-standard scripts)",
+    "DISABLED (this bitcoin library can not parse non-standard scripts)",
     "EVAL_FALSE",
     "P2PK NOT with hybrid pubkey but no STRICTENC"
 ],
 [
     "0x47 0x30440220035d554e3153c14950c9993f41c496607a8e24093db0595be7bf875cf64fcf1f02204731c8c4e5daf15e706cec19cdd8f2c5b1d05490e11dab8465ed426569b6e92101",
     "0x41 0x0679be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8 CHECKSIG NOT",
-    "STRICTENC,DISABLED (haskoin can not parse non-standard scripts)",
+    "STRICTENC,DISABLED (this bitcoin library can not parse non-standard scripts)",
     "PUBKEYTYPE",
     "P2PK NOT with hybrid pubkey"
 ],
 [
     "0x47 0x30440220035d554e3153c04950c9993f41c496607a8e24093db0595be7bf875cf64fcf1f02204731c8c4e5daf15e706cec19cdd8f2c5b1d05490e11dab8465ed426569b6e92101",
     "0x41 0x0679be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8 CHECKSIG NOT",
-    "DISABLED (haskoin can not parse non-standard scripts)",
+    "DISABLED (this bitcoin library can not parse non-standard scripts)",
     "OK",
     "P2PK NOT with invalid hybrid pubkey but no STRICTENC"
 ],
 [
     "0x47 0x30440220035d554e3153c04950c9993f41c496607a8e24093db0595be7bf875cf64fcf1f02204731c8c4e5daf15e706cec19cdd8f2c5b1d05490e11dab8465ed426569b6e92101",
     "0x41 0x0679be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8 CHECKSIG NOT",
-    "STRICTENC,DISABLED (haskoin can not parse non-standard scripts)",
+    "STRICTENC,DISABLED (this bitcoin library can not parse non-standard scripts)",
     "PUBKEYTYPE",
     "P2PK NOT with invalid hybrid pubkey"
 ],
 [
     "0 0x47 0x304402202e79441ad1baf5a07fb86bae3753184f6717d9692680947ea8b6e8b777c69af1022079a262e13d868bb5a0964fefe3ba26942e1b0669af1afb55ef3344bc9d4fc4c401",
     "1 0x41 0x0679be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8 0x21 0x038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508 2 CHECKMULTISIG",
-    "DISABLED (haskoin can not parse hybrid pubkeys)",
+    "DISABLED (this bitcoin library can not parse hybrid pubkeys)",
     "OK",
     "1-of-2 with the second 1 hybrid pubkey and no STRICTENC"
 ],
 [
     "0 0x47 0x304402202e79441ad1baf5a07fb86bae3753184f6717d9692680947ea8b6e8b777c69af1022079a262e13d868bb5a0964fefe3ba26942e1b0669af1afb55ef3344bc9d4fc4c401",
     "1 0x41 0x0679be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8 0x21 0x038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508 2 CHECKMULTISIG",
-    "STRICTENC,DISABLED (haskoin can not parse hybrid pubkeys)",
+    "STRICTENC,DISABLED (this bitcoin library can not parse hybrid pubkeys)",
     "OK",
     "1-of-2 with the second 1 hybrid pubkey"
 ],
 [
     "0 0x47 0x3044022079c7824d6c868e0e1a273484e28c2654a27d043c8a27f49f52cb72efed0759090220452bbbf7089574fa082095a4fc1b3a16bafcf97a3a34d745fafc922cce66b27201",
     "1 0x21 0x038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508 0x41 0x0679be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8 2 CHECKMULTISIG",
-    "STRICTENC,DISABLED (haskoin can not parse hybrid pubkeys)",
+    "STRICTENC,DISABLED (this bitcoin library can not parse hybrid pubkeys)",
     "PUBKEYTYPE",
     "1-of-2 with the first 1 hybrid pubkey"
 ],
@@ -472,14 +472,14 @@
 [
     "0x47 0x304402207409b5b320296e5e2136a7b281a7f803028ca4ca44e2b83eebd46932677725de02202d4eea1c8d3c98e6f42614f54764e6e5e6542e213eb4d079737e9a8b6e9812ec05",
     "0x41 0x048282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f5150811f8a8098557dfe45e8256e830b60ace62d613ac2f7b17bed31b6eaff6e26caf CHECKSIG NOT",
-    "DISABLED (haskoin can not parse non-standard scripts)",
+    "DISABLED (this bitcoin library can not parse non-standard scripts)",
     "OK",
     "P2PK NOT with invalid sig and undefined hashtype but no STRICTENC"
 ],
 [
     "0x47 0x304402207409b5b320296e5e2136a7b281a7f803028ca4ca44e2b83eebd46932677725de02202d4eea1c8d3c98e6f42614f54764e6e5e6542e213eb4d079737e9a8b6e9812ec05",
     "0x41 0x048282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f5150811f8a8098557dfe45e8256e830b60ace62d613ac2f7b17bed31b6eaff6e26caf CHECKSIG NOT",
-    "STRICTENC,DISABLED (haskoin can not parse non-standard scripts)",
+    "STRICTENC,DISABLED (this bitcoin library can not parse non-standard scripts)",
     "SIG_HASHTYPE",
     "P2PK NOT with invalid sig and undefined hashtype"
 ],
@@ -500,21 +500,21 @@
 [
     "1 0x47 0x304402201bb2edab700a5d020236df174fefed78087697143731f659bea59642c759c16d022061f42cdbae5bcd3e8790f20bf76687443436e94a634321c16a72aa54cbc7c2ea01 0x47 0x304402204bb4a64f2a6e5c7fb2f07fef85ee56fde5e6da234c6a984262307a20e99842d702206f8303aaba5e625d223897e2ffd3f88ef1bcffef55f38dc3768e5f2e94c923f901 0x47 0x3044022040c2809b71fffb155ec8b82fe7a27f666bd97f941207be4e14ade85a1249dd4d02204d56c85ec525dd18e29a0533d5ddf61b6b1bb32980c2f63edf951aebf7a27bfe01",
     "3 0x21 0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798 0x21 0x038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508 0x21 0x03363d90d447b00c9c99ceac05b6262ee053441c7e55552ffe526bad8f83ff4640 3 CHECKMULTISIG NOT",
-    "DISABLED (haskoin can not parse non-standard scripts)",
+    "DISABLED (this bitcoin library can not parse non-standard scripts)",
     "OK",
     "3-of-3 NOT with invalid sig and nonzero dummy but no NULLDUMMY"
 ],
 [
     "1 0x47 0x304402201bb2edab700a5d020236df174fefed78087697143731f659bea59642c759c16d022061f42cdbae5bcd3e8790f20bf76687443436e94a634321c16a72aa54cbc7c2ea01 0x47 0x304402204bb4a64f2a6e5c7fb2f07fef85ee56fde5e6da234c6a984262307a20e99842d702206f8303aaba5e625d223897e2ffd3f88ef1bcffef55f38dc3768e5f2e94c923f901 0x47 0x3044022040c2809b71fffb155ec8b82fe7a27f666bd97f941207be4e14ade85a1249dd4d02204d56c85ec525dd18e29a0533d5ddf61b6b1bb32980c2f63edf951aebf7a27bfe01",
     "3 0x21 0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798 0x21 0x038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508 0x21 0x03363d90d447b00c9c99ceac05b6262ee053441c7e55552ffe526bad8f83ff4640 3 CHECKMULTISIG NOT",
-    "NULLDUMMY,DISABLED (haskoin can not parse non-standard scripts)",
+    "NULLDUMMY,DISABLED (this bitcoin library can not parse non-standard scripts)",
     "SIG_NULLDUMMY",
     "3-of-3 NOT with invalid sig with nonzero dummy"
 ],
 [
     "0 0x47 0x304402200abeb4bd07f84222f474aed558cfbdfc0b4e96cde3c2935ba7098b1ff0bd74c302204a04c1ca67b2a20abee210cf9a21023edccbbf8024b988812634233115c6b73901 DUP",
     "2 0x21 0x038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508 0x21 0x038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508 2 CHECKMULTISIG",
-    "DISABLED (haskoin can not parse non-standard inputs)",
+    "DISABLED (this bitcoin library can not parse non-standard inputs)",
     "OK",
     "2-of-2 with two identical keys and sigs pushed using OP_DUP but no SIGPUSHONLY"
 ],
@@ -528,28 +528,28 @@
 [
     "0x47 0x3044022018a2a81a93add5cb5f5da76305718e4ea66045ec4888b28d84cb22fae7f4645b02201e6daa5ed5d2e4b2b2027cf7ffd43d8d9844dd49f74ef86899ec8e669dfd39aa01 NOP8 0x23 0x2103363d90d447b00c9c99ceac05b6262ee053441c7e55552ffe526bad8f83ff4640ac",
     "HASH160 0x14 0x215640c2f72f0d16b4eced26762035a42ffed39a EQUAL",
-    "DISABLED (haskoin can not parse non-standard inputs)",
+    "DISABLED (this bitcoin library can not parse non-standard inputs)",
     "OK",
     "P2SH(P2PK) with non-push scriptSig but no P2SH or SIGPUSHONLY"
 ],
 [
     "0x47 0x304402203e4516da7253cf068effec6b95c41221c0cf3a8e6ccb8cbf1725b562e9afde2c022054e1c258c2981cdfba5df1f46661fb6541c44f77ca0092f3600331abfffb125101 NOP8",
     "0x21 0x03363d90d447b00c9c99ceac05b6262ee053441c7e55552ffe526bad8f83ff4640 CHECKSIG",
-    "DISABLED (haskoin can not parse non-standard inputs)",
+    "DISABLED (this bitcoin library can not parse non-standard inputs)",
     "OK",
     "P2PK with non-push scriptSig but with P2SH validation"
 ],
 [
     "0x47 0x3044022018a2a81a93add5cb5f5da76305718e4ea66045ec4888b28d84cb22fae7f4645b02201e6daa5ed5d2e4b2b2027cf7ffd43d8d9844dd49f74ef86899ec8e669dfd39aa01 NOP8 0x23 0x2103363d90d447b00c9c99ceac05b6262ee053441c7e55552ffe526bad8f83ff4640ac",
     "HASH160 0x14 0x215640c2f72f0d16b4eced26762035a42ffed39a EQUAL",
-    "P2SH,DISABLED (haskoin can not parse non-standard inputs)",
+    "P2SH,DISABLED (this bitcoin library can not parse non-standard inputs)",
     "SIG_PUSHONLY",
     "P2SH(P2PK) with non-push scriptSig but no SIGPUSHONLY"
 ],
 [
     "0x47 0x3044022018a2a81a93add5cb5f5da76305718e4ea66045ec4888b28d84cb22fae7f4645b02201e6daa5ed5d2e4b2b2027cf7ffd43d8d9844dd49f74ef86899ec8e669dfd39aa01 NOP8 0x23 0x2103363d90d447b00c9c99ceac05b6262ee053441c7e55552ffe526bad8f83ff4640ac",
     "HASH160 0x14 0x215640c2f72f0d16b4eced26762035a42ffed39a EQUAL",
-    "SIGPUSHONLY,DISABLED (haskoin can not parse non-standard inputs)",
+    "SIGPUSHONLY,DISABLED (this bitcoin library can not parse non-standard inputs)",
     "SIG_PUSHONLY",
     "P2SH(P2PK) with non-push scriptSig but not P2SH"
 ],
@@ -563,7 +563,7 @@
 [
     "11 0x47 0x304402200a5c6163f07b8d3b013c4d1d6dba25e780b39658d79ba37af7057a3b7f15ffa102201fd9b4eaa9943f734928b99a83592c2e7bf342ea2680f6a2bb705167966b742001",
     "0x41 0x0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8 CHECKSIG",
-    "P2SH, DISABLED (haskoin does not parse non-standard inputs)",
+    "P2SH, DISABLED (this bitcoin library does not parse non-standard inputs)",
     "OK",
     "P2PK with unnecessary input but no CLEANSTACK"
 ],
@@ -577,7 +577,7 @@
 [
     "11 0x47 0x304402202f7505132be14872581f35d74b759212d9da40482653f1ffa3116c3294a4a51702206adbf347a2240ca41c66522b1a22a41693610b76a8e7770645dc721d1635854f01 0x43 0x410479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8ac",
     "HASH160 0x14 0x31edc23bdafda4639e669f89ad6b2318dd79d032 EQUAL",
-    "P2SH, DISABLED (haskoin does not parse non-standard inputs)",
+    "P2SH, DISABLED (this bitcoin library does not parse non-standard inputs)",
     "OK",
     "P2SH with unnecessary input but no CLEANSTACK"
 ],

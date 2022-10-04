@@ -167,8 +167,6 @@ signInput net tx i (sigIn@(SigInput so val _ _ rdmM), nest) key = do
 
 
 -- | Add the witness data of the transaction given segwit parameters for an input.
---
--- @since 0.11.0.0
 updatedWitnessData :: Tx -> Int -> ScriptOutput -> ScriptInput -> Either String WitnessData
 updatedWitnessData tx i so si
     | isSegwit so = updateWitness . toWitnessStack =<< calcWitnessProgram so si
@@ -273,8 +271,6 @@ buildInput net tx i so val rdmM sig pub = do
 
 -- | Apply heuristics to extract the signatures for a particular input that are
 -- embedded in the transaction.
---
--- @since 0.11.0.0
 parseExistingSigs :: Network -> Tx -> ScriptOutput -> Int -> [TxSignature]
 parseExistingSigs net tx so i = insSigs <> witSigs
   where
@@ -298,8 +294,6 @@ makeSignature net tx i (SigInput so val _ sh rdmM) key =
 
 
 -- | A function which selects the digest algorithm and parameters as appropriate
---
--- @since 0.11.0.0
 makeSigHash ::
     Network ->
     Tx ->

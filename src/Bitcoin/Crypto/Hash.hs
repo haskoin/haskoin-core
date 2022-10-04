@@ -28,6 +28,7 @@ module Bitcoin.Crypto.Hash (
     initTaggedHash,
 ) where
 
+import Bitcoin.Util
 import Control.DeepSeq
 import Crypto.Hash (
     Context,
@@ -57,7 +58,6 @@ import Data.String (IsString, fromString)
 import Data.String.Conversions (cs)
 import Data.Word (Word32)
 import GHC.Generics (Generic)
-import Bitcoin.Util
 import Text.Read as R
 
 
@@ -280,8 +280,6 @@ join512 (a, b) =
 
 
 -- | Initialize tagged hash specified in BIP340
---
--- @since 0.21.0
 initTaggedHash ::
     -- | Hash tag
     ByteString ->

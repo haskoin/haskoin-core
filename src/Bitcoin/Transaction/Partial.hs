@@ -34,25 +34,6 @@ module Bitcoin.Transaction.Partial (
     signPSBT,
 ) where
 
-import Control.Applicative ((<|>))
-import Control.DeepSeq
-import Control.Monad (foldM, guard, replicateM, void)
-import Data.ByteString (ByteString)
-import qualified Data.ByteString as B
-import Data.Bytes.Get (runGetS)
-import Data.Bytes.Put (runPutS)
-import Data.Bytes.Serial (Serial (..))
-import Data.Either (fromRight)
-import Data.HashMap.Strict (HashMap)
-import qualified Data.HashMap.Strict as HM
-import qualified Data.HashMap.Strict as HashMap
-import Data.Hashable (Hashable)
-import Data.List (foldl')
-import Data.Maybe (fromMaybe, isJust)
-import Data.Serialize (Get, Put, Serialize)
-import qualified Data.Serialize as S
-import GHC.Generics (Generic)
-import GHC.Word (Word32, Word8)
 import Bitcoin.Address (Address (..), pubKeyAddr)
 import Bitcoin.Crypto (SecKey, derivePubKey)
 import Bitcoin.Data (Network)
@@ -106,6 +87,25 @@ import Bitcoin.Transaction.Common (
  )
 import Bitcoin.Transaction.Segwit (isSegwit)
 import Bitcoin.Util (eitherToMaybe)
+import Control.Applicative ((<|>))
+import Control.DeepSeq
+import Control.Monad (foldM, guard, replicateM, void)
+import Data.ByteString (ByteString)
+import qualified Data.ByteString as B
+import Data.Bytes.Get (runGetS)
+import Data.Bytes.Put (runPutS)
+import Data.Bytes.Serial (Serial (..))
+import Data.Either (fromRight)
+import Data.HashMap.Strict (HashMap)
+import qualified Data.HashMap.Strict as HM
+import qualified Data.HashMap.Strict as HashMap
+import Data.Hashable (Hashable)
+import Data.List (foldl')
+import Data.Maybe (fromMaybe, isJust)
+import Data.Serialize (Get, Put, Serialize)
+import qualified Data.Serialize as S
+import GHC.Generics (Generic)
+import GHC.Word (Word32, Word8)
 
 
 -- | PSBT data type as specified in
@@ -202,8 +202,6 @@ merge _ _ = Nothing
 
 
 -- | A version of 'merge' for a collection of PSBTs.
---
--- @since 0.21.0
 mergeMany :: [PartiallySignedTransaction] -> Maybe PartiallySignedTransaction
 mergeMany (psbt : psbts) = foldM merge psbt psbts
 mergeMany _ = Nothing
@@ -256,8 +254,6 @@ mergeOutput a b =
 -- | A abstraction which covers varying key configurations.  Use the 'Semigroup'
 -- instance to create signers for sets of keys: `signerA <> signerB` can sign
 -- anything for which `signerA` or `signerB` could sign.
---
--- @since 0.21@
 newtype PsbtSigner = PsbtSigner
     { unPsbtSigner ::
         PubKeyI ->
@@ -277,15 +273,11 @@ instance Monoid PsbtSigner where
 
 
 -- | Fetch the secret key for the given 'PubKeyI' if possible.
---
--- @since 0.21@
 getSignerKey :: PsbtSigner -> PubKeyI -> Maybe (Fingerprint, DerivPath) -> Maybe SecKey
 getSignerKey = unPsbtSigner
 
 
 -- | This signer can sign for one key.
---
--- @since 0.21@
 secKeySigner :: SecKey -> PsbtSigner
 secKeySigner theSecKey = PsbtSigner signer
   where
@@ -295,8 +287,6 @@ secKeySigner theSecKey = PsbtSigner signer
 
 
 -- | This signer can sign with any child key, provided that derivation information is present.
---
--- @since 0.21@
 xPrvSigner ::
     XPrvKey ->
     -- | Origin data, if the input key is explicitly a child key
@@ -336,8 +326,6 @@ xPrvSigner xprv origin = PsbtSigner signer
 
 -- | Update a PSBT with signatures when possible.  This function uses
 -- 'inputHDKeypaths' in order to calculate secret keys.
---
--- @since 0.21@
 signPSBT ::
     Network ->
     PsbtSigner ->

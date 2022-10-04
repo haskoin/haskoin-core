@@ -23,19 +23,17 @@ module Bitcoin.Transaction.Segwit (
     toWitnessStack,
 ) where
 
-import Data.ByteString (ByteString)
-import Data.Bytes.Get
-import Data.Bytes.Put
-import Data.Bytes.Serial
 import Bitcoin.Data
 import Bitcoin.Keys.Common
 import Bitcoin.Script
 import Bitcoin.Transaction.Common
+import Data.ByteString (ByteString)
+import Data.Bytes.Get
+import Data.Bytes.Put
+import Data.Bytes.Serial
 
 
 -- | Test if a 'ScriptOutput' is P2WPKH or P2WSH
---
--- @since 0.11.0.0
 isSegwit :: ScriptOutput -> Bool
 isSegwit = \case
     PayWitnessPKHash{} -> True
@@ -44,8 +42,6 @@ isSegwit = \case
 
 
 -- | High level represenation of a (v0) witness program
---
--- @since 0.11.0.0
 data WitnessProgram
     = P2WPKH WitnessProgramPKH
     | P2WSH WitnessProgramSH
@@ -54,8 +50,6 @@ data WitnessProgram
 
 
 -- | Encode a witness program
---
--- @since 0.11.0.0
 toWitnessStack :: WitnessProgram -> WitnessStack
 toWitnessStack = \case
     P2WPKH (WitnessProgramPKH sig key) -> [encodeTxSig sig, runPutS (serialize key)]
@@ -64,8 +58,6 @@ toWitnessStack = \case
 
 
 -- | High level representation of a P2WPKH witness
---
--- @since 0.11.0.0
 data WitnessProgramPKH = WitnessProgramPKH
     { witnessSignature :: !TxSignature
     , witnessPubKey :: !PubKeyI
@@ -74,8 +66,6 @@ data WitnessProgramPKH = WitnessProgramPKH
 
 
 -- | High-level representation of a P2WSH witness
---
--- @since 0.11.0.0
 data WitnessProgramSH = WitnessProgramSH
     { witnessScriptHashStack :: ![ByteString]
     , witnessScriptHashScript :: !Script
@@ -84,8 +74,6 @@ data WitnessProgramSH = WitnessProgramSH
 
 
 -- | Calculate the witness program from the transaction data
---
--- @since 0.11.0.0
 viewWitnessProgram ::
     Network -> ScriptOutput -> WitnessStack -> Either String WitnessProgram
 viewWitnessProgram net so witness = case so of
@@ -102,8 +90,6 @@ viewWitnessProgram net so witness = case so of
 
 
 -- | Analyze the witness, trying to match it with standard input structures
---
--- @since 0.11.0.0
 decodeWitnessInput ::
     Network ->
     WitnessProgram ->
@@ -124,8 +110,6 @@ decodeWitnessInput net = \case
 
 
 -- | Create the witness program for a standard input
---
--- @since 0.11.0.0
 calcWitnessProgram :: ScriptOutput -> ScriptInput -> Either String WitnessProgram
 calcWitnessProgram so si = case (so, si) of
     (PayWitnessPKHash{}, RegularInput (SpendPKHash sig pk)) -> p2wpkh sig pk
@@ -139,8 +123,6 @@ calcWitnessProgram so si = case (so, si) of
 
 
 -- | Create the witness stack required to spend a standard P2WSH input
---
--- @since 0.11.0.0
 simpleInputStack :: SimpleInput -> [ByteString]
 simpleInputStack = \case
     SpendPK sig -> [f sig]

@@ -2,6 +2,14 @@
 
 module Bitcoin.TransactionSpec (spec) where
 
+import Bitcoin.Address
+import Bitcoin.Constants
+import Bitcoin.Data
+import Bitcoin.Keys
+import Bitcoin.Script
+import Bitcoin.Transaction
+import Bitcoin.Util
+import Bitcoin.Util.Arbitrary
 import qualified Data.ByteString as B
 import Data.Bytes.Get
 import Data.Bytes.Put
@@ -12,14 +20,6 @@ import Data.String (fromString)
 import Data.String.Conversions
 import Data.Text (Text)
 import Data.Word (Word32, Word64)
-import Bitcoin.Address
-import Bitcoin.Constants
-import Bitcoin.Data
-import Bitcoin.Keys
-import Bitcoin.Script
-import Bitcoin.Transaction
-import Bitcoin.Util
-import Bitcoin.Util.Arbitrary
 import Test.HUnit
 import Test.Hspec
 import Test.Hspec.QuickCheck
@@ -73,16 +73,6 @@ spec = do
             forAll arbitraryNetwork $ \net ->
                 forAll arbitraryAddress $
                     forAll (arbitrarySatoshi net) . testBuildAddrTx net
-        prop "guess transaction size" $
-            forAll arbitraryNetwork $ \net ->
-                forAll (arbitraryAddrOnlyTxFull net) (testGuessSize net)
-        prop "choose coins" $
-            forAll arbitraryNetwork $ \net ->
-                forAll (listOf (arbitrarySatoshi net)) testChooseCoins
-        prop "choose multisig coins" $
-            forAll arbitraryNetwork $ \net ->
-                forAll arbitraryMSParam $
-                    forAll (listOf (arbitrarySatoshi net)) . testChooseMSCoins
         prop "sign and validate transaction" $
             forAll arbitraryNetwork $ \net ->
                 forAll (arbitrarySigningData net) (testDetSignTx net)
@@ -259,71 +249,6 @@ testBuildAddrTx net a (TestCoin v)
             scriptOutput $
                 head $
                     txOut (fromRight (error "Could not build transaction") tx)
-
-
--- We compute an upper bound but it should be close enough to the real size
--- We give 2 bytes of slack on every signature (1 on r and 1 on s)
-testGuessSize :: Network -> Tx -> Bool
-testGuessSize net tx =
-    guess >= len && guess <= len + 2 * delta
-  where
-    delta = pki + sum (map fst msi)
-    guess = guessTxSize pki msi pkout msout
-    len = B.length $ runPutS $ serialize tx
-    ins = map f $ txIn tx
-    f i =
-        fromRight (error "Could not decode input") $
-            decodeInputBS net $
-                scriptInput i
-    pki = length $ filter isSpendPKHash ins
-    msi = concatMap shData ins
-    shData (ScriptHashInput _ (PayMulSig keys r)) = [(r, length keys)]
-    shData _ = []
-    out =
-        map
-            ( fromRight (error "Could not decode transaction output")
-                . decodeOutputBS
-                . scriptOutput
-            )
-            $ txOut tx
-    pkout = length $ filter isPayPKHash out
-    msout = length $ filter isPayScriptHash out
-
-
-testChooseCoins :: [TestCoin] -> Word64 -> Word64 -> Int -> Property
-testChooseCoins coins target byteFee nOut =
-    nOut >= 0 ==>
-        case chooseCoins target byteFee nOut True coins of
-            Right (chosen, change) ->
-                let outSum = sum $ map coinValue chosen
-                    fee = guessTxFee byteFee nOut (length chosen)
-                 in outSum == target + change + fee
-            Left _ ->
-                let fee = guessTxFee byteFee nOut (length coins)
-                 in target == 0 || s < target + fee
-  where
-    s = sum $ map coinValue coins
-
-
-testChooseMSCoins ::
-    (Int, Int) ->
-    [TestCoin] ->
-    Word64 ->
-    Word64 ->
-    Int ->
-    Property
-testChooseMSCoins (m, n) coins target byteFee nOut =
-    nOut >= 0 ==>
-        case chooseMSCoins target byteFee (m, n) nOut True coins of
-            Right (chosen, change) ->
-                let outSum = sum $ map coinValue chosen
-                    fee = guessMSTxFee byteFee (m, n) nOut (length chosen)
-                 in outSum == target + change + fee
-            Left _ ->
-                let fee = guessMSTxFee byteFee (m, n) nOut (length coins)
-                 in target == 0 || s < target + fee
-  where
-    s = sum $ map coinValue coins
 
 
 {- Signing Transactions -}

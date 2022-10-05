@@ -3,11 +3,6 @@
 -- Portability : POSIX
 module Bitcoin.Util.Arbitrary.Transaction where
 
-import Control.Monad
-import qualified Data.ByteString as BS
-import Data.Either (fromRight)
-import Data.List (nub, nubBy, permutations)
-import Data.Word (Word64)
 import Bitcoin.Address
 import Bitcoin.Constants
 import Bitcoin.Data
@@ -18,16 +13,17 @@ import Bitcoin.Util.Arbitrary.Crypto
 import Bitcoin.Util.Arbitrary.Keys
 import Bitcoin.Util.Arbitrary.Script
 import Bitcoin.Util.Arbitrary.Util
+import Control.Monad
+import qualified Data.ByteString as BS
+import Data.Either (fromRight)
+import Data.List (nub, nubBy, permutations)
+import Data.Word (Word64)
 import Test.QuickCheck
 
 
 -- | Wrapped coin value for testing.
 newtype TestCoin = TestCoin {getTestCoin :: Word64}
     deriving (Eq, Show)
-
-
-instance Coin TestCoin where
-    coinValue = getTestCoin
 
 
 -- | Arbitrary transaction hash (for non-existent transaction).

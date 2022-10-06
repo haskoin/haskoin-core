@@ -1,0 +1,117 @@
+name: Build
+
+concurrency:
+  group: ${{ github.ref }}-build
+  cancel-in-progress: true
+
+on:
+  pull_request:
+    branches:
+      - master
+    paths:
+      - package.yaml
+      - stack.yaml
+      - stack.yaml.lock
+      - "src/**/*.hs"
+      - "test/**/*.hs"
+      - ".github/workflows/build.yaml"
+    types:
+      - synchronize
+      - opened
+      - reopened
+      - ready_for_review
+  push:
+    branches:
+      - master
+    paths:
+      - package.yaml
+      - stack.yaml
+      - stack.yaml.lock
+      - "src/**/*.hs"
+      - "test/**/*.hs"
+      - ".github/workflows/build.yaml"
+  workflow_dispatch:
+    inputs: {}
+
+jobs:
+
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macOS-latest
+          - windows-latest
+
+    name: Build
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
+        name: Checkout
+
+      - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
+        name: Checkout bitcoin-core/secp256k1
+        with:
+          repository: bitcoin-core/secp256k1
+          ref: 694ce8fb2d1fd8a3d641d7c33705691d41a2a860
+          path: lib/secp256k1
+
+      - uses: haskell/actions/setup@f7b0997283589ea5a6b4f2ade6a239d70a412877
+        name: Setup Haskell
+        id: setup-haskell
+        with:
+          enable-stack: true
+          stack-no-global: true
+
+      - name: Cache
+        id: cache
+        uses: actions/cache@56461b9eb0f8438fd15c7a9968e3c9ebb18ceff1
+        with:
+          path: |
+            ${{ steps.setup-haskell.outputs.stack-root }}
+          key: ${{ runner.os }}-${{ hashFiles('**/package.yaml', '**/stack.yaml', '**/stack.yaml.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-
+
+      - name: Install buildtools (MacOS)
+        if: matrix.os == 'macOS-latest'
+        run: brew install automake
+
+      - name: Install libsecp256k1 (Unix)
+        if: matrix.os != 'windows-latest'
+        working-directory: ./lib/secp256k1
+        run: |
+          ./autogen.sh
+          ./configure
+          make
+          make check
+          sudo make install
+          echo "LD_LIBRARY_PATH=/usr/local/lib" >> $GITHUB_ENV
+
+      - name: Install libsecp256k1 (Windows)
+        if: matrix.os == 'windows-latest'
+        working-directory: ./lib/secp256k1
+        run: |
+          pacman --noconfirm -Sy msys2-keyring
+          pacman --noconfirm -S mingw-w64-x86_64-pkg-config
+          pacman --noconfirm -S mingw-w64-x86_64-autotools
+          ./autogen.sh
+          ./configure --prefix=/mingw64
+          make
+          make check
+          make install
+        shell: stack exec -- bash {0}
+
+      - name: Install dependencies
+        run: |
+          stack build --test --only-dependencies
+
+      - name: Build
+        id: build
+        run: |
+          stack build --test --no-run-tests --no-run-benchmarks
+
+      - name: Test
+        run: |
+          stack build --test

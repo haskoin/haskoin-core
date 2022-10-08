@@ -1,0 +1,38 @@
+name: Fourmolu
+
+concurrency:
+  group: ${{ github.ref }}-fourmolu
+  cancel-in-progress: true
+
+on:
+  pull_request:
+    branches:
+      - master
+    paths:
+      - fourmolu.yaml
+      - "**/*.hs"
+      - ".github/workflows/fourmolu.yaml"
+    types:
+      - synchronize
+      - opened
+      - reopened
+      - ready_for_review
+  push:
+    branches:
+      - master
+    paths:
+      - fourmolu.yaml
+      - "**/*.hs"
+      - ".github/workflows/fourmolu.yaml"
+  workflow_dispatch:
+    inputs: {}
+
+jobs:
+  format:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@8230315d06ad95c617244d2f265d237a1682d445
+        name: Checkout
+      - uses: fourmolu/fourmolu-action@d88033a61a1d2f04072cabd6a0bd1308d92238e4
+        name: Run fourmolu

@@ -3,6 +3,12 @@
 
 module Bitcoin.Keys.ExtendedSpec (spec) where
 
+import Bitcoin.Address
+import Bitcoin.Constants
+import Bitcoin.Keys
+import Bitcoin.Util
+import Bitcoin.Util.Arbitrary
+import Bitcoin.UtilSpec (customCerealID)
 import Control.Monad (forM_)
 import Data.Aeson as A
 import Data.Bits ((.&.))
@@ -16,12 +22,6 @@ import Data.String (fromString)
 import Data.String.Conversions (cs)
 import Data.Text (Text)
 import Data.Word (Word32)
-import Bitcoin.Address
-import Bitcoin.Constants
-import Bitcoin.Keys
-import Bitcoin.Util
-import Bitcoin.Util.Arbitrary
-import Bitcoin.UtilSpec (customCerealID)
 import Test.HUnit (Assertion, assertBool, assertEqual)
 import Test.Hspec
 import Test.Hspec.QuickCheck

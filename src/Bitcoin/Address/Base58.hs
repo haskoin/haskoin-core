@@ -14,6 +14,8 @@ module Bitcoin.Address.Base58 (
     decodeBase58Check,
 ) where
 
+import Bitcoin.Crypto.Hash
+import Bitcoin.Util
 import Control.Monad
 import Data.Array
 import Data.ByteString (ByteString)
@@ -28,8 +30,6 @@ import Data.String.Conversions (cs)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Word
-import Bitcoin.Crypto.Hash
-import Bitcoin.Util
 import Numeric (readInt, showIntAtBase)
 
 

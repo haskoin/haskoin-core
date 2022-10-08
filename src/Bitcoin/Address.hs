@@ -46,6 +46,13 @@ module Bitcoin.Address (
     module Bitcoin.Address.Bech32,
 ) where
 
+import Bitcoin.Address.Base58
+import Bitcoin.Address.Bech32
+import Bitcoin.Crypto
+import Bitcoin.Data
+import Bitcoin.Keys.Common
+import Bitcoin.Script
+import Bitcoin.Util
 import Control.Applicative
 import Control.Arrow (second)
 import Control.DeepSeq
@@ -66,13 +73,6 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Word (Word8)
 import GHC.Generics (Generic)
-import Bitcoin.Address.Base58
-import Bitcoin.Address.Bech32
-import Bitcoin.Crypto
-import Bitcoin.Data
-import Bitcoin.Keys.Common
-import Bitcoin.Script
-import Bitcoin.Util
 
 
 -- | Address format for Bitcoin

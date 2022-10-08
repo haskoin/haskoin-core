@@ -4,18 +4,6 @@
 
 module Bitcoin.Transaction.TaprootSpec (spec) where
 
-import Control.Applicative ((<|>))
-import Control.Monad (zipWithM, (<=<))
-import Data.Aeson (FromJSON (parseJSON), withObject, (.:), (.:?))
-import Data.Aeson.Types (Parser)
-import qualified Data.ByteArray as BA
-import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
-import Data.Bytes.Get (runGetS)
-import Data.Bytes.Put (runPutS)
-import Data.Bytes.Serial (deserialize, serialize)
-import Data.Text (Text)
-import Data.Word (Word8)
 import Bitcoin (
     MAST (..),
     PubKey,
@@ -39,6 +27,18 @@ import Bitcoin (
     verifyScriptPathData,
  )
 import Bitcoin.UtilSpec (readTestFile)
+import Control.Applicative ((<|>))
+import Control.Monad (zipWithM, (<=<))
+import Data.Aeson (FromJSON (parseJSON), withObject, (.:), (.:?))
+import Data.Aeson.Types (Parser)
+import qualified Data.ByteArray as BA
+import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
+import Data.Bytes.Get (runGetS)
+import Data.Bytes.Put (runPutS)
+import Data.Bytes.Serial (deserialize, serialize)
+import Data.Text (Text)
+import Data.Word (Word8)
 import Test.HUnit (assertBool, (@?=))
 import Test.Hspec (Spec, describe, it, runIO)
 

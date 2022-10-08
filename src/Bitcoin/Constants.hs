@@ -17,6 +17,10 @@ module Bitcoin.Constants (
     netByName,
 ) where
 
+import Bitcoin.Block
+import Bitcoin.Data
+import Bitcoin.Network.Common
+import Bitcoin.Transaction
 import Control.DeepSeq
 import Data.Binary (Binary (..))
 import Data.ByteString (ByteString)
@@ -30,10 +34,6 @@ import Data.String
 import Data.Text (Text)
 import Data.Word (Word32, Word64, Word8)
 import GHC.Generics (Generic)
-import Bitcoin.Block
-import Bitcoin.Data
-import Bitcoin.Network.Common
-import Bitcoin.Transaction
 import Text.Read
 
 

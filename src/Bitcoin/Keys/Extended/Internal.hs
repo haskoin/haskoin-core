@@ -7,6 +7,7 @@ module Bitcoin.Keys.Extended.Internal (
     textToFingerprint,
 ) where
 
+import Bitcoin.Util (decodeHex, encodeHex)
 import Control.DeepSeq (NFData)
 import Control.Monad ((>=>))
 import Data.Aeson (
@@ -31,7 +32,6 @@ import qualified Data.Text as Text
 import Data.Typeable (Typeable)
 import Data.Word (Word32)
 import GHC.Generics (Generic)
-import Bitcoin.Util (decodeHex, encodeHex)
 import Text.Read (readEither, readPrec)
 
 

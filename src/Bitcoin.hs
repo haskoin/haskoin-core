@@ -27,3 +27,4 @@ import Bitcoin.Network as Network
 import Bitcoin.Script as Script
 import Bitcoin.Transaction as Transaction
 import Bitcoin.Util as Util
+

@@ -24,6 +24,9 @@ module Bitcoin.Transaction.Common (
     nullOutPoint,
 ) where
 
+import Bitcoin.Crypto.Hash
+import Bitcoin.Network.Common
+import Bitcoin.Util
 import Control.Applicative ((<|>))
 import Control.DeepSeq
 import Control.Monad (
@@ -54,9 +57,6 @@ import Data.String.Conversions (cs)
 import Data.Text (Text)
 import Data.Word (Word32, Word64)
 import GHC.Generics (Generic)
-import Bitcoin.Crypto.Hash
-import Bitcoin.Network.Common
-import Bitcoin.Util
 import Text.Read as R
 
 

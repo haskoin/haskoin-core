@@ -5,10 +5,6 @@
 -- Portability : POSIX
 module Bitcoin.Util.Arbitrary.Script where
 
-import Crypto.Secp256k1
-import qualified Data.ByteString as B
-import Data.Maybe
-import Data.Word
 import Bitcoin.Address
 import Bitcoin.Constants
 import Bitcoin.Data
@@ -20,6 +16,10 @@ import Bitcoin.Util.Arbitrary.Address
 import Bitcoin.Util.Arbitrary.Crypto
 import Bitcoin.Util.Arbitrary.Keys
 import Bitcoin.Util.Arbitrary.Util
+import Crypto.Secp256k1
+import qualified Data.ByteString as B
+import Data.Maybe
+import Data.Word
 import Test.QuickCheck
 
 

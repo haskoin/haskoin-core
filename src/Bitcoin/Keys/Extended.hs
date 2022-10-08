@@ -100,6 +100,17 @@ module Bitcoin.Keys.Extended (
     concatBip32Segments,
 ) where
 
+import Bitcoin.Address
+import Bitcoin.Crypto.Hash
+import Bitcoin.Data
+import Bitcoin.Keys.Common
+import Bitcoin.Keys.Extended.Internal (
+    Fingerprint (..),
+    fingerprintToText,
+    textToFingerprint,
+ )
+import Bitcoin.Script
+import Bitcoin.Util
 import Control.Applicative
 import Control.DeepSeq
 import Control.Exception (Exception, throw)
@@ -135,17 +146,6 @@ import qualified Data.Text as Text
 import Data.Typeable (Typeable)
 import Data.Word (Word32, Word8)
 import GHC.Generics (Generic)
-import Bitcoin.Address
-import Bitcoin.Crypto.Hash
-import Bitcoin.Data
-import Bitcoin.Keys.Common
-import Bitcoin.Keys.Extended.Internal (
-    Fingerprint (..),
-    fingerprintToText,
-    textToFingerprint,
- )
-import Bitcoin.Script
-import Bitcoin.Util
 import Text.Read as R
 import Text.Read.Lex
 

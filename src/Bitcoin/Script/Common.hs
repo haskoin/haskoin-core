@@ -207,8 +207,8 @@ data ScriptOp
     | OP_NOP8
     | OP_NOP9
     | OP_NOP10
-    -- BIP 342 (Tapscript)
-    | OP_CHECKSIGADD
+    | -- BIP 342 (Tapscript)
+      OP_CHECKSIGADD
     | -- Other
       OP_PUBKEYHASH
     | OP_PUBKEY

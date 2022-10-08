@@ -2,6 +2,9 @@
 
 module Bitcoin.Keys.MnemonicSpec (spec) where
 
+import Bitcoin.Keys
+import Bitcoin.Util
+import Bitcoin.Util.Arbitrary
 import Control.Monad (zipWithM_)
 import Data.Bits (shiftR, (.&.))
 import qualified Data.ByteString as BS
@@ -12,9 +15,6 @@ import Data.Serialize (Serialize, encode)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Word (Word32, Word64)
-import Bitcoin.Keys
-import Bitcoin.Util
-import Bitcoin.Util.Arbitrary
 import Test.HUnit
 import Test.Hspec
 import Test.QuickCheck hiding ((.&.))

@@ -60,6 +60,11 @@ module Bitcoin.Block.Headers (
     lastSmallerOrEqual,
 ) where
 
+import Bitcoin.Block.Common
+import Bitcoin.Crypto
+import Bitcoin.Data
+import Bitcoin.Transaction.Genesis
+import Bitcoin.Util
 import Control.Applicative ((<|>))
 import Control.DeepSeq
 import Control.Monad (guard, mzero, unless, when)
@@ -97,11 +102,6 @@ import Data.Serialize (Serialize (..))
 import Data.Typeable (Typeable)
 import Data.Word (Word32, Word64)
 import GHC.Generics (Generic)
-import Bitcoin.Block.Common
-import Bitcoin.Crypto
-import Bitcoin.Data
-import Bitcoin.Transaction.Genesis
-import Bitcoin.Util
 
 
 -- | Short version of the block hash. Uses the good end of the hash (the part

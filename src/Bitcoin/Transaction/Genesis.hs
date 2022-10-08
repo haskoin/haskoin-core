@@ -13,10 +13,10 @@ module Bitcoin.Transaction.Genesis (
     genesisTx,
 ) where
 
-import Data.String (fromString)
 import Bitcoin.Script.Standard
 import Bitcoin.Transaction.Common
 import Bitcoin.Util
+import Data.String (fromString)
 
 
 -- | Transaction from Genesis block.

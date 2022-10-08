@@ -1,11 +1,11 @@
 module Main (main) where
 
+import Bitcoin (PartiallySignedTransaction, SecKey)
+import qualified Bitcoin as H
 import qualified Data.ByteString as BS
 import Data.Maybe (fromMaybe)
 import qualified Data.Serialize as S
 import Data.Text (pack)
-import Bitcoin (PartiallySignedTransaction, SecKey)
-import qualified Bitcoin as H
 import System.Environment (getArgs)
 
 

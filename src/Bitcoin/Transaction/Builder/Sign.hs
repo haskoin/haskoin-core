@@ -19,6 +19,20 @@ module Bitcoin.Transaction.Builder.Sign (
     sigKeys,
 ) where
 
+import Bitcoin.Address (getAddrHash160, pubKeyAddr)
+import Bitcoin.Crypto (Hash256, SecKey)
+import Bitcoin.Crypto.Signature (signHash, verifyHashSig)
+import Bitcoin.Data (Network)
+import Bitcoin.Keys.Common (
+    PubKeyI (..),
+    SecKeyI (..),
+    derivePubKeyI,
+    wrapSecKey,
+ )
+import Bitcoin.Script
+import Bitcoin.Transaction.Common
+import Bitcoin.Transaction.Segwit
+import Bitcoin.Util (matchTemplate, updateIndex)
 import Control.DeepSeq (NFData)
 import Control.Monad (foldM, when)
 import Data.Aeson (
@@ -46,20 +60,6 @@ import Data.Maybe (
  )
 import Data.Word (Word64)
 import GHC.Generics (Generic)
-import Bitcoin.Address (getAddrHash160, pubKeyAddr)
-import Bitcoin.Crypto (Hash256, SecKey)
-import Bitcoin.Crypto.Signature (signHash, verifyHashSig)
-import Bitcoin.Data (Network)
-import Bitcoin.Keys.Common (
-    PubKeyI (..),
-    SecKeyI (..),
-    derivePubKeyI,
-    wrapSecKey,
- )
-import Bitcoin.Script
-import Bitcoin.Transaction.Common
-import Bitcoin.Transaction.Segwit
-import Bitcoin.Util (matchTemplate, updateIndex)
 
 
 -- | Data type used to specify the signing parameters of a transaction input.

@@ -3,12 +3,12 @@
 -- Portability : POSIX
 module Bitcoin.Util.Arbitrary.Network where
 
-import qualified Data.ByteString as BS (empty, pack)
-import qualified Data.ByteString.Char8 as C8
-import Data.Word (Word16, Word32)
 import Bitcoin.Network
 import Bitcoin.Util.Arbitrary.Crypto
 import Bitcoin.Util.Arbitrary.Util
+import qualified Data.ByteString as BS (empty, pack)
+import qualified Data.ByteString.Char8 as C8
+import Data.Word (Word16, Word32)
 import Network.Socket (SockAddr (..))
 import Test.QuickCheck
 

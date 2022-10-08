@@ -5,12 +5,12 @@
 -- Portability : POSIX
 module Bitcoin.Util.Arbitrary.Address where
 
-import qualified Data.ByteString as B
 import Bitcoin.Address
 import Bitcoin.Constants
 import Bitcoin.Data
 import Bitcoin.Util.Arbitrary.Crypto
 import Bitcoin.Util.Arbitrary.Util
+import qualified Data.ByteString as B
 import Test.QuickCheck
 
 

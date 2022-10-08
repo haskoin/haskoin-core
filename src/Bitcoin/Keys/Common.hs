@@ -31,6 +31,10 @@ module Bitcoin.Keys.Common (
     toWif,
 ) where
 
+import Bitcoin.Address.Base58
+import Bitcoin.Crypto.Hash
+import Bitcoin.Data
+import Bitcoin.Util
 import Control.DeepSeq
 import Control.Monad (guard, mzero, (<=<))
 import Crypto.Secp256k1
@@ -55,10 +59,6 @@ import Data.Serialize (Serialize (..))
 import Data.String (IsString, fromString)
 import Data.String.Conversions (cs)
 import GHC.Generics (Generic)
-import Bitcoin.Address.Base58
-import Bitcoin.Crypto.Hash
-import Bitcoin.Data
-import Bitcoin.Util
 
 
 -- | Elliptic curve public key type with expected serialized compression flag.

@@ -4,6 +4,8 @@ module Bitcoin.UtilSpec (
     readTestFile,
 ) where
 
+import Bitcoin.Util
+import Bitcoin.Util.Arbitrary
 import Data.Aeson (FromJSON, ToJSON)
 import qualified Data.Aeson as A
 import Data.Aeson.Encoding (encodingToLazyByteString)
@@ -16,8 +18,6 @@ import Data.Map.Strict (singleton)
 import Data.Maybe
 import qualified Data.Sequence as Seq
 import Data.Serialize as S
-import Bitcoin.Util
-import Bitcoin.Util.Arbitrary
 import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck

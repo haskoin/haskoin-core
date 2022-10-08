@@ -41,6 +41,7 @@ module Bitcoin.Network.Common (
     putVarInt,
 ) where
 
+import Bitcoin.Crypto.Hash
 import Control.DeepSeq
 import Control.Monad (forM_, liftM2, replicateM, unless)
 import Data.Binary (Binary (..))
@@ -56,7 +57,6 @@ import Data.String
 import Data.String.Conversions (cs)
 import Data.Word (Word32, Word64)
 import GHC.Generics (Generic)
-import Bitcoin.Crypto.Hash
 import Network.Socket (SockAddr (..))
 import Text.Read as R
 

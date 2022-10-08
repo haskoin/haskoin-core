@@ -2,6 +2,15 @@
 
 module Bitcoin.Crypto.SignatureSpec (spec) where
 
+import Bitcoin.Address
+import Bitcoin.Constants
+import Bitcoin.Crypto
+import Bitcoin.Keys
+import Bitcoin.Script
+import Bitcoin.Transaction
+import Bitcoin.Util
+import Bitcoin.Util.Arbitrary
+import Bitcoin.UtilSpec (readTestFile)
 import Control.Monad
 import Data.Bits (testBit)
 import Data.ByteString (ByteString)
@@ -12,15 +21,6 @@ import Data.Maybe
 import Data.Serialize as S
 import Data.String.Conversions (cs)
 import Data.Text (Text)
-import Bitcoin.Address
-import Bitcoin.Constants
-import Bitcoin.Crypto
-import Bitcoin.Keys
-import Bitcoin.Script
-import Bitcoin.Transaction
-import Bitcoin.Util
-import Bitcoin.Util.Arbitrary
-import Bitcoin.UtilSpec (readTestFile)
 import Test.HUnit
 import Test.Hspec
 import Test.Hspec.QuickCheck

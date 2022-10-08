@@ -17,6 +17,7 @@ module Bitcoin.Crypto.Signature (
     exportSig,
 ) where
 
+import Bitcoin.Crypto.Hash
 import Control.Monad (guard, unless, when)
 import Crypto.Secp256k1
 import Data.Binary (Binary (..))
@@ -27,7 +28,6 @@ import Data.Bytes.Put
 import Data.Bytes.Serial
 import Data.Maybe (fromMaybe, isNothing)
 import Data.Serialize (Serialize (..))
-import Bitcoin.Crypto.Hash
 import Numeric (showHex)
 
 

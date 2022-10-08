@@ -3,15 +3,15 @@
 -- Portability : POSIX
 module Bitcoin.Util.Arbitrary.Keys where
 
-import Data.Bits (clearBit)
-import Data.Coerce (coerce)
-import Data.List (foldl')
-import Data.Word (Word32)
 import Bitcoin.Crypto
 import Bitcoin.Keys.Common
 import Bitcoin.Keys.Extended
 import Bitcoin.Keys.Extended.Internal (Fingerprint (..))
 import Bitcoin.Util.Arbitrary.Crypto
+import Data.Bits (clearBit)
+import Data.Coerce (coerce)
+import Data.List (foldl')
+import Data.Word (Word32)
 import Test.QuickCheck
 
 

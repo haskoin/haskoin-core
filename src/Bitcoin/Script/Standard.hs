@@ -41,6 +41,12 @@ module Bitcoin.Script.Standard (
     isScriptHashInput,
 ) where
 
+import Bitcoin.Crypto
+import Bitcoin.Data
+import Bitcoin.Keys.Common
+import Bitcoin.Script.Common
+import Bitcoin.Script.SigHash
+import Bitcoin.Util
 import Control.Applicative ((<|>))
 import Control.DeepSeq
 import Control.Monad (guard, liftM2, (<=<))
@@ -57,12 +63,6 @@ import Data.List (sortBy)
 import Data.Maybe (fromJust, isJust)
 import Data.Word (Word8)
 import GHC.Generics (Generic)
-import Bitcoin.Crypto
-import Bitcoin.Data
-import Bitcoin.Keys.Common
-import Bitcoin.Script.Common
-import Bitcoin.Script.SigHash
-import Bitcoin.Util
 
 
 -- | Data type describing standard transaction output scripts. Output scripts

@@ -9,6 +9,7 @@ module Bitcoin.Crypto (
     module Secp256k1,
 ) where
 
-import Crypto.Secp256k1 as Secp256k1
 import Bitcoin.Crypto.Hash as Hash
 import Bitcoin.Crypto.Signature as Signature
+import Crypto.Secp256k1 as Secp256k1
+

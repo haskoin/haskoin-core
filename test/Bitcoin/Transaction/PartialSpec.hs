@@ -2,6 +2,16 @@
 
 module Bitcoin.Transaction.PartialSpec (spec) where
 
+import Bitcoin.Address
+import Bitcoin.Constants
+import Bitcoin.Crypto
+import Bitcoin.Data
+import Bitcoin.Keys
+import Bitcoin.Script
+import Bitcoin.Transaction
+import Bitcoin.Util
+import Bitcoin.Util.Arbitrary
+import Bitcoin.UtilSpec (readTestFile)
 import Control.Monad ((<=<))
 import Data.Aeson (FromJSON, parseJSON, withObject, (.:))
 import Data.Bifunctor (first)
@@ -17,16 +27,6 @@ import Data.Serialize as S
 import Data.Text (Text)
 import qualified Data.Text as Text
 import Data.Text.Encoding (encodeUtf8)
-import Bitcoin.Address
-import Bitcoin.Constants
-import Bitcoin.Crypto
-import Bitcoin.Data
-import Bitcoin.Keys
-import Bitcoin.Script
-import Bitcoin.Transaction
-import Bitcoin.Util
-import Bitcoin.Util.Arbitrary
-import Bitcoin.UtilSpec (readTestFile)
 import Test.HUnit (Assertion, assertBool, assertEqual)
 import Test.Hspec
 import Test.QuickCheck

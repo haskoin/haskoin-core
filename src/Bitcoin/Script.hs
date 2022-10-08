@@ -14,3 +14,4 @@ module Bitcoin.Script (
 import Bitcoin.Script.Common as Common
 import Bitcoin.Script.SigHash as SigHash
 import Bitcoin.Script.Standard as Standard
+

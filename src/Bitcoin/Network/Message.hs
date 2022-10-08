@@ -15,6 +15,13 @@ module Bitcoin.Network.Message (
     getMessage,
 ) where
 
+import Bitcoin.Block.Common
+import Bitcoin.Block.Merkle
+import Bitcoin.Crypto.Hash
+import Bitcoin.Data
+import Bitcoin.Network.Bloom
+import Bitcoin.Network.Common
+import Bitcoin.Transaction.Common
 import Control.DeepSeq
 import Control.Monad (unless)
 import Data.Binary (Binary (..))
@@ -26,13 +33,6 @@ import Data.Bytes.Serial
 import Data.Serialize (Serialize (..))
 import Data.Word (Word32)
 import GHC.Generics (Generic)
-import Bitcoin.Block.Common
-import Bitcoin.Block.Merkle
-import Bitcoin.Crypto.Hash
-import Bitcoin.Data
-import Bitcoin.Network.Bloom
-import Bitcoin.Network.Common
-import Bitcoin.Transaction.Common
 
 
 -- | Data type representing the header of a 'Message'. All messages sent between

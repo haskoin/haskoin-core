@@ -2,17 +2,17 @@
 
 module Bitcoin.AddressSpec (spec) where
 
-import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS (append, empty, pack)
-import Data.Maybe (fromJust, isJust)
-import Data.Text (Text)
-import qualified Data.Text as T
 import Bitcoin.Address
 import Bitcoin.Constants
 import Bitcoin.Data
 import Bitcoin.Keys
 import Bitcoin.Util
 import Bitcoin.Util.Arbitrary
+import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS (append, empty, pack)
+import Data.Maybe (fromJust, isJust)
+import Data.Text (Text)
+import qualified Data.Text as T
 import Test.HUnit
 import Test.Hspec
 import Test.Hspec.QuickCheck

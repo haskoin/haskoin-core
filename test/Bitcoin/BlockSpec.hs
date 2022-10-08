@@ -4,6 +4,11 @@ module Bitcoin.BlockSpec (
     spec,
 ) where
 
+import Bitcoin.Block
+import Bitcoin.Constants
+import Bitcoin.Data
+import Bitcoin.Transaction
+import Bitcoin.Util.Arbitrary
 import Control.Monad.State.Strict
 import Data.Either (fromRight)
 import Data.Maybe (fromJust)
@@ -11,11 +16,6 @@ import Data.String (fromString)
 import Data.String.Conversions (cs)
 import Data.Text (Text)
 import Data.Word (Word32)
-import Bitcoin.Block
-import Bitcoin.Constants
-import Bitcoin.Data
-import Bitcoin.Transaction
-import Bitcoin.Util.Arbitrary
 import Test.HUnit hiding (State)
 import Test.Hspec
 import Test.Hspec.QuickCheck

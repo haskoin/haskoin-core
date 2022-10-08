@@ -5,6 +5,7 @@ module Bitcoin.Data (
     Network (..),
 ) where
 
+import Bitcoin.Block.Common
 import Control.DeepSeq
 import Data.Binary (Binary (..))
 import Data.ByteString (ByteString)
@@ -17,7 +18,6 @@ import Data.String
 import Data.Text (Text)
 import Data.Word (Word32, Word64, Word8)
 import GHC.Generics (Generic)
-import Bitcoin.Block.Common
 import Text.Read
 
 

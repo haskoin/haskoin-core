@@ -12,3 +12,4 @@ module Bitcoin.Block (
 import Bitcoin.Block.Common
 import Bitcoin.Block.Headers
 import Bitcoin.Block.Merkle
+

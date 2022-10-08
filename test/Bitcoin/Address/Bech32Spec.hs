@@ -4,6 +4,9 @@ module Bitcoin.Address.Bech32Spec (
     spec,
 ) where
 
+import Bitcoin.Address
+import Bitcoin.Address.Bech32
+import Bitcoin.Util
 import Control.Monad
 import Data.Bits (xor)
 import Data.ByteString (ByteString)
@@ -14,9 +17,6 @@ import Data.String.Conversions
 import Data.Text (Text, append, pack, snoc, uncons)
 import qualified Data.Text as T
 import Data.Word (Word8)
-import Bitcoin.Address
-import Bitcoin.Address.Bech32
-import Bitcoin.Util
 import Test.HUnit
 import Test.Hspec
 

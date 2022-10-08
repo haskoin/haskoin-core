@@ -25,6 +25,9 @@ module Bitcoin.Network.Bloom (
     bloomRelevantUpdate,
 ) where
 
+import Bitcoin.Network.Common
+import Bitcoin.Script.Standard
+import Bitcoin.Transaction.Common
 import Control.DeepSeq
 import Control.Monad (forM_, replicateM)
 import Data.Binary (Binary (..))
@@ -41,9 +44,6 @@ import qualified Data.Sequence as S
 import Data.Serialize (Serialize (..))
 import Data.Word
 import GHC.Generics (Generic)
-import Bitcoin.Network.Common
-import Bitcoin.Script.Standard
-import Bitcoin.Transaction.Common
 
 
 -- | 20,000 items with fp rate < 0.1% or 10,000 items and <0.0001%

@@ -29,6 +29,11 @@ module Bitcoin.Block.Merkle (
     boolsToWord8,
 ) where
 
+import Bitcoin.Block.Common
+import Bitcoin.Crypto.Hash
+import Bitcoin.Data
+import Bitcoin.Network.Common
+import Bitcoin.Transaction.Common
 import Control.DeepSeq
 import Control.Monad (forM_, replicateM, when)
 import Data.Binary (Binary (..))
@@ -43,11 +48,6 @@ import Data.Maybe
 import Data.Serialize (Serialize (..))
 import Data.Word (Word32, Word8)
 import GHC.Generics
-import Bitcoin.Block.Common
-import Bitcoin.Crypto.Hash
-import Bitcoin.Data
-import Bitcoin.Network.Common
-import Bitcoin.Transaction.Common
 
 
 -- | Hash of the block's Merkle root.

@@ -3,13 +3,13 @@
 -- Portability : POSIX
 module Bitcoin.Util.Arbitrary.Block where
 
-import qualified Data.HashMap.Strict as HashMap
 import Bitcoin.Block
 import Bitcoin.Data
 import Bitcoin.Util.Arbitrary.Crypto
 import Bitcoin.Util.Arbitrary.Network
 import Bitcoin.Util.Arbitrary.Transaction
 import Bitcoin.Util.Arbitrary.Util
+import qualified Data.HashMap.Strict as HashMap
 import Test.QuickCheck
 
 

@@ -2,6 +2,10 @@
 
 module Bitcoin.Crypto.HashSpec (spec) where
 
+import Bitcoin.Block
+import Bitcoin.Crypto
+import Bitcoin.Util
+import Bitcoin.Util.Arbitrary
 import Data.Bits
 import Data.ByteString (ByteString)
 import Data.ByteString.Builder
@@ -16,10 +20,6 @@ import Data.String (fromString)
 import Data.String.Conversions
 import Data.Text (Text)
 import Data.Word
-import Bitcoin.Block
-import Bitcoin.Crypto
-import Bitcoin.Util
-import Bitcoin.Util.Arbitrary
 import Test.HUnit
 import Test.Hspec
 import Test.Hspec.QuickCheck

@@ -16,6 +16,7 @@ module Bitcoin.Keys.Mnemonic (
     mnemonicToSeed,
 ) where
 
+import Bitcoin.Util
 import Control.Monad (when)
 import Crypto.Hash (SHA256 (..), hashWith)
 import Crypto.KDF.PBKDF2 (Parameters (..), fastPBKDF2_SHA512)
@@ -32,7 +33,6 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as E
 import Data.Vector (Vector, (!))
 import qualified Data.Vector as V
-import Bitcoin.Util
 
 
 -- | Random data used to create a mnemonic sentence. Use a good entropy source.

@@ -26,6 +26,10 @@ module Bitcoin.Block.Common (
     encodeCompact,
 ) where
 
+import Bitcoin.Crypto.Hash
+import Bitcoin.Network.Common
+import Bitcoin.Transaction.Common
+import Bitcoin.Util
 import Control.DeepSeq
 import Control.Monad (forM_, liftM2, mzero, replicateM, (<=<))
 import Data.Aeson (
@@ -66,10 +70,6 @@ import Data.String.Conversions (cs)
 import Data.Text (Text)
 import Data.Word (Word32)
 import GHC.Generics (Generic)
-import Bitcoin.Crypto.Hash
-import Bitcoin.Network.Common
-import Bitcoin.Transaction.Common
-import Bitcoin.Util
 import qualified Text.Read as R
 
 

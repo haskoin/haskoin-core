@@ -2,12 +2,6 @@
 
 module Bitcoin.NetworkSpec (spec) where
 
-import Data.Bytes.Get
-import Data.Bytes.Put
-import Data.Bytes.Serial
-import Data.Maybe (fromJust)
-import Data.Text (Text)
-import Data.Word (Word32)
 import Bitcoin.Address
 import Bitcoin.Constants
 import Bitcoin.Keys
@@ -16,6 +10,12 @@ import Bitcoin.Transaction
 import Bitcoin.Util
 import Bitcoin.Util.Arbitrary
 import Bitcoin.UtilSpec (customCerealID)
+import Data.Bytes.Get
+import Data.Bytes.Put
+import Data.Bytes.Serial
+import Data.Maybe (fromJust)
+import Data.Text (Text)
+import Data.Word (Word32)
 import Test.HUnit (Assertion, assertBool, assertEqual)
 import Test.Hspec
 import Test.Hspec.QuickCheck

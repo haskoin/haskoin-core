@@ -2,6 +2,15 @@
 
 module Bitcoin.ScriptSpec (spec) where
 
+import Bitcoin.Address
+import Bitcoin.Constants
+import Bitcoin.Data
+import Bitcoin.Keys
+import Bitcoin.Script
+import Bitcoin.Transaction
+import Bitcoin.Util
+import Bitcoin.Util.Arbitrary
+import Bitcoin.UtilSpec (readTestFile)
 import Control.Monad
 import Data.Aeson as A
 import Data.ByteString (ByteString)
@@ -16,15 +25,6 @@ import Data.String
 import Data.String.Conversions (cs)
 import Data.Text (Text)
 import Data.Word
-import Bitcoin.Address
-import Bitcoin.Constants
-import Bitcoin.Data
-import Bitcoin.Keys
-import Bitcoin.Script
-import Bitcoin.Transaction
-import Bitcoin.Util
-import Bitcoin.Util.Arbitrary
-import Bitcoin.UtilSpec (readTestFile)
 import Test.HUnit as HUnit
 import Test.Hspec
 import Test.Hspec.QuickCheck
@@ -378,7 +378,7 @@ scriptSigSignatures =
       \41a2b1e401"
       -- Signature in input of txid
       -- fb0a1d8d34fa5537e461ac384bac761125e1bfa7fec286fa72511240fa66864d.
-      -- Strange DER sizes, but in Blockchain. Now invalid as this Bitcoin 
+      -- Strange DER sizes, but in Blockchain. Now invalid as this Bitcoin
       -- library can only decode strict signatures.
       -- "3048022200002b83d59c1d23c08efd82ee0662fec23309c3adbcbd1f0b8695378d\
       -- \b4b14e736602220000334a96676e58b1bb01784cb7c556dd8ce1c220171904da22\

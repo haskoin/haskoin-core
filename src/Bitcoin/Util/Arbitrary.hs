@@ -16,3 +16,4 @@ import Bitcoin.Util.Arbitrary.Network as X
 import Bitcoin.Util.Arbitrary.Script as X
 import Bitcoin.Util.Arbitrary.Transaction as X
 import Bitcoin.Util.Arbitrary.Util as X
+

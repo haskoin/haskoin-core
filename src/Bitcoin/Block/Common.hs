@@ -26,33 +26,26 @@ module Bitcoin.Block.Common (
     encodeCompact,
 ) where
 
-import Bitcoin.Crypto.Hash
-import Bitcoin.Network.Common
-import Bitcoin.Transaction.Common
-import Bitcoin.Util
-import Control.DeepSeq
-import Control.Monad (forM_, liftM2, mzero, replicateM, (<=<))
-import Data.Binary (Binary (..))
+import Bitcoin.Crypto.Hash (Hash256, doubleSHA256L)
+import Bitcoin.Network.Common (VarInt (VarInt), putVarInt)
+import Bitcoin.Transaction.Common (Tx)
+import Bitcoin.Util (
+    decodeHex,
+    eitherToMaybe,
+    encodeHex,
+ )
+import qualified Bitcoin.Util as U
+import Control.DeepSeq (NFData)
+import Control.Monad (forM_, liftM2, replicateM, (>=>))
+import Data.Binary (Binary (..), Put)
+import qualified Data.Binary as Bin
+import Data.Binary.Get (getWord32le)
+import Data.Binary.Put (putWord32le)
 import Data.Bits (shiftL, shiftR, (.&.), (.|.))
-import qualified Data.ByteString as B
-import Data.ByteString.Builder (char7)
-import qualified Data.ByteString.Lazy as BL
-import Data.Bytes.Get (
-    MonadGet,
-    getWord32le,
-    runGetL,
-    runGetS,
- )
-import Data.Bytes.Put (
-    MonadPut,
-    putWord32le,
-    runPutL,
-    runPutS,
- )
-import Data.Bytes.Serial (Serial (..))
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BSL
 import Data.Hashable (Hashable)
 import Data.Maybe (fromMaybe)
-import Data.Serialize (Serialize (..))
 import Data.String (IsString, fromString)
 import Data.String.Conversions (cs)
 import Data.Text (Text)
@@ -77,43 +70,23 @@ data Block = Block
     deriving (Eq, Show, Read, Generic, Hashable, NFData)
 
 
-instance Serial Block where
-    deserialize = do
-        header <- deserialize
-        (VarInt c) <- deserialize
-        txs <- replicateM (fromIntegral c) deserialize
-        return $ Block header txs
-    serialize (Block h txs) = do
-        serialize h
-        putVarInt $ length txs
-        forM_ txs serialize
-
-
-instance Serialize Block where
-    get = deserialize
-    put = serialize
-
-
 instance Binary Block where
-    get = deserialize
-    put = serialize
+    get = do
+        header <- get
+        (VarInt c) <- get
+        txs <- replicateM (fromIntegral c) get
+        return $ Block header txs
+    put (Block h txs) = do
+        put h
+        putVarInt $ length txs
+        mapM_ put txs
 
 
 -- | Block header hash. To be serialized reversed for display purposes.
 newtype BlockHash = BlockHash
     { getBlockHash :: Hash256
     }
-    deriving (Eq, Ord, Generic, Hashable, Serial, NFData)
-
-
-instance Serialize BlockHash where
-    put = serialize
-    get = deserialize
-
-
-instance Binary BlockHash where
-    put = serialize
-    get = deserialize
+    deriving (Eq, Ord, Generic, Hashable, Binary, NFData)
 
 
 instance Show BlockHash where
@@ -135,16 +108,19 @@ instance IsString BlockHash where
 -- | Block hashes are reversed with respect to the in-memory byte order in a
 -- block hash when displayed.
 blockHashToHex :: BlockHash -> Text
-blockHashToHex (BlockHash h) = encodeHex (B.reverse (runPutS (serialize h)))
+blockHashToHex = encodeHex . BS.reverse . U.encodeS . getBlockHash
 
 
 -- | Convert a human-readable hex block hash into a 'BlockHash'. Bytes are
 -- reversed as normal.
 hexToBlockHash :: Text -> Maybe BlockHash
-hexToBlockHash hex = do
-    bs <- B.reverse <$> decodeHex hex
-    h <- eitherToMaybe (runGetS deserialize bs)
-    return $ BlockHash h
+hexToBlockHash =
+    decodeHex
+        >=> fmap BlockHash
+            . eitherToMaybe
+            . U.decode
+            . BSL.fromStrict
+            . BS.reverse
 
 
 -- | Data type recording information of a 'Block'. The hash of a block is
@@ -174,11 +150,11 @@ data BlockHeader = BlockHeader
     deriving (Eq, Ord, Show, Read, Generic, Hashable, NFData)
 
 
-instance Serial BlockHeader where
-    deserialize = do
+instance Binary BlockHeader where
+    get = do
         v <- getWord32le
-        p <- deserialize
-        m <- deserialize
+        p <- get
+        m <- get
         t <- getWord32le
         b <- getWord32le
         n <- getWord32le
@@ -191,28 +167,18 @@ instance Serial BlockHeader where
                 , blockBits = b
                 , bhNonce = n
                 }
-    serialize (BlockHeader v p m bt bb n) = do
+    put (BlockHeader v p m bt bb n) = do
         putWord32le v
-        serialize p
-        serialize m
+        put p
+        put m
         putWord32le bt
         putWord32le bb
         putWord32le n
 
 
-instance Binary BlockHeader where
-    put = serialize
-    get = deserialize
-
-
-instance Serialize BlockHeader where
-    put = serialize
-    get = deserialize
-
-
 -- | Compute hash of 'BlockHeader'.
 headerHash :: BlockHeader -> BlockHash
-headerHash = BlockHash . doubleSHA256 . runPutS . serialize
+headerHash = BlockHash . doubleSHA256L . Bin.encode
 
 
 -- | A block locator is a set of block headers, denser towards the best block
@@ -240,28 +206,23 @@ data GetBlocks = GetBlocks
     deriving (Eq, Show, Read, Generic, NFData)
 
 
-instance Serial GetBlocks where
-    deserialize =
+instance Binary GetBlocks where
+    get =
         GetBlocks
             <$> getWord32le
-            <*> (repList =<< deserialize)
-            <*> deserialize
+            <*> (repList =<< get)
+            <*> get
       where
-        repList (VarInt c) = replicateM (fromIntegral c) deserialize
-    serialize (GetBlocks v xs h) = putGetBlockMsg v xs h
+        repList (VarInt c) = replicateM (fromIntegral c) get
+    put (GetBlocks v xs h) = putGetBlockMsg v xs h
 
 
-instance Serialize GetBlocks where
-    put = serialize
-    get = deserialize
-
-
-putGetBlockMsg :: MonadPut m => Word32 -> BlockLocator -> BlockHash -> m ()
+putGetBlockMsg :: Word32 -> BlockLocator -> BlockHash -> Put
 putGetBlockMsg v xs h = do
     putWord32le v
     putVarInt $ length xs
-    forM_ xs serialize
-    serialize h
+    mapM_ put xs
+    put h
 
 
 -- | Similar to the 'GetBlocks' message type but for retrieving block headers
@@ -279,25 +240,15 @@ data GetHeaders = GetHeaders
     deriving (Eq, Show, Read, Generic, NFData)
 
 
-instance Serial GetHeaders where
-    deserialize =
+instance Binary GetHeaders where
+    get =
         GetHeaders
             <$> getWord32le
-            <*> (repList =<< deserialize)
-            <*> deserialize
+            <*> (repList =<< get)
+            <*> get
       where
-        repList (VarInt c) = replicateM (fromIntegral c) deserialize
-    serialize (GetHeaders v xs h) = putGetBlockMsg v xs h
-
-
-instance Serialize GetHeaders where
-    put = serialize
-    get = deserialize
-
-
-instance Binary GetHeaders where
-    put = serialize
-    get = deserialize
+        repList (VarInt c) = replicateM (fromIntegral c) get
+    put (GetHeaders v xs h) = putGetBlockMsg v xs h
 
 
 -- | 'BlockHeader' type with a transaction count as 'VarInt'
@@ -313,24 +264,14 @@ newtype Headers = Headers
     deriving (Eq, Show, Read, Generic, NFData)
 
 
-instance Serial Headers where
-    deserialize = Headers <$> (repList =<< deserialize)
+instance Binary Headers where
+    get = Headers <$> (repList =<< get)
       where
         repList (VarInt c) = replicateM (fromIntegral c) action
-        action = liftM2 (,) deserialize deserialize
-    serialize (Headers xs) = do
+        action = liftM2 (,) get get
+    put (Headers xs) = do
         putVarInt $ length xs
-        forM_ xs $ \(a, b) -> serialize a >> serialize b
-
-
-instance Serialize Headers where
-    put = serialize
-    get = deserialize
-
-
-instance Binary Headers where
-    put = serialize
-    get = deserialize
+        forM_ xs $ \(a, b) -> put a >> put b
 
 
 -- | Decode the compact number used in the difficulty target of a block.

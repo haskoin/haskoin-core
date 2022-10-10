@@ -87,14 +87,16 @@ import Bitcoin.Transaction.Common (
  )
 import Bitcoin.Transaction.Segwit (isSegwit)
 import Bitcoin.Util (eitherToMaybe)
+import qualified Bitcoin.Util as U
 import Control.Applicative ((<|>))
 import Control.DeepSeq
 import Control.Monad (foldM, guard, replicateM, void)
+import Data.Binary (Binary (..))
+import Data.Binary.Get (Get, getByteString, getWord32le, getWord8, isolate, lookAhead)
+import Data.Binary.Put (Put, putByteString, putLazyByteString, putWord32le, putWord8, runPut)
 import Data.ByteString (ByteString)
-import qualified Data.ByteString as B
-import Data.Bytes.Get (runGetS)
-import Data.Bytes.Put (runPutS)
-import Data.Bytes.Serial (Serial (..))
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BSL
 import Data.Either (fromRight)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
@@ -102,8 +104,6 @@ import qualified Data.HashMap.Strict as HashMap
 import Data.Hashable (Hashable)
 import Data.List (foldl')
 import Data.Maybe (fromMaybe, isJust)
-import Data.Serialize (Get, Put, Serialize)
-import qualified Data.Serialize as S
 import GHC.Generics (Generic)
 import GHC.Word (Word32, Word8)
 
@@ -449,7 +449,7 @@ completeSig :: Input -> ScriptOutput -> Input
 completeSig input (PayPK k) =
     input
         { finalScriptSig =
-            eitherToMaybe . runGetS deserialize
+            eitherToMaybe . U.decode . BSL.fromStrict
                 =<< HashMap.lookup k (partialSigs input)
         }
 completeSig input (PayPKHash h)
@@ -460,7 +460,7 @@ completeSig input (PayPKHash h)
                 Just $
                     Script
                         [ opPushData sig
-                        , opPushData (runPutS (serialize k))
+                        , opPushData $ U.encodeS k
                         ]
             }
 completeSig input (PayMulSig pubKeys m)
@@ -487,7 +487,7 @@ completeSig input (PayScriptHash h)
 completeSig input (PayWitnessPKHash h)
     | [(k, sig)] <- HashMap.toList (partialSigs input)
     , PubKeyAddress h == pubKeyAddr k =
-        input{finalScriptWitness = Just [sig, runPutS $ serialize k]}
+        input{finalScriptWitness = Just [sig, U.encodeS k]}
 completeSig input (PayWitnessScriptHash h)
     | Just witScript <- inputWitnessScript input
     , PayWitnessScriptHash h == toP2WSH witScript
@@ -497,7 +497,7 @@ completeSig input _ = input
 
 
 serializedRedeemScript :: Script -> Script
-serializedRedeemScript = Script . pure . opPushData . runPutS . serialize
+serializedRedeemScript = Script . pure . opPushData . U.encodeS
 
 
 completeWitnessSig :: Input -> ScriptOutput -> Input
@@ -539,7 +539,7 @@ finalTransaction psbt =
             , txWitness = if hasWitness then reverse witData else []
             }
     finalizeInput (ins, witData) (txInput, psbtInput) =
-        ( txInput{scriptInput = maybe mempty (runPutS . serialize) $ finalScriptSig psbtInput} : ins
+        ( txInput{scriptInput = maybe mempty U.encodeS $ finalScriptSig psbtInput} : ins
         , fromMaybe [] (finalScriptWitness psbtInput) : witData
         )
 
@@ -575,33 +575,33 @@ emptyOutput :: Output
 emptyOutput = Output Nothing Nothing HashMap.empty (UnknownMap HashMap.empty)
 
 
-instance Serialize PartiallySignedTransaction where
+instance Binary PartiallySignedTransaction where
     get = do
-        magic <- S.getBytes 4
+        magic <- getByteString 4
         guard $ magic == "psbt"
-        headerSep <- S.getWord8
+        headerSep <- getWord8
         guard $ headerSep == 0xff
 
-        keySize <- S.getWord8
+        keySize <- getWord8
         guard $ keySize == 1
-        globalUnsignedTxType <- S.getWord8
+        globalUnsignedTxType <- getWord8
         guard $ globalUnsignedTxType == 0x00
-        unsignedTransaction <- getSizedBytes deserialize
-        guard $ all (B.null . scriptInput) (txIn unsignedTransaction)
+        unsignedTransaction <- getSizedBytes get
+        guard $ all (BS.null . scriptInput) (txIn unsignedTransaction)
         guard $ null (txWitness unsignedTransaction)
 
-        globalUnknown <- S.get
-        globalEnd <- S.getWord8
+        globalUnknown <- get
+        globalEnd <- getWord8
         guard $ globalEnd == 0x00
 
         inputs <-
             replicateM
                 (length (txIn unsignedTransaction))
-                S.get
+                get
         outputs <-
             replicateM
                 (length (txOut unsignedTransaction))
-                S.get
+                get
 
         return
             PartiallySignedTransaction
@@ -619,41 +619,41 @@ instance Serialize PartiallySignedTransaction where
             , inputs
             , outputs
             } = do
-            S.putByteString "psbt"
-            S.putWord8 0xff -- Header separator
-            S.putWord8 0x01 -- Key size
-            S.putWord8 0x00 -- Unsigned Transaction type
-            putSizedBytes $ serialize unsignedTransaction
-            S.put globalUnknown
-            S.putWord8 0x00 -- Global end
-            mapM_ S.put inputs
-            mapM_ S.put outputs
+            putByteString "psbt"
+            putWord8 0xff -- Header separator
+            putWord8 0x01 -- Key size
+            putWord8 0x00 -- Unsigned Transaction type
+            putSizedBytes $ put unsignedTransaction
+            put globalUnknown
+            putWord8 0x00 -- Global end
+            mapM_ put inputs
+            mapM_ put outputs
 
 
-instance Serialize Key where
+instance Binary Key where
     get = do
-        VarInt keySize <- deserialize
+        VarInt keySize <- get
         guard $ keySize > 0
-        t <- S.getWord8
-        k <- S.getBytes (fromIntegral keySize - 1)
+        t <- getWord8
+        k <- getByteString (fromIntegral keySize - 1)
         return (Key t k)
 
 
     put (Key t k) = do
-        putVarInt $ 1 + B.length k
-        S.putWord8 t
-        S.putByteString k
+        putVarInt $ 1 + BS.length k
+        putWord8 t
+        putByteString k
 
 
-instance Serialize UnknownMap where
+instance Binary UnknownMap where
     get = go HashMap.empty
       where
         getItem m = do
-            k <- S.get
-            VarString v <- deserialize
+            k <- get
+            VarString v <- get
             go $ HashMap.insert k v m
         go m = do
-            isEnd <- S.lookAhead S.getWord8
+            isEnd <- lookAhead getWord8
             if isEnd == 0x00
                 then return (UnknownMap m)
                 else getItem m
@@ -662,11 +662,11 @@ instance Serialize UnknownMap where
     put (UnknownMap m) =
         void $
             HashMap.traverseWithKey
-                (\k v -> S.put k >> serialize (VarString v))
+                (\k v -> put k >> put (VarString v))
                 m
 
 
-instance Serialize Input where
+instance Binary Input where
     get =
         getMap getInputItem setInputUnknown emptyInput
       where
@@ -691,43 +691,43 @@ instance Serialize Input where
             , inputUnknown
             } = do
             whenJust
-                (putKeyValue InNonWitnessUtxo . serialize)
+                (putKeyValue InNonWitnessUtxo . put)
                 nonWitnessUtxo
             whenJust
-                (putKeyValue InWitnessUtxo . serialize)
+                (putKeyValue InWitnessUtxo . put)
                 witnessUtxo
             putPartialSig partialSigs
             whenJust
                 putSigHash
                 sigHashType
             whenJust
-                (putKeyValue InRedeemScript . serialize)
+                (putKeyValue InRedeemScript . put)
                 inputRedeemScript
             whenJust
-                (putKeyValue InWitnessScript . serialize)
+                (putKeyValue InWitnessScript . put)
                 inputWitnessScript
             putHDPath InBIP32Derivation inputHDKeypaths
             whenJust
-                (putKeyValue InFinalScriptSig . serialize)
+                (putKeyValue InFinalScriptSig . put)
                 finalScriptSig
             whenJust
                 (putKeyValue InFinalScriptWitness . putFinalScriptWitness)
                 finalScriptWitness
-            S.put inputUnknown
-            S.putWord8 0x00
+            put inputUnknown
+            putWord8 0x00
           where
             putPartialSig =
-                putPubKeyMap serialize InPartialSig . fmap VarString
+                putPubKeyMap put InPartialSig . fmap VarString
             putSigHash sigHash = do
                 putKey InSigHashType
-                S.putWord8 0x04
-                S.putWord32le (fromIntegral sigHash)
+                putWord8 0x04
+                putWord32le (fromIntegral sigHash)
             putFinalScriptWitness witnessStack = do
-                S.put $ (VarInt . fromIntegral . length) witnessStack
-                mapM_ (serialize . VarString) witnessStack
+                put $ (VarInt . fromIntegral . length) witnessStack
+                mapM_ (put . VarString) witnessStack
 
 
-instance Serialize Output where
+instance Binary Output where
     get = getMap getOutputItem setOutputUnknown emptyOutput
       where
         setOutputUnknown f output =
@@ -745,30 +745,30 @@ instance Serialize Output where
             , outputUnknown
             } = do
             whenJust
-                (putKeyValue OutRedeemScript . serialize)
+                (putKeyValue OutRedeemScript . put)
                 outputRedeemScript
             whenJust
-                (putKeyValue OutWitnessScript . serialize)
+                (putKeyValue OutWitnessScript . put)
                 outputWitnessScript
             putHDPath
                 OutBIP32Derivation
                 outputHDKeypaths
-            S.put outputUnknown
-            S.putWord8 0x00
+            put outputUnknown
+            putWord8 0x00
 
 
 putSizedBytes :: Put -> Put
 putSizedBytes f = do
-    putVarInt (B.length bs)
-    S.putByteString bs
+    putVarInt (BSL.length bs)
+    putLazyByteString bs
   where
-    bs = S.runPut f
+    bs = runPut f
 
 
 getSizedBytes :: Get a -> Get a
-getSizedBytes =
-    S.getNested
-        (fromIntegral . getVarInt <$> deserialize)
+getSizedBytes getItem = do
+    n <- fromIntegral . getVarInt <$> get
+    isolate n getItem
 
 
 putKeyValue :: Enum t => t -> Put -> Put
@@ -780,7 +780,7 @@ putKeyValue t v = do
 putKey :: Enum t => t -> Put
 putKey t = do
     putVarInt (1 :: Word8)
-    S.putWord8 (enumWord8 t)
+    putWord8 (enumWord8 t)
 
 
 getMap ::
@@ -794,14 +794,14 @@ getMap getMapItem setUnknown = go
     getItem keySize m (Right t) =
         getMapItem (fromIntegral keySize - 1) m t >>= go
     getItem keySize m (Left t) = do
-        k <- S.getBytes (fromIntegral keySize - 1)
-        VarString v <- deserialize
+        k <- getByteString (fromIntegral keySize - 1)
+        VarString v <- get
         go $ setUnknown (HashMap.insert (Key t k) v) m
     go m = do
-        keySize <- getVarInt <$> deserialize
+        keySize <- getVarInt <$> get
         if keySize == 0
             then return m
-            else getItem keySize m . word8Enum =<< S.getWord8
+            else getItem keySize m . word8Enum =<< getWord8
 
 
 data InputType
@@ -832,10 +832,10 @@ instance NFData OutputType
 
 getInputItem :: Int -> Input -> InputType -> Get Input
 getInputItem 0 input@Input{nonWitnessUtxo = Nothing} InNonWitnessUtxo = do
-    utxo <- getSizedBytes deserialize
+    utxo <- getSizedBytes get
     return input{nonWitnessUtxo = Just utxo}
 getInputItem 0 input@Input{witnessUtxo = Nothing} InWitnessUtxo = do
-    utxo <- getSizedBytes deserialize
+    utxo <- getSizedBytes get
     return input{witnessUtxo = Just utxo}
 getInputItem keySize input InPartialSig = do
     (k, v) <- getPartialSig
@@ -846,18 +846,18 @@ getInputItem keySize input InPartialSig = do
   where
     getPartialSig =
         (,)
-            <$> S.isolate keySize deserialize
-            <*> (getVarString <$> deserialize)
+            <$> isolate keySize get
+            <*> (getVarString <$> get)
 getInputItem 0 input@Input{sigHashType = Nothing} InSigHashType = do
-    VarInt size <- deserialize
+    VarInt size <- get
     guard $ size == 0x04
-    sigHash <- fromIntegral <$> S.getWord32le
+    sigHash <- fromIntegral <$> getWord32le
     return $ input{sigHashType = Just sigHash}
 getInputItem 0 input@Input{inputRedeemScript = Nothing} InRedeemScript = do
-    script <- getSizedBytes deserialize
+    script <- getSizedBytes get
     return $ input{inputRedeemScript = Just script}
 getInputItem 0 input@Input{inputWitnessScript = Nothing} InWitnessScript = do
-    script <- getSizedBytes deserialize
+    script <- getSizedBytes get
     return $ input{inputWitnessScript = Just script}
 getInputItem keySize input InBIP32Derivation = do
     (k, v) <- getHDPath keySize
@@ -866,15 +866,15 @@ getInputItem keySize input InBIP32Derivation = do
             { inputHDKeypaths = HashMap.insert k v (inputHDKeypaths input)
             }
 getInputItem 0 input@Input{finalScriptSig = Nothing} InFinalScriptSig = do
-    script <- getSizedBytes deserialize
+    script <- getSizedBytes get
     return $ input{finalScriptSig = Just script}
 getInputItem 0 input@Input{finalScriptWitness = Nothing} InFinalScriptWitness = do
     scripts <- map getVarString <$> getVarIntList
     return $ input{finalScriptWitness = Just scripts}
   where
     getVarIntList = getSizedBytes $ do
-        VarInt n <- deserialize -- Item count
-        replicateM (fromIntegral n) deserialize
+        VarInt n <- get -- Item count
+        replicateM (fromIntegral n) get
 getInputItem keySize input inputType =
     fail $
         "Incorrect key size for input item or item already existed: "
@@ -883,10 +883,10 @@ getInputItem keySize input inputType =
 
 getOutputItem :: Int -> Output -> OutputType -> Get Output
 getOutputItem 0 output@Output{outputRedeemScript = Nothing} OutRedeemScript = do
-    script <- getSizedBytes deserialize
+    script <- getSizedBytes get
     return $ output{outputRedeemScript = Just script}
 getOutputItem 0 output@Output{outputWitnessScript = Nothing} OutWitnessScript = do
-    script <- getSizedBytes deserialize
+    script <- getSizedBytes get
     return $ output{outputWitnessScript = Just script}
 getOutputItem keySize output OutBIP32Derivation = do
     (k, v) <- getHDPath keySize
@@ -900,12 +900,12 @@ getOutputItem keySize output outputType =
 getHDPath :: Int -> Get (PubKeyI, (Fingerprint, [KeyIndex]))
 getHDPath keySize =
     (,)
-        <$> S.isolate keySize deserialize
-        <*> (unPSBTHDPath <$> S.get)
+        <$> isolate keySize get
+        <*> (unPSBTHDPath <$> get)
 
 
 putHDPath :: Enum t => t -> HashMap PubKeyI (Fingerprint, [KeyIndex]) -> Put
-putHDPath t = putPubKeyMap S.put t . fmap PSBTHDPath
+putHDPath t = putPubKeyMap put t . fmap PSBTHDPath
 
 
 newtype PSBTHDPath = PSBTHDPath {unPSBTHDPath :: (Fingerprint, [KeyIndex])}
@@ -915,24 +915,24 @@ newtype PSBTHDPath = PSBTHDPath {unPSBTHDPath :: (Fingerprint, [KeyIndex])}
 instance NFData PSBTHDPath
 
 
-instance Serialize PSBTHDPath where
+instance Binary PSBTHDPath where
     get = do
-        VarInt valueSize <- deserialize
+        VarInt valueSize <- get
         guard $ valueSize `mod` 4 == 0
         let numIndices = (fromIntegral valueSize - 4) `div` 4
         PSBTHDPath
-            <$> S.isolate
+            <$> isolate
                 (fromIntegral valueSize)
-                ((,) <$> S.get <*> getKeyIndexList numIndices)
+                ((,) <$> get <*> getKeyIndexList numIndices)
       where
-        getKeyIndexList n = replicateM n S.getWord32le
+        getKeyIndexList n = replicateM n getWord32le
 
 
     put (PSBTHDPath (fp, kis)) = do
-        putVarInt (B.length bs)
-        S.putByteString bs
+        putVarInt (BSL.length bs)
+        putLazyByteString bs
       where
-        bs = S.runPut $ S.put fp >> mapM_ S.putWord32le kis
+        bs = runPut $ put fp >> mapM_ putWord32le kis
 
 
 putPubKeyMap :: Enum t => (a -> Put) -> t -> HashMap PubKeyI a -> Put
@@ -940,7 +940,7 @@ putPubKeyMap f t =
     void . HashMap.traverseWithKey putItem
   where
     putItem k v = do
-        S.put $ Key (enumWord8 t) (runPutS (serialize k))
+        put $ Key (enumWord8 t) $ U.encodeS k
         f v
 
 

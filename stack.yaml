@@ -6,3 +6,4 @@ nix:
     - pkg-config
 extra-deps:
   - fourmolu-0.8.2.0
+  - cryptonite-0.30

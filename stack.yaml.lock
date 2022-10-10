@@ -11,6 +11,13 @@ packages:
       size: 143718
   original:
     hackage: fourmolu-0.8.2.0
+- completed:
+    hackage: cryptonite-0.30@sha256:12c85dea7be63e5ad90bcb487eb3846bf3c413347f94336fa1dede7b28f9936a,18301
+    pantry-tree:
+      sha256: df1cbe4cc40d569cc75ffed40bc5deac43cb085653980b42b9b6a5d4b745a30a
+      size: 23323
+  original:
+    hackage: cryptonite-0.30
 snapshots:
 - completed:
     sha256: 1ecad1f0bd2c27de88dbff6572446cfdf647c615d58a7e2e2085c6b7dfc04176

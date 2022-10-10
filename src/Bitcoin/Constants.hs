@@ -17,24 +17,13 @@ module Bitcoin.Constants (
     netByName,
 ) where
 
-import Bitcoin.Block
-import Bitcoin.Data
-import Bitcoin.Network.Common
-import Bitcoin.Transaction
-import Control.DeepSeq
-import Data.Binary (Binary (..))
-import Data.ByteString (ByteString)
-import Data.Bytes.Get
-import Data.Bytes.Put
-import Data.Bytes.Serial
-import Data.List
-import Data.Maybe
-import Data.Serialize (Serialize (..))
-import Data.String
-import Data.Text (Text)
-import Data.Word (Word32, Word64, Word8)
-import GHC.Generics (Generic)
-import Text.Read
+import Bitcoin.Block.Common (BlockHeader (BlockHeader))
+import Bitcoin.Block.Merkle (buildMerkleRoot)
+import Bitcoin.Data (Network (..))
+import Bitcoin.Transaction.Common (txHash)
+import Bitcoin.Transaction.Genesis (genesisTx)
+import Data.List (find)
+import Data.String (IsString)
 
 
 -- | Version of Bitcoin package.

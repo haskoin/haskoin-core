@@ -8,17 +8,17 @@ module Bitcoin.Keys.Extended.Internal (
 ) where
 
 import Bitcoin.Util (decodeHex, encodeHex)
+import qualified Bitcoin.Util as U
 import Control.DeepSeq (NFData)
 import Control.Monad ((>=>))
 import Data.Binary (Binary (..))
-import Data.Bytes.Get (getWord32be)
-import Data.Bytes.Put (putWord32be)
-import Data.Bytes.Serial (Serial (..))
+import qualified Data.Binary as Bin
+import qualified Data.Binary.Get as Get
+import qualified Data.Binary.Put as Put
+import qualified Data.ByteString.Lazy as BSL
 import Data.Either (fromRight)
 import Data.Hashable (Hashable)
 import Data.Maybe (fromMaybe)
-import Data.Serialize (Serialize (..))
-import qualified Data.Serialize as S
 import Data.String (IsString (..))
 import Data.Text (Text)
 import qualified Data.Text as Text
@@ -34,28 +34,29 @@ newtype Fingerprint = Fingerprint {unFingerprint :: Word32}
 
 
 fingerprintToText :: Fingerprint -> Text
-fingerprintToText = encodeHex . S.encode
+fingerprintToText = encodeHex . U.encodeS
 
 
 textToFingerprint :: Text -> Either String Fingerprint
-textToFingerprint = maybe (Left "Fingerprint: invalid hex") Right . decodeHex >=> S.decode
+textToFingerprint = maybe (Left "Fingerprint: invalid hex") Right . decodeHex >=> U.decode . BSL.fromStrict
 
 
 instance Show Fingerprint where
-    show = show . Text.unpack . encodeHex . S.encode
+    show = show . Text.unpack . encodeHex . U.encodeS
 
 
 instance Read Fingerprint where
     readPrec =
         readPrec
             >>= maybe (fail "Fingerprint: invalid hex") pure . decodeHex
-            >>= either (fail . ("Fingerprint: " <>)) pure . S.decode
+            >>= either (fail . ("Fingerprint: " <>)) pure . U.decode . BSL.fromStrict
 
 
 instance IsString Fingerprint where
     fromString =
         fromRight decodeError
-            . S.decode
+            . U.decode
+            . BSL.fromStrict
             . fromMaybe hexError
             . decodeHex
             . Text.pack
@@ -64,16 +65,6 @@ instance IsString Fingerprint where
         hexError = error "Fingerprint literal: Invalid hex"
 
 
-instance Serial Fingerprint where
-    serialize = putWord32be . unFingerprint
-    deserialize = Fingerprint <$> getWord32be
-
-
 instance Binary Fingerprint where
-    put = serialize
-    get = deserialize
-
-
-instance Serialize Fingerprint where
-    put = serialize
-    get = deserialize
+    put = Put.putWord32be . unFingerprint
+    get = Fingerprint <$> Get.getWord32be

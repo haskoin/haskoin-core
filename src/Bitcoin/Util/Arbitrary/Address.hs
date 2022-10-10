@@ -10,7 +10,7 @@ import Bitcoin.Constants
 import Bitcoin.Data
 import Bitcoin.Util.Arbitrary.Crypto
 import Bitcoin.Util.Arbitrary.Util
-import qualified Data.ByteString as B
+import qualified Data.ByteString as BS
 import Test.QuickCheck
 
 
@@ -63,5 +63,5 @@ arbitraryWitnessAddress = do
     ver <- choose (1, 16)
     len <- choose (2, 40)
     ws <- vectorOf len arbitrary
-    let bs = B.pack ws
+    let bs = BS.pack ws
     return $ WitnessAddress ver bs

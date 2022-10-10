@@ -60,36 +60,51 @@ module Bitcoin.Block.Headers (
     lastSmallerOrEqual,
 ) where
 
-import Bitcoin.Block.Common
-import Bitcoin.Crypto
-import Bitcoin.Data
-import Bitcoin.Transaction.Genesis
-import Bitcoin.Util
+import Bitcoin.Block.Common (
+    Block (Block),
+    BlockHash,
+    BlockHeader (..),
+    BlockHeight,
+    BlockLocator,
+    Timestamp,
+    decodeCompact,
+    encodeCompact,
+    headerHash,
+ )
+import Bitcoin.Crypto (sha256, sha256L)
+import Bitcoin.Data (
+    Network (..),
+ )
+import Bitcoin.Transaction.Genesis (genesisTx)
+import Bitcoin.Util (
+    bsToInteger,
+    eitherToMaybe,
+    getInteger,
+    putInteger,
+ )
+import qualified Bitcoin.Util as U
 import Control.Applicative ((<|>))
-import Control.DeepSeq
+import Control.DeepSeq (NFData)
 import Control.Monad (guard, mzero, unless, when)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Except (ExceptT (..), runExceptT, throwE)
-import Control.Monad.Trans.Maybe
-import Control.Monad.Trans.State.Strict as State (StateT, get, gets, modify)
+import Control.Monad.Trans.Maybe (MaybeT (..), maybeToExceptT)
+import Control.Monad.Trans.State.Strict (StateT)
+import qualified Control.Monad.Trans.State.Strict as State
 import Data.Binary (Binary (..))
+import qualified Data.Binary as Bin
+import Data.Binary.Get (getWord32le)
+import Data.Binary.Put (putWord32le)
 import Data.Bits (shiftL, shiftR, (.&.))
-import qualified Data.ByteString as B
-import Data.ByteString.Short (
-    ShortByteString,
-    fromShort,
-    toShort,
- )
-import Data.Bytes.Get
-import Data.Bytes.Put
-import Data.Bytes.Serial
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BSL
+import Data.ByteString.Short (ShortByteString, fromShort, toShort)
 import Data.Function (on)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
-import Data.Hashable
+import Data.Hashable (Hashable)
 import Data.List (sort, sortBy)
 import Data.Maybe (fromMaybe, listToMaybe)
-import Data.Serialize (Serialize (..))
 import Data.Typeable (Typeable)
 import Data.Word (Word32, Word64)
 import GHC.Generics (Generic)
@@ -123,9 +138,9 @@ data BlockNode = BlockNode
     deriving (Show, Read, Generic, Hashable, NFData)
 
 
-instance Serial BlockNode where
-    deserialize = do
-        nodeHeader <- deserialize
+instance Binary BlockNode where
+    get = do
+        nodeHeader <- get
         nodeHeight <- getWord32le
         nodeWork <- getInteger
         if nodeHeight == 0
@@ -133,25 +148,15 @@ instance Serial BlockNode where
                 let nodeSkip = headerHash nodeHeader
                 return BlockNode{..}
             else do
-                nodeSkip <- deserialize
+                nodeSkip <- get
                 return BlockNode{..}
-    serialize bn = do
-        serialize $ nodeHeader bn
+    put bn = do
+        put $ nodeHeader bn
         putWord32le $ nodeHeight bn
         putInteger $ nodeWork bn
         case nodeHeight bn of
             0 -> return ()
-            _ -> serialize $ nodeSkip bn
-
-
-instance Serialize BlockNode where
-    put = serialize
-    get = deserialize
-
-
-instance Binary BlockNode where
-    put = serialize
-    get = deserialize
+            _ -> put $ nodeSkip bn
 
 
 instance Eq BlockNode where
@@ -194,10 +199,10 @@ class Monad m => BlockHeaders m where
 
 
 instance Monad m => BlockHeaders (StateT HeaderMemory m) where
-    addBlockHeader = modify . addBlockHeaderMemory
+    addBlockHeader = State.modify' . addBlockHeaderMemory
     getBlockHeader bh = getBlockHeaderMemory bh <$> State.get
-    getBestBlockHeader = gets memoryBestHeader
-    setBestBlockHeader bn = modify $ \s -> s{memoryBestHeader = bn}
+    getBestBlockHeader = State.gets memoryBestHeader
+    setBestBlockHeader bn = State.modify' $ \s -> s{memoryBestHeader = bn}
 
 
 -- | Initialize memory-based chain.
@@ -214,7 +219,7 @@ genesisMap :: Network -> BlockMap
 genesisMap net =
     HashMap.singleton
         (shortBlockHash (headerHash (getGenesisHeader net)))
-        (toShort (runPutS (serialize (genesisNode net))))
+        $ encodeToShort (genesisNode net)
 
 
 -- | Add block header to memory block map.
@@ -228,7 +233,7 @@ addBlockHeaderMemory bn s@HeaderMemory{..} =
 getBlockHeaderMemory :: BlockHash -> HeaderMemory -> Maybe BlockNode
 getBlockHeaderMemory bh HeaderMemory{..} = do
     bs <- shortBlockHash bh `HashMap.lookup` memoryHeaderMap
-    eitherToMaybe . runGetS deserialize $ fromShort bs
+    eitherToMaybe . U.decode . BSL.fromStrict $ fromShort bs
 
 
 -- | Calculate short block hash taking eight non-zero bytes from the 16-byte
@@ -236,7 +241,7 @@ getBlockHeaderMemory bh HeaderMemory{..} = do
 -- hash, making colissions between short block hashes difficult.
 shortBlockHash :: BlockHash -> ShortBlockHash
 shortBlockHash =
-    either error id . runGetS deserialize . B.take 8 . runPutS . serialize
+    either error id . U.decode . BSL.take 8 . Bin.encode
 
 
 -- | Add a block to memory-based block map.
@@ -244,7 +249,7 @@ addBlockToMap :: BlockNode -> BlockMap -> BlockMap
 addBlockToMap node =
     HashMap.insert
         (shortBlockHash $ headerHash $ nodeHeader node)
-        (toShort $ runPutS $ serialize node)
+        $ encodeToShort node
 
 
 -- | Get the ancestor of the provided 'BlockNode' at the specified
@@ -776,7 +781,7 @@ isValidPOW net h
 
 -- | Returns the proof of work of a block header hash as an 'Integer' number.
 blockPOW :: BlockHash -> Integer
-blockPOW = bsToInteger . B.reverse . runPutS . serialize
+blockPOW = bsToInteger . BSL.reverse . Bin.encode
 
 
 -- | Returns the work represented by this block. Work is defined as the number
@@ -862,7 +867,7 @@ appendBlocks net seed bh i =
             bh
                 { prevBlock = headerHash bh
                 , -- Just to make it different in every header
-                  merkleRoot = sha256 $ runPutS $ serialize seed
+                  merkleRoot = sha256L $ Bin.encode seed
                 }
 
 
@@ -898,3 +903,7 @@ computeSubsidy net height =
      in if halvings >= 64
             then 0
             else ini `shiftR` fromIntegral halvings
+
+
+encodeToShort :: Binary a => a -> ShortByteString
+encodeToShort = toShort . U.encodeS

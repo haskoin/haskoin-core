@@ -23,14 +23,24 @@ module Bitcoin.Transaction.Segwit (
     toWitnessStack,
 ) where
 
-import Bitcoin.Data
-import Bitcoin.Keys.Common
-import Bitcoin.Script
-import Bitcoin.Transaction.Common
+import Bitcoin.Data (Network)
+import Bitcoin.Keys.Common (PubKeyI)
+import Bitcoin.Script (
+    Script,
+    ScriptInput (..),
+    ScriptOutput (..),
+    SimpleInput (..),
+    TxSignature (TxSignatureEmpty),
+    decodeOutput,
+    decodeTxSig,
+    encodeOutput,
+    encodeTxSig,
+ )
+import Bitcoin.Transaction.Common (WitnessStack)
+import qualified Bitcoin.Util as U
+import qualified Data.Binary as Bin
 import Data.ByteString (ByteString)
-import Data.Bytes.Get
-import Data.Bytes.Put
-import Data.Bytes.Serial
+import qualified Data.ByteString.Lazy as BSL
 
 
 -- | Test if a 'ScriptOutput' is P2WPKH or P2WSH
@@ -52,8 +62,11 @@ data WitnessProgram
 -- | Encode a witness program
 toWitnessStack :: WitnessProgram -> WitnessStack
 toWitnessStack = \case
-    P2WPKH (WitnessProgramPKH sig key) -> [encodeTxSig sig, runPutS (serialize key)]
-    P2WSH (WitnessProgramSH stack scr) -> stack <> [runPutS (serialize scr)]
+    P2WPKH (WitnessProgramPKH sig key) ->
+        [ encodeTxSig sig
+        , U.encodeS key
+        ]
+    P2WSH (WitnessProgramSH stack scr) -> stack <> [U.encodeS scr]
     EmptyWitnessProgram -> mempty
 
 
@@ -79,10 +92,10 @@ viewWitnessProgram ::
 viewWitnessProgram net so witness = case so of
     PayWitnessPKHash _ | length witness == 2 -> do
         sig <- decodeTxSig net $ head witness
-        pubkey <- runGetS deserialize $ witness !! 1
+        pubkey <- U.decode . BSL.fromStrict $ witness !! 1
         return . P2WPKH $ WitnessProgramPKH sig pubkey
     PayWitnessScriptHash _ | not (null witness) -> do
-        redeemScript <- runGetS deserialize $ last witness
+        redeemScript <- U.decode . BSL.fromStrict $ last witness
         return . P2WSH $ WitnessProgramSH (init witness) redeemScript
     _
         | null witness -> return EmptyWitnessProgram
@@ -102,7 +115,7 @@ decodeWitnessInput net = \case
             (PayPK _, [sigBS]) ->
                 SpendPK <$> decodeTxSig net sigBS
             (PayPKHash _, [sigBS, keyBS]) ->
-                SpendPKHash <$> decodeTxSig net sigBS <*> runGetS deserialize keyBS
+                SpendPKHash <$> decodeTxSig net sigBS <*> U.decode (BSL.fromStrict keyBS)
             (PayMulSig _ _, "" : sigsBS) ->
                 SpendMulSig <$> traverse (decodeTxSig net) sigsBS
             _ -> Left "decodeWitnessInput: Non-standard script output"
@@ -126,7 +139,7 @@ calcWitnessProgram so si = case (so, si) of
 simpleInputStack :: SimpleInput -> [ByteString]
 simpleInputStack = \case
     SpendPK sig -> [f sig]
-    SpendPKHash sig k -> [f sig, runPutS (serialize k)]
+    SpendPKHash sig k -> [f sig, U.encodeS k]
     SpendMulSig sigs -> "" : fmap f sigs
   where
     f TxSignatureEmpty = ""

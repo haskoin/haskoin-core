@@ -29,15 +29,38 @@ import Bitcoin.Keys.Common (
     derivePubKeyI,
     wrapSecKey,
  )
-import Bitcoin.Script
-import Bitcoin.Transaction.Common
-import Bitcoin.Transaction.Segwit
+import Bitcoin.Script (
+    RedeemScript,
+    ScriptInput (..),
+    ScriptOutput (..),
+    SigHash,
+    SimpleInput (..),
+    TxSignature (..),
+    decodeInputBS,
+    decodeTxSig,
+    encodeInputBS,
+    encodeOutput,
+    encodeOutputBS,
+    opPushData,
+    txSigHash,
+    txSigHashSegwitV0,
+ )
+import Bitcoin.Transaction.Common (
+    OutPoint,
+    Tx (..),
+    TxIn (..),
+    WitnessData,
+ )
+import Bitcoin.Transaction.Segwit (
+    WitnessProgram (EmptyWitnessProgram),
+    calcWitnessProgram,
+    isSegwit,
+    toWitnessStack,
+ )
 import Bitcoin.Util (matchTemplate, updateIndex)
+import qualified Bitcoin.Util as U
 import Control.DeepSeq (NFData)
 import Control.Monad (foldM, when)
-import Data.Bytes.Get
-import Data.Bytes.Put
-import Data.Bytes.Serial
 import Data.Either (rights)
 import Data.Hashable (Hashable)
 import Data.List (find, nub)
@@ -118,7 +141,7 @@ signInput net tx i (sigIn@(SigInput so val _ _ rdmM), nest) key = do
             }
   where
     f si x = x{scriptInput = encodeInputBS si}
-    g so' x = x{scriptInput = runPutS . serialize . opPushData $ encodeOutputBS so'}
+    g so' x = x{scriptInput = U.encodeS . opPushData $ encodeOutputBS so'}
     txis = txIn tx
     nextTxIn so' si
         | isSegwit so' && nest = updateIndex i txis (g so')

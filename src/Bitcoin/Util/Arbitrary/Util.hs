@@ -20,24 +20,26 @@ module Bitcoin.Util.Arbitrary.Util (
     fromMap,
 ) where
 
-import Bitcoin.Constants
-import Bitcoin.Data
+import Bitcoin.Constants (Network, allNets)
 import Control.Monad (forM_, (<=<))
 import Data.ByteString (ByteString, pack)
 import Data.ByteString.Lazy (fromStrict, toStrict)
 import qualified Data.ByteString.Short as BSS
-import Data.Bytes.Get
-import Data.Bytes.Put
-import Data.Bytes.Serial
 import qualified Data.Map.Strict as Map
-import Data.Proxy
 import Data.Time.Clock (UTCTime (..))
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import qualified Data.Typeable as T
 import Data.Word (Word32)
 import Test.Hspec (Spec, describe, shouldBe, shouldSatisfy)
 import Test.Hspec.QuickCheck (prop)
-import Test.QuickCheck
+import Test.QuickCheck (
+    Arbitrary (arbitrary),
+    Gen,
+    elements,
+    frequency,
+    listOf1,
+    vectorOf,
+ )
 
 
 -- | Arbitrary strict 'ByteString'.

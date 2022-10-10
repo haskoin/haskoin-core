@@ -2,30 +2,75 @@
 
 module Bitcoin.TransactionSpec (spec) where
 
-import Bitcoin.Address
-import Bitcoin.Constants
-import Bitcoin.Data
-import Bitcoin.Keys
+import Bitcoin.Address (
+    Address (getAddrHash160),
+    addrToText,
+    isPubKeyAddress,
+    isScriptAddress,
+ )
+import Bitcoin.Constants (Network, btc)
+import Bitcoin.Data ()
+import Bitcoin.Keys (SecKeyI (secKeyData))
 import Bitcoin.Orphans ()
-import Bitcoin.Script
-import Bitcoin.Transaction
-import Bitcoin.Util
-import Bitcoin.Util.Arbitrary
-import Bitcoin.UtilSpec hiding (spec)
-import qualified Data.ByteString as B
-import Data.Bytes.Get
-import Data.Bytes.Put
-import Data.Bytes.Serial
-import Data.Either
-import Data.Maybe
+import Bitcoin.Script (
+    ScriptInput (RegularInput, ScriptHashInput),
+    ScriptOutput (PayPKHash, PayScriptHash),
+    SimpleInput (SpendMulSig),
+    decodeInputBS,
+    decodeOutputBS,
+    encodeOutput,
+    toP2SH,
+ )
+import Bitcoin.Transaction (
+    OutPoint (OutPoint),
+    SigInput (SigInput),
+    Tx (txIn, txOut),
+    TxIn (scriptInput),
+    TxOut (scriptOutput),
+    buildAddrTx,
+    hexToTxHash,
+    isSegwit,
+    mergeTxs,
+    signNestedWitnessTx,
+    signTx,
+    txHash,
+    txHashToHex,
+    verifyStdTx,
+ )
+import Bitcoin.Util (decodeHex, eitherToMaybe, encodeHex)
+import qualified Bitcoin.Util as U
+import Bitcoin.Util.Arbitrary (
+    TestCoin (TestCoin),
+    arbitraryAddress,
+    arbitraryLegacyTx,
+    arbitraryNetwork,
+    arbitraryOutPoint,
+    arbitraryPartialTxs,
+    arbitrarySatoshi,
+    arbitrarySigningData,
+    arbitraryTx,
+    arbitraryTxHash,
+    arbitraryTxIn,
+    arbitraryTxOut,
+    arbitraryWitnessTx,
+ )
+import Bitcoin.UtilSpec (
+    JsonBox (..),
+    ReadBox (..),
+    SerialBox (..),
+    testIdentity,
+ )
+import qualified Data.ByteString.Lazy as BSL
+import Data.Either (fromRight, isRight)
+import Data.Maybe (fromJust)
 import Data.String (fromString)
-import Data.String.Conversions
+import Data.String.Conversions (cs)
 import Data.Text (Text)
 import Data.Word (Word32, Word64)
-import Test.HUnit
-import Test.Hspec
-import Test.Hspec.QuickCheck
-import Test.QuickCheck
+import Test.HUnit (Assertion, assertEqual)
+import Test.Hspec (Spec, describe, it)
+import Test.Hspec.QuickCheck (prop)
+import Test.QuickCheck (Testable (property), forAll)
 
 
 serialVals :: [SerialBox]
@@ -96,7 +141,7 @@ testTxidVector :: (Text, Text) -> Assertion
 testTxidVector (tid, tx) =
     assertEqual "txid" (Just tid) (txHashToHex . txHash <$> txM)
   where
-    txM = eitherToMaybe . runGetS deserialize =<< decodeHex tx
+    txM = eitherToMaybe . U.decode . BSL.fromStrict =<< decodeHex tx
 
 
 txidVectors :: [(Text, Text)]
@@ -167,7 +212,7 @@ testPKHashVector (is, os, res) =
     assertEqual
         "Build PKHash Tx"
         (Right res)
-        (encodeHex . runPutS . serialize <$> txE)
+        (encodeHex . U.encodeS <$> txE)
   where
     txE = buildAddrTx btc (map f is) os
     f (tid, ix) = OutPoint (fromJust $ hexToTxHash tid) ix

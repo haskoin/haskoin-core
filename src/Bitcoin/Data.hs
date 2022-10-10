@@ -5,20 +5,12 @@ module Bitcoin.Data (
     Network (..),
 ) where
 
-import Bitcoin.Block.Common
-import Control.DeepSeq
-import Data.Binary (Binary (..))
+import Bitcoin.Block.Common (BlockHash, BlockHeader, BlockHeight)
+import Control.DeepSeq (NFData)
 import Data.ByteString (ByteString)
-import Data.Bytes.Get
-import Data.Bytes.Put
-import Data.Bytes.Serial
-import Data.List
-import Data.Serialize (Serialize (..))
-import Data.String
 import Data.Text (Text)
 import Data.Word (Word32, Word64, Word8)
 import GHC.Generics (Generic)
-import Text.Read
 
 
 -- | Network definition.

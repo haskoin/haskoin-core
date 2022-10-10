@@ -27,13 +27,38 @@ module Bitcoin.Transaction.Builder (
     verifyStdInput,
 ) where
 
-import Bitcoin.Address
-import Bitcoin.Crypto.Hash (Hash256, addressHash)
-import Bitcoin.Crypto.Signature
-import Bitcoin.Data
-import Bitcoin.Keys.Common
-import Bitcoin.Network.Common
-import Bitcoin.Script
+import Bitcoin.Address (
+    addressToOutput,
+    p2pkhAddr,
+    p2shAddr,
+    p2wpkhAddr,
+    p2wshAddr,
+    payToScriptAddress,
+    payToWitnessScriptAddress,
+    pubKeyAddr,
+    pubKeyWitnessAddr,
+    textToAddr,
+ )
+import Bitcoin.Crypto.Hash (Hash256, addressHash, addressHashL)
+import Bitcoin.Crypto.Signature (verifyHashSig)
+import Bitcoin.Data (Network)
+import Bitcoin.Keys.Common (PubKeyI (pubKeyPoint), SecKeyI)
+import Bitcoin.Script (
+    RedeemScript,
+    Script (Script),
+    ScriptInput (..),
+    ScriptOp (OP_PUSHDATA),
+    ScriptOutput (..),
+    SigHash,
+    SimpleInput (..),
+    TxSignature (..),
+    decodeInputBS,
+    decodeOutputBS,
+    encodeInputBS,
+    encodeOutput,
+    encodeOutputBS,
+    txSigHash,
+ )
 import Bitcoin.Transaction.Builder.Sign (
     SigInput (..),
     buildInput,
@@ -41,21 +66,27 @@ import Bitcoin.Transaction.Builder.Sign (
     sigKeys,
  )
 import qualified Bitcoin.Transaction.Builder.Sign as S
-import Bitcoin.Transaction.Common
+import Bitcoin.Transaction.Common (
+    OutPoint,
+    Tx (..),
+    TxIn (TxIn, prevOutput, scriptInput),
+    TxOut (TxOut),
+    WitnessStack,
+ )
 import Bitcoin.Transaction.Segwit (
     decodeWitnessInput,
     isSegwit,
     viewWitnessProgram,
  )
-import Bitcoin.Util
+import Bitcoin.Util (matchTemplate, maybeToEither, updateIndex)
+import qualified Bitcoin.Util as U
 import Control.Applicative ((<|>))
 import Control.Arrow (first)
 import Control.Monad (foldM, unless)
-import Crypto.Secp256k1
-import qualified Data.ByteString as B
-import Data.Bytes.Get
-import Data.Bytes.Put
-import Data.Bytes.Serial
+import Crypto.Secp256k1 (PubKey, SecKey)
+import qualified Data.Binary as Bin
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BSL
 import Data.Either (fromRight)
 import Data.List (nub)
 import Data.Maybe (catMaybes, fromJust, isJust)
@@ -85,7 +116,7 @@ buildTx :: [OutPoint] -> [(ScriptOutput, Word64)] -> Tx
 buildTx ops rcpts =
     Tx 1 (toIn <$> ops) (toOut <$> rcpts) [] 0
   where
-    toIn op = TxIn op B.empty maxBound
+    toIn op = TxIn op BS.empty maxBound
     toOut (o, v) = TxOut v $ encodeOutputBS o
 
 
@@ -171,7 +202,7 @@ mergeTxs net txs os
             filter (isJust . fst) zipOp
     f (_, _, o) txin = o == prevOutput txin
     emptyTxs = map (\tx -> foldl clearInput tx outs) txs
-    ins is i = updateIndex i is (\ti -> ti{scriptInput = B.empty})
+    ins is i = updateIndex i is (\ti -> ti{scriptInput = BS.empty})
     clearInput tx (_, i) =
         Tx (txVersion tx) (ins (txIn tx) i) (txOut tx) [] (txLockTime tx)
 
@@ -187,7 +218,7 @@ mergeTxInput ::
 mergeTxInput net txs tx ((so, val), i) = do
     -- Ignore transactions with empty inputs
     let ins = map (scriptInput . (!! i) . txIn) txs
-    sigRes <- mapM extractSigs $ filter (not . B.null) ins
+    sigRes <- mapM extractSigs $ filter (not . BS.null) ins
     let rdm = snd $ head sigRes
     unless (all ((== rdm) . snd) sigRes) $ Left "Redeem scripts do not match"
     si <- encodeInputBS <$> go (nub $ concatMap fst sigRes) so rdm
@@ -259,7 +290,7 @@ verifyStdInput net tx i so0 val
 
     nestedScriptOutput :: Either String ScriptOutput
     nestedScriptOutput =
-        runGetS deserialize inp
+        U.decode (BSL.fromStrict inp)
             >>= \case
                 Script [OP_PUSHDATA bs _] -> decodeOutputBS bs
                 _ -> Left "nestedScriptOutput: not a nested output"
@@ -290,7 +321,7 @@ verifyStdInput net tx i so0 val
                 && verifyHashSig (theTxSigHash so sh $ Just rdm') sig (pubKeyPoint pub)
         (PayWitnessScriptHash h, Just rdm'@(PayPKHash kh), SpendPKHash (TxSignature sig sh) pub) ->
             payToWitnessScriptAddress rdm' == p2wshAddr h
-                && addressHash (runPutS (serialize pub)) == kh
+                && addressHashL (Bin.encode pub) == kh
                 && verifyHashSig (theTxSigHash so sh $ Just rdm') sig (pubKeyPoint pub)
         (PayWitnessScriptHash h, Just rdm'@(PayMulSig pubs r), SpendMulSig sigs) ->
             payToWitnessScriptAddress rdm' == p2wshAddr h

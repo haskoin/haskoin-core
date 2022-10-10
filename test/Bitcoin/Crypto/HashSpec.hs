@@ -2,29 +2,49 @@
 
 module Bitcoin.Crypto.HashSpec (spec) where
 
-import Bitcoin.Block
-import Bitcoin.Crypto
-import Bitcoin.Util
-import Bitcoin.Util.Arbitrary
-import Bitcoin.UtilSpec hiding (spec)
-import Data.Bits
+import Bitcoin.Block (decodeCompact, encodeCompact)
+import Bitcoin.Crypto (
+    Hash160 (getHash160),
+    Hash256 (..),
+    Hash512 (getHash512),
+    hmac256,
+    hmac512,
+    join512,
+    ripemd160,
+    sha1,
+    sha256,
+    sha512,
+    split512,
+ )
+import Bitcoin.Util (decodeHex, encodeHex)
+import qualified Bitcoin.Util as U
+import Bitcoin.Util.Arbitrary (
+    arbitraryBS,
+    arbitraryBSS,
+    arbitraryHash160,
+    arbitraryHash256,
+    arbitraryHash512,
+ )
+import Bitcoin.UtilSpec (
+    ReadBox (..),
+    SerialBox (..),
+    testIdentity,
+ )
+import Data.Bits (Bits (shiftR))
 import Data.ByteString (ByteString)
-import Data.ByteString.Builder
+import Data.ByteString.Builder (Builder, toLazyByteString, word8)
 import qualified Data.ByteString.Char8 as C
-import qualified Data.ByteString.Lazy as BL
+import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString.Short as BSS
-import Data.Bytes.Get
-import Data.Bytes.Put
-import Data.Bytes.Serial
 import Data.Maybe (fromJust)
 import Data.String (fromString)
-import Data.String.Conversions
+import Data.String.Conversions (cs)
 import Data.Text (Text)
-import Data.Word
-import Test.HUnit
-import Test.Hspec
-import Test.Hspec.QuickCheck
-import Test.QuickCheck
+import Data.Word (Word32)
+import Test.HUnit (Assertion, assertEqual)
+import Test.Hspec (Spec, describe, it)
+import Test.Hspec.QuickCheck (prop)
+import Test.QuickCheck (forAll)
 
 
 serialVals :: [SerialBox]
@@ -57,13 +77,13 @@ spec =
             prop "decodeCompact . encodeCompact i == i" decEncCompact
             prop "from string Hash512" $
                 forAll arbitraryHash512 $ \h ->
-                    fromString (cs $ encodeHex $ runPutS $ serialize h) == h
+                    fromString (cs . encodeHex $ U.encodeS h) == h
             prop "from string Hash256" $
                 forAll arbitraryHash256 $ \h ->
-                    fromString (cs $ encodeHex $ runPutS $ serialize h) == h
+                    fromString (cs . encodeHex $ U.encodeS h) == h
             prop "from string Hash160" $
                 forAll arbitraryHash160 $ \h ->
-                    fromString (cs $ encodeHex $ runPutS $ serialize h) == h
+                    fromString (cs . encodeHex $ U.encodeS h) == h
         describe "Test Vectors" $ do
             it "Passes RIPEMD160 test vectors" $
                 mapM_ (testVector ripemd160 getHash160) ripemd160Vectors
@@ -121,7 +141,7 @@ testHMACVector f1 f2 (k, m, res) =
 
 longTestString :: ByteString
 longTestString =
-    BL.toStrict $! toLazyByteString $! go [0 .. 199999]
+    BSL.toStrict $! toLazyByteString $! go [0 .. 199999]
   where
     go :: [Word32] -> Builder
     go [] = mempty

@@ -2,35 +2,103 @@
 
 module Bitcoin.ScriptSpec (spec) where
 
-import Bitcoin.Address
-import Bitcoin.Constants
-import Bitcoin.Data
-import Bitcoin.Keys
+import Bitcoin.Address (addrToText, payToScriptAddress)
+import Bitcoin.Constants (Network (getNetworkName), btc)
+import Bitcoin.Keys (derivePubKeyI, secKey, wrapSecKey)
 import Bitcoin.Orphans ()
-import Bitcoin.Script
-import Bitcoin.Transaction
-import Bitcoin.Util
-import Bitcoin.Util.Arbitrary
-import Bitcoin.UtilSpec hiding (spec)
-import Control.Monad
-import Data.Aeson as A
+import Bitcoin.Script (
+    Script (Script),
+    ScriptInput (RegularInput),
+    ScriptOp (..),
+    ScriptOutput (getOutputMulSigKeys),
+    SigHash,
+    SimpleInput (..),
+    TxSignature (TxSignatureEmpty),
+    decodeInput,
+    decodeOutput,
+    decodeOutputBS,
+    decodeTxSig,
+    encodeInput,
+    encodeOutput,
+    encodeTxSig,
+    hasAnyoneCanPayFlag,
+    intToScriptOp,
+    isSigHashAll,
+    isSigHashNone,
+    isSigHashSingle,
+    isSigHashUnknown,
+    opPushData,
+    scriptOpToInt,
+    setAnyoneCanPayFlag,
+    sigHashAll,
+    sigHashNone,
+    sigHashSingle,
+    sortMulSig,
+    txSigHash,
+ )
+import Bitcoin.Transaction (
+    OutPoint (OutPoint),
+    Tx (..),
+    TxIn (..),
+    TxOut (..),
+    nullOutPoint,
+    txHash,
+    verifyStdInput,
+ )
+import Bitcoin.Util (decodeHex, eitherToMaybe, encodeHex)
+import qualified Bitcoin.Util as U
+import Bitcoin.Util.Arbitrary (
+    arbitraryIntScriptOp,
+    arbitraryMSOutput,
+    arbitraryNetwork,
+    arbitraryOutPoint,
+    arbitraryPushDataType,
+    arbitraryScript,
+    arbitraryScriptInput,
+    arbitraryScriptOp,
+    arbitraryScriptOutput,
+    arbitrarySigHash,
+    arbitrarySigHashFlag,
+    arbitrarySigInput,
+    arbitraryTx,
+    arbitraryTxSignature,
+ )
+import Bitcoin.UtilSpec (
+    JsonBox (..),
+    ReadBox (..),
+    SerialBox (..),
+    readTestFile,
+    testIdentity,
+ )
+import Control.Monad (forM_, unless, when, zipWithM_)
+import Data.Aeson as A (Value, decode, encode)
 import Data.ByteString (ByteString)
-import qualified Data.ByteString as B
-import Data.Bytes.Get
-import Data.Bytes.Put
-import Data.Bytes.Serial
-import Data.Either
-import Data.List
-import Data.Maybe
-import Data.String
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BSL
+import Data.Either (fromLeft, isLeft, isRight)
+import Data.List (isInfixOf, sort)
+import Data.Maybe (fromJust, fromMaybe, mapMaybe)
+import Data.String (IsString (fromString))
 import Data.String.Conversions (cs)
 import Data.Text (Text)
-import Data.Word
-import Test.HUnit as HUnit
-import Test.Hspec
-import Test.Hspec.QuickCheck
-import Test.QuickCheck
-import Text.Read
+import Data.Word (Word32, Word64)
+import Test.HUnit as HUnit (Assertion, assertBool, assertEqual)
+import Test.Hspec (
+    Spec,
+    describe,
+    it,
+    shouldBe,
+    shouldNotBe,
+    shouldSatisfy,
+ )
+import Test.Hspec.QuickCheck (prop)
+import Test.QuickCheck (
+    Property,
+    Testable (property),
+    forAll,
+    (==>),
+ )
+import Text.Read (readMaybe)
 
 
 serialVals :: [SerialBox]
@@ -99,7 +167,7 @@ standardSpec net = do
     prop "can sort multisig scripts" $
         forAll arbitraryMSOutput $ \out ->
             map
-                (runPutS . serialize)
+                U.encodeS
                 (getOutputMulSigKeys (sortMulSig out))
                 `shouldSatisfy` \xs -> xs == sort xs
     it "can decode inputs with empty signatures" $ do
@@ -112,8 +180,8 @@ standardSpec net = do
                     wrapSecKey True $
                         fromJust $
                             secKey $
-                                B.replicate 32 1
-        decodeInput net (Script [OP_0, opPushData $ runPutS $ serialize pk])
+                                BS.replicate 32 1
+        decodeInput net (Script [OP_0, opPushData $ U.encodeS pk])
             `shouldBe` Right (RegularInput (SpendPKHash TxSignatureEmpty pk))
         decodeInput net (Script [OP_0, OP_0])
             `shouldBe` Right (RegularInput (SpendMulSig [TxSignatureEmpty]))
@@ -183,7 +251,7 @@ creditTx scriptPubKey val =
     txI =
         TxIn
             { prevOutput = nullOutPoint
-            , scriptInput = runPutS $ serialize $ Script [OP_0, OP_0]
+            , scriptInput = U.encodeS $ Script [OP_0, OP_0]
             , txInSequence = maxBound
             }
 
@@ -192,7 +260,7 @@ spendTx :: ByteString -> Word64 -> ByteString -> Tx
 spendTx scriptPubKey val scriptSig =
     Tx 1 [txI] [txO] [] 0
   where
-    txO = TxOut{outValue = val, scriptOutput = B.empty}
+    txO = TxOut{outValue = val, scriptOutput = BS.empty}
     txI =
         TxIn
             { prevOutput = OutPoint (txHash $ creditTx scriptPubKey val) 0
@@ -203,7 +271,7 @@ spendTx scriptPubKey val scriptSig =
 
 parseScript :: String -> ByteString
 parseScript str =
-    B.concat $ fromMaybe err $ mapM f $ words str
+    BS.concat $ fromMaybe err $ mapM f $ words str
   where
     f = decodeHex . cs . dropHex . replaceToken
     dropHex ('0' : 'x' : xs) = xs
@@ -213,7 +281,7 @@ parseScript str =
 
 replaceToken :: String -> String
 replaceToken str = case readMaybe $ "OP_" <> str of
-    Just opcode -> "0x" <> cs (encodeHex $ runPutS $ serialize (opcode :: ScriptOp))
+    Just opcode -> "0x" <> cs (encodeHex $ U.encodeS (opcode :: ScriptOp))
     _ -> str
 
 
@@ -253,10 +321,10 @@ txSigHashSpec net =
                 let tx = fromString txStr
                     s =
                         fromMaybe (error $ "Could not decode script: " <> cs scpStr) $
-                            eitherToMaybe . runGetS deserialize =<< decodeHex (cs scpStr)
+                            eitherToMaybe . U.decode . BSL.fromStrict =<< decodeHex (cs scpStr)
                     sh = fromIntegral shI
                     res =
-                        eitherToMaybe . runGetS deserialize . B.reverse
+                        eitherToMaybe . U.decode . BSL.fromStrict . BS.reverse
                             =<< decodeHex (cs resStr)
                 Just (txSigHash net tx s 0 i sh) `shouldBe` res
 
@@ -326,11 +394,8 @@ mapMulSigVector (v, i) =
 runMulSigVector :: (Text, Text) -> Assertion
 runMulSigVector (a, ops) = assertBool "multisig vector" $ Just a == b
   where
-    s = do
-        s' <- decodeHex ops
-        eitherToMaybe $ runGetS deserialize s'
     b = do
-        o <- s
+        o <- eitherToMaybe . U.decode . BSL.fromStrict =<< decodeHex ops
         d <- eitherToMaybe $ decodeOutput o
         addrToText btc $ payToScriptAddress d
 
@@ -389,7 +454,7 @@ scriptSigSignatures =
 
 encodeScriptVector :: Assertion
 encodeScriptVector =
-    assertEqual "Encode script" res (encodeHex $ runPutS $ serialize s)
+    assertEqual "Encode script" res (encodeHex $ U.encodeS s)
   where
     res =
         "514104cc71eb30d653c0c3163990c47b976f3fb3f37cccdcbedb169a1dfef58b\

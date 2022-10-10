@@ -3,14 +3,44 @@
 -- Portability : POSIX
 module Bitcoin.Util.Arbitrary.Network where
 
-import Bitcoin.Network
-import Bitcoin.Util.Arbitrary.Crypto
-import Bitcoin.Util.Arbitrary.Util
+import Bitcoin.Network (
+    Addr (Addr),
+    Alert (Alert),
+    BloomFilter,
+    BloomFlags (..),
+    FilterAdd (FilterAdd),
+    FilterLoad (FilterLoad),
+    GetData (GetData),
+    Inv (Inv),
+    InvType (..),
+    InvVector (InvVector),
+    MessageCommand (..),
+    NetworkAddress (NetworkAddress),
+    NotFound (NotFound),
+    Ping (Ping),
+    Pong (Pong),
+    Reject (Reject),
+    RejectCode (..),
+    VarInt (VarInt),
+    VarString (VarString),
+    Version (Version),
+    bloomCreate,
+ )
+import Bitcoin.Util.Arbitrary.Crypto (arbitraryHash256)
+import Bitcoin.Util.Arbitrary.Util (arbitraryBS)
 import qualified Data.ByteString as BS (empty, pack)
 import qualified Data.ByteString.Char8 as C8
 import Data.Word (Word16, Word32)
-import Network.Socket (SockAddr (..))
-import Test.QuickCheck
+import Test.QuickCheck (
+    ASCIIString (ASCIIString),
+    Arbitrary (arbitrary),
+    Gen,
+    choose,
+    elements,
+    listOf1,
+    oneof,
+    vectorOf,
+ )
 
 
 -- | Arbitrary 'VarInt'.
@@ -25,21 +55,15 @@ arbitraryVarString = VarString <$> arbitraryBS
 
 -- | Arbitrary 'NetworkAddress'.
 arbitraryNetworkAddress :: Gen NetworkAddress
-arbitraryNetworkAddress = do
-    s <- arbitrary
-    a <- arbitrary
-    p <- arbitrary
-    d <-
-        oneof
-            [ do
-                b <- arbitrary
-                c <- arbitrary
-                d <- arbitrary
-                return $ SockAddrInet6 (fromIntegral p) 0 (a, b, c, d) 0
-            , return $ SockAddrInet (fromIntegral (p :: Word16)) a
-            ]
-    let n = sockToHostAddress d
-    return $ NetworkAddress s n
+arbitraryNetworkAddress =
+    NetworkAddress
+        <$> arbitrary
+        <*> ( (,,,)
+                <$> arbitrary
+                <*> arbitrary
+                <*> arbitrary
+                <*> arbitrary
+            )
 
 
 -- | Arbitrary 'NetworkAddressTime'.

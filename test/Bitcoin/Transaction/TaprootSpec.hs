@@ -27,6 +27,7 @@ import Bitcoin (
     verifyScriptPathData,
  )
 import Bitcoin.Orphans ()
+import qualified Bitcoin.Util as U
 import Bitcoin.UtilSpec (readTestFile)
 import Control.Applicative ((<|>))
 import Control.Monad (zipWithM, (<=<))
@@ -35,9 +36,7 @@ import Data.Aeson.Types (Parser)
 import qualified Data.ByteArray as BA
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-import Data.Bytes.Get (runGetS)
-import Data.Bytes.Put (runPutS)
-import Data.Bytes.Serial (deserialize, serialize)
+import qualified Data.ByteString.Lazy as BSL
 import Data.Text (Text)
 import Data.Word (Word8)
 import Test.HUnit (assertBool, (@?=))
@@ -113,7 +112,7 @@ testControlBlocks testData = do
 
 
 keyParity :: PubKey -> Word8
-keyParity key = case BS.unpack . runPutS . serialize $ PubKeyI key True of
+keyParity key = case BS.unpack . U.encodeS $ PubKeyI key True of
     0x02 : _ -> 0x00
     _ -> 0x01
 
@@ -140,14 +139,13 @@ instance FromJSON SpkGiven where
                 <|> fail "Unable to parse scriptTree"
         parseScriptLeaf = withObject "ScriptTree leaf" $ \obj ->
             MASTLeaf
-                <$> obj
-                    .: "leafVersion"
+                <$> obj .: "leafVersion"
                 <*> (obj .: "script" >>= hexScript)
         parseScriptBranch v =
             parseJSON v >>= \case
                 [v1, v2] -> MASTBranch <$> parseScriptTree v1 <*> parseScriptTree v2
                 _ -> fail "ScriptTree branch"
-        hexScript = either fail pure . runGetS deserialize <=< jsonHex
+        hexScript = either fail pure . U.decode . BSL.fromStrict <=< jsonHex
 
 
 data SpkIntermediary = SpkIntermediary
@@ -175,11 +173,9 @@ data SpkExpected = SpkExpected
 instance FromJSON SpkExpected where
     parseJSON = withObject "SpkExpected" $ \obj ->
         SpkExpected
-            <$> obj
-                .: "scriptPubKey"
+            <$> obj .: "scriptPubKey"
             <*> (obj .:? "scriptPathControlBlocks" >>= (traverse . traverse) jsonHex)
-            <*> obj
-                .: "bip350Address"
+            <*> obj .: "bip350Address"
 
 
 data TestScriptPubKey = TestScriptPubKey
@@ -193,10 +189,8 @@ instance FromJSON TestScriptPubKey where
     parseJSON = withObject "TestScriptPubKey" $ \obj ->
         TestScriptPubKey
             <$> (unSpkGiven <$> obj .: "given")
-            <*> obj
-                .: "intermediary"
-            <*> obj
-                .: "expected"
+            <*> obj .: "intermediary"
+            <*> obj .: "expected"
 
 
 newtype TestVector = TestVector

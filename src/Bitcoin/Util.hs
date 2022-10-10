@@ -34,6 +34,9 @@ module Bitcoin.Util (
     lst3,
 
     -- * Serialization Helpers
+    encodeS,
+    decode,
+    runGet,
     putList,
     getList,
     putMaybe,
@@ -52,35 +55,37 @@ module Bitcoin.Util (
     putTwo,
 ) where
 
-import Control.Monad
+import Control.Monad (replicateM)
 import Control.Monad.Trans.Except (ExceptT (..), except)
-import Data.Bits
+import Data.Bifunctor (bimap)
+import Data.Binary (Binary, Get, Put)
+import qualified Data.Binary as Bin
+import qualified Data.Binary as Get
+import qualified Data.Binary.Get as Get
+import qualified Data.Binary.Put as Put
+import Data.Bits (Bits (..))
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as B16
-import Data.ByteString.Builder
-import qualified Data.ByteString.Lazy as BL
+import Data.ByteString.Builder (Builder, lazyByteStringHex)
+import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString.Lazy.Base16 as BL16
-import Data.Bytes.Get
-import Data.Bytes.Put
-import Data.Bytes.Serial
-import Data.Char (toLower)
-import Data.Int
+import Data.Int (Int32, Int64)
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IntMap
-import Data.List
+import Data.List (foldl', unfoldr)
 import Data.Text (Text)
 import qualified Data.Text.Encoding as E
 import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.Encoding as EL
-import Data.Word
+import Data.Word (Word8)
 
 
 -- ByteString helpers
 
 -- | Decode a big endian 'Integer' from a 'ByteString'.
-bsToInteger :: ByteString -> Integer
-bsToInteger = BS.foldr f 0 . BS.reverse
+bsToInteger :: BSL.ByteString -> Integer
+bsToInteger = BSL.foldr f 0 . BSL.reverse
   where
     f w n = toInteger w .|. shiftL n 8
 
@@ -96,7 +101,7 @@ integerToBS i
     f x = Just (fromInteger x :: Word8, x `shiftR` 8)
 
 
-hexBuilder :: BL.ByteString -> Builder
+hexBuilder :: BSL.ByteString -> Builder
 hexBuilder = lazyByteStringHex
 
 
@@ -105,7 +110,7 @@ encodeHex = B16.encodeBase16
 
 
 -- | Encode as string of human-readable hex characters.
-encodeHexLazy :: BL.ByteString -> TL.Text
+encodeHexLazy :: BSL.ByteString -> TL.Text
 encodeHexLazy = BL16.encodeBase16
 
 
@@ -114,7 +119,7 @@ decodeHex = eitherToMaybe . B16.decodeBase16 . E.encodeUtf8
 
 
 -- | Decode string of human-readable hex characters.
-decodeHexLazy :: TL.Text -> Maybe BL.ByteString
+decodeHexLazy :: TL.Text -> Maybe BSL.ByteString
 decodeHexLazy = eitherToMaybe . BL16.decodeBase16 . EL.encodeUtf8
 
 
@@ -238,84 +243,96 @@ convertBits pad frombits tobits i = (reverse yout, rem')
 -- Serialization helpers
 --
 
-putInt32be :: MonadPut m => Int32 -> m ()
+encodeS :: Binary a => a -> ByteString
+encodeS = BSL.toStrict . Bin.encode
+
+
+decode :: Binary a => BSL.ByteString -> Either String a
+decode = bimap lst3 lst3 . Get.decodeOrFail
+
+
+runGet :: Get a -> BSL.ByteString -> Either String a
+runGet parser = bimap lst3 lst3 . Get.runGetOrFail parser
+
+
+putInt32be :: Int32 -> Put
 putInt32be n
-    | n < 0 = putWord32be (complement (fromIntegral (abs n)) + 1)
-    | otherwise = putWord32be (fromIntegral (abs n))
+    | n < 0 = Put.putWord32be (complement (fromIntegral (abs n)) + 1)
+    | otherwise = Put.putWord32be (fromIntegral (abs n))
 
 
-getInt32be :: MonadGet m => m Int32
+getInt32be :: Get Int32
 getInt32be = do
-    n <- getWord32be
+    n <- Get.getWord32be
     if testBit n 31
         then return (negate (complement (fromIntegral n) + 1))
         else return (fromIntegral n)
 
 
-putInt64be :: MonadPut m => Int64 -> m ()
+putInt64be :: Int64 -> Put
 putInt64be n
-    | n < 0 = putWord64be (complement (fromIntegral (abs n)) + 1)
-    | otherwise = putWord64be (fromIntegral (abs n))
+    | n < 0 = Put.putWord64be (complement (fromIntegral (abs n)) + 1)
+    | otherwise = Put.putWord64be (fromIntegral (abs n))
 
 
-getInt64be :: MonadGet m => m Int64
+getInt64be :: Get Int64
 getInt64be = do
-    n <- getWord64be
+    n <- Get.getWord64be
     if testBit n 63
         then return (negate (complement (fromIntegral n) + 1))
         else return (fromIntegral n)
 
 
-putInteger :: MonadPut m => Integer -> m ()
+putInteger :: Integer -> Put
 putInteger n
     | n >= lo && n <= hi = do
-        putWord8 0x00
+        Put.putWord8 0x00
         putInt32be (fromIntegral n)
     | otherwise = do
-        putWord8 0x01
-        putWord8 (fromIntegral (signum n))
+        Put.putWord8 0x01
+        Put.putWord8 (fromIntegral (signum n))
         let len = (nrBits (abs n) + 7) `div` 8
-        putWord64be (fromIntegral len)
-        mapM_ putWord8 (unroll (abs n))
+        Put.putWord64be (fromIntegral len)
+        mapM_ Put.putWord8 (unroll (abs n))
   where
     lo = fromIntegral (minBound :: Int32)
     hi = fromIntegral (maxBound :: Int32)
 
 
-getInteger :: MonadGet m => m Integer
+getInteger :: Get Integer
 getInteger =
-    getWord8 >>= \case
+    Get.getWord8 >>= \case
         0 -> fromIntegral <$> getInt32be
         _ -> do
-            sign <- getWord8
-            bytes <- getList getWord8
+            sign <- Get.getWord8
+            bytes <- getList Get.getWord8
             let v = roll bytes
             return $! if sign == 0x01 then v else -v
 
 
-putMaybe :: MonadPut m => (a -> m ()) -> Maybe a -> m ()
-putMaybe f Nothing = putWord8 0x00
-putMaybe f (Just x) = putWord8 0x01 >> f x
+putMaybe :: (a -> Put) -> Maybe a -> Put
+putMaybe f Nothing = Put.putWord8 0x00
+putMaybe f (Just x) = Put.putWord8 0x01 >> f x
 
 
-getMaybe :: MonadGet m => m a -> m (Maybe a)
+getMaybe :: Get a -> Get (Maybe a)
 getMaybe f =
-    getWord8 >>= \case
+    Get.getWord8 >>= \case
         0x00 -> return Nothing
         0x01 -> Just <$> f
         _ -> fail "Not a Maybe"
 
 
-putLengthBytes :: MonadPut m => ByteString -> m ()
+putLengthBytes :: ByteString -> Put
 putLengthBytes bs = do
-    putWord64be (fromIntegral (BS.length bs))
-    putByteString bs
+    Put.putWord64be (fromIntegral (BS.length bs))
+    Put.putByteString bs
 
 
-getLengthBytes :: MonadGet m => m ByteString
+getLengthBytes :: Get ByteString
 getLengthBytes = do
-    len <- fromIntegral <$> getWord64be
-    getByteString len
+    len <- fromIntegral <$> Get.getWord64be
+    Get.getByteString len
 
 
 --
@@ -348,29 +365,29 @@ nrBits k =
 
 
 -- | Read as a list of pairs of int and element.
-getIntMap :: MonadGet m => m Int -> m a -> m (IntMap a)
+getIntMap :: Get Int -> Get a -> Get (IntMap a)
 getIntMap i m = IntMap.fromList <$> getList (getTwo i m)
 
 
-putIntMap :: MonadPut m => (Int -> m ()) -> (a -> m ()) -> IntMap a -> m ()
+putIntMap :: (Int -> Put) -> (a -> Put) -> IntMap a -> Put
 putIntMap f g = putList (putTwo f g) . IntMap.toAscList
 
 
-putTwo :: MonadPut m => (a -> m ()) -> (b -> m ()) -> (a, b) -> m ()
+putTwo :: (a -> Put) -> (b -> Put) -> (a, b) -> Put
 putTwo f g (x, y) = f x >> g y
 
 
-getTwo :: MonadGet m => m a -> m b -> m (a, b)
+getTwo :: Get a -> Get b -> Get (a, b)
 getTwo f g = (,) <$> f <*> g
 
 
-putList :: MonadPut m => (a -> m ()) -> [a] -> m ()
+putList :: (a -> Put) -> [a] -> Put
 putList f ls = do
-    putWord64be (fromIntegral (length ls))
+    Put.putWord64be (fromIntegral (length ls))
     mapM_ f ls
 
 
-getList :: MonadGet m => m a -> m [a]
+getList :: Get a -> Get [a]
 getList f = do
-    l <- fromIntegral <$> getWord64be
+    l <- fromIntegral <$> Get.getWord64be
     replicateM l f

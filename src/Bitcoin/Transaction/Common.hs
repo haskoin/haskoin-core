@@ -39,8 +39,6 @@ import Control.Monad (
     when,
     (<=<),
  )
-import Data.Aeson as A
-import Data.Aeson.Encoding (unsafeToEncoding)
 import Data.Binary (Binary (..))
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as B
@@ -89,21 +87,6 @@ instance IsString TxHash where
     fromString s =
         let e = error "Could not read transaction hash from hex string"
          in fromMaybe e $ hexToTxHash $ cs s
-
-
-instance FromJSON TxHash where
-    parseJSON =
-        withText "txid" $
-            maybe mzero return . hexToTxHash
-
-
-instance ToJSON TxHash where
-    toJSON = A.String . txHashToHex
-    toEncoding h =
-        unsafeToEncoding $
-            char7 '"'
-                <> hexBuilder (BL.reverse (runPutL (serialize h)))
-                <> char7 '"'
 
 
 -- | Transaction hash excluding signatures.
@@ -284,37 +267,6 @@ putWitnessData = mapM_ putWitnessStack
         putByteString bs
 
 
-instance FromJSON Tx where
-    parseJSON = withObject "Tx" $ \o ->
-        Tx
-            <$> o .: "version"
-            <*> o .: "inputs"
-            <*> o .: "outputs"
-            <*> (mapM (mapM f) =<< o .: "witnessdata")
-            <*> o .: "locktime"
-      where
-        f = maybe mzero return . decodeHex
-
-
-instance ToJSON Tx where
-    toJSON (Tx v i o w l) =
-        object
-            [ "version" .= v
-            , "inputs" .= i
-            , "outputs" .= o
-            , "witnessdata" .= fmap (fmap encodeHex) w
-            , "locktime" .= l
-            ]
-    toEncoding (Tx v i o w l) =
-        pairs
-            ( "version" .= v
-                <> "inputs" .= i
-                <> "outputs" .= o
-                <> "witnessdata" .= fmap (fmap encodeHex) w
-                <> "locktime" .= l
-            )
-
-
 -- | Data type representing a transaction input.
 data TxIn = TxIn
     { prevOutput :: !OutPoint
@@ -351,30 +303,6 @@ instance Serialize TxIn where
     put = serialize
 
 
-instance FromJSON TxIn where
-    parseJSON =
-        withObject "TxIn" $ \o ->
-            TxIn
-                <$> o .: "prevoutput"
-                <*> (maybe mzero return . decodeHex =<< o .: "inputscript")
-                <*> o .: "sequence"
-
-
-instance ToJSON TxIn where
-    toJSON (TxIn o s q) =
-        object
-            [ "prevoutput" .= o
-            , "inputscript" .= encodeHex s
-            , "sequence" .= q
-            ]
-    toEncoding (TxIn o s q) =
-        pairs
-            ( "prevoutput" .= o
-                <> "inputscript" .= encodeHex s
-                <> "sequence" .= q
-            )
-
-
 -- | Data type representing a transaction output.
 data TxOut = TxOut
     { outValue :: !Word64
@@ -408,21 +336,6 @@ instance Serialize TxOut where
     get = deserialize
 
 
-instance FromJSON TxOut where
-    parseJSON =
-        withObject "TxOut" $ \o ->
-            TxOut
-                <$> o .: "value"
-                <*> (maybe mzero return . decodeHex =<< o .: "outputscript")
-
-
-instance ToJSON TxOut where
-    toJSON (TxOut o s) =
-        object ["value" .= o, "outputscript" .= encodeHex s]
-    toEncoding (TxOut o s) =
-        pairs ("value" .= o <> "outputscript" .= encodeHex s)
-
-
 -- | The 'OutPoint' refers to a transaction output being spent.
 data OutPoint = OutPoint
     { outPointHash :: !TxHash
@@ -448,17 +361,6 @@ instance Binary OutPoint where
 instance Serialize OutPoint where
     put = serialize
     get = deserialize
-
-
-instance FromJSON OutPoint where
-    parseJSON =
-        withObject "OutPoint" $ \o ->
-            OutPoint <$> o .: "txid" <*> o .: "index"
-
-
-instance ToJSON OutPoint where
-    toJSON (OutPoint h i) = object ["txid" .= h, "index" .= i]
-    toEncoding (OutPoint h i) = pairs ("txid" .= h <> "index" .= i)
 
 
 -- | Outpoint used in coinbase transactions.

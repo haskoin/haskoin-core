@@ -9,7 +9,7 @@ import Bitcoin.Network
 import Bitcoin.Transaction
 import Bitcoin.Util
 import Bitcoin.Util.Arbitrary
-import Bitcoin.UtilSpec (customCerealID)
+import Bitcoin.UtilSpec hiding (spec)
 import Data.Bytes.Get
 import Data.Bytes.Put
 import Data.Bytes.Serial

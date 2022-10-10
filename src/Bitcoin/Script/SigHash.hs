@@ -36,7 +36,6 @@ import Bitcoin.Transaction.Common
 import Bitcoin.Util
 import Control.DeepSeq
 import Control.Monad
-import qualified Data.Aeson as J
 import Data.Bits
 import qualified Data.ByteString as BS
 import Data.Bytes.Get
@@ -107,17 +106,6 @@ newtype SigHash
         , Hashable
         , NFData
         )
-
-
-instance J.FromJSON SigHash where
-    parseJSON =
-        J.withScientific "sighash" $
-            maybe mzero (return . SigHash) . toBoundedInteger
-
-
-instance J.ToJSON SigHash where
-    toJSON = J.Number . fromIntegral
-    toEncoding (SigHash n) = J.toEncoding n
 
 
 -- | SIGHASH_NONE as a byte.

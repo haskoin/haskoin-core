@@ -38,14 +38,6 @@ import Bitcoin.Util
 import Control.DeepSeq
 import Control.Monad (guard, mzero, (<=<))
 import Crypto.Secp256k1
-import Data.Aeson (
-    FromJSON,
-    ToJSON (..),
-    Value (String),
-    parseJSON,
-    withText,
- )
-import Data.Aeson.Encoding (unsafeToEncoding)
 import Data.Binary (Binary (..))
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
@@ -74,21 +66,6 @@ instance IsString PubKeyI where
         fromMaybe e $ eitherToMaybe . runGetS deserialize <=< decodeHex $ cs str
       where
         e = error "Could not decode public key"
-
-
-instance ToJSON PubKeyI where
-    toJSON = String . encodeHex . runPutS . serialize
-    toEncoding s =
-        unsafeToEncoding $
-            char7 '"'
-                <> hexBuilder (runPutL (serialize s))
-                <> char7 '"'
-
-
-instance FromJSON PubKeyI where
-    parseJSON =
-        withText "PubKeyI" $
-            maybe mzero return . ((eitherToMaybe . runGetS deserialize) <=< decodeHex)
 
 
 instance Serial PubKeyI where

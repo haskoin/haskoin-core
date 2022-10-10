@@ -7,9 +7,19 @@ module Bitcoin.BlockSpec (
 import Bitcoin.Block
 import Bitcoin.Constants
 import Bitcoin.Data
+import Bitcoin.Orphans ()
 import Bitcoin.Transaction
+import Bitcoin.Util
 import Bitcoin.Util.Arbitrary
-import Control.Monad.State.Strict
+import Bitcoin.UtilSpec hiding (spec)
+import Control.Monad (MonadPlus (..), forM_, unless, (<=<))
+import Control.Monad.Trans.State.Strict
+import Data.Aeson
+import Data.Aeson.Encoding
+import qualified Data.ByteString.Lazy as BL
+import Data.Bytes.Get
+import Data.Bytes.Put (runPutL, runPutS)
+import Data.Bytes.Serial
 import Data.Either (fromRight)
 import Data.Maybe (fromJust)
 import Data.String (fromString)
@@ -95,11 +105,11 @@ spec = do
     describe "compact number" $ do
         it "compact number local vectors" testCompact
         it "compact number imported vectors" testCompactBitcoinCore
-    describe "asert" $
+    describe "assert" $
         mapM_
             ( \x ->
-                asertTests $
-                    "test_vectors_aserti3-2d_run" ++ printf "%02d" x ++ ".txt"
+                assertTests $
+                    "test_vectors_asserti3-2d_run" ++ printf "%02d" x ++ ".txt"
             )
             [(1 :: Int) .. 12]
     describe "helper functions" $ do
@@ -377,14 +387,14 @@ testSubsidy net = go (2 * 50 * 100 * 1000 * 1000) 0
                 go subsidy (halvings + 1)
 
 
-data AsertBlock = AsertBlock Int Integer Integer Word32
+data AssertBlock = AssertBlock Int Integer Integer Word32
 
 
-data AsertVector = AsertVector String Integer Integer Word32 [AsertBlock]
+data AssertVector = AssertVector String Integer Integer Word32 [AssertBlock]
 
 
-readAsertVector :: FilePath -> IO AsertVector
-readAsertVector p = do
+readAssertVector :: FilePath -> IO AssertVector
+readAssertVector p = do
     (d : ah : apt : ab : _ : _ : _ : _ : xs) <- lines <$> readFile ("data/" ++ p)
     let desc = drop 16 d
         anchor_height = read (words ah !! 3)
@@ -392,27 +402,27 @@ readAsertVector p = do
         anchor_nbits = read (words ab !! 3)
         blocks = map (f . words) (init xs)
     return $
-        AsertVector
+        AssertVector
             desc
             anchor_height
             anchor_parent_time
             anchor_nbits
             blocks
   where
-    f [i, h, t, g] = AsertBlock (read i) (read h) (read t) (read g)
+    f [i, h, t, g] = AssertBlock (read i) (read h) (read t) (read g)
     f _ = undefined
 
 
-asertTests :: FilePath -> SpecWith ()
-asertTests file = do
-    v@(AsertVector d _ _ _ _) <- runIO $ readAsertVector file
-    it d $ testAsertBits v
+assertTests :: FilePath -> SpecWith ()
+assertTests file = do
+    v@(AssertVector d _ _ _ _) <- runIO $ readAssertVector file
+    it d $ testAssertBits v
 
 
-testAsertBits :: AsertVector -> Assertion
-testAsertBits (AsertVector _ anchor_height anchor_parent_time anchor_bits blocks) =
-    forM_ blocks $ \(AsertBlock _ h t g) ->
-        computeAsertBits
+testAssertBits :: AssertVector -> Assertion
+testAssertBits (AssertVector _ anchor_height anchor_parent_time anchor_bits blocks) =
+    forM_ blocks $ \(AssertBlock _ h t g) ->
+        computeAssertBits
             (2 * 24 * 60 * 60)
             anchor_bits
             (t - anchor_parent_time)

@@ -26,6 +26,7 @@ import Bitcoin (
     taprootScriptOutput,
     verifyScriptPathData,
  )
+import Bitcoin.Orphans ()
 import Bitcoin.UtilSpec (readTestFile)
 import Control.Applicative ((<|>))
 import Control.Monad (zipWithM, (<=<))
@@ -139,7 +140,8 @@ instance FromJSON SpkGiven where
                 <|> fail "Unable to parse scriptTree"
         parseScriptLeaf = withObject "ScriptTree leaf" $ \obj ->
             MASTLeaf
-                <$> obj .: "leafVersion"
+                <$> obj
+                    .: "leafVersion"
                 <*> (obj .: "script" >>= hexScript)
         parseScriptBranch v =
             parseJSON v >>= \case
@@ -173,9 +175,11 @@ data SpkExpected = SpkExpected
 instance FromJSON SpkExpected where
     parseJSON = withObject "SpkExpected" $ \obj ->
         SpkExpected
-            <$> obj .: "scriptPubKey"
+            <$> obj
+                .: "scriptPubKey"
             <*> (obj .:? "scriptPathControlBlocks" >>= (traverse . traverse) jsonHex)
-            <*> obj .: "bip350Address"
+            <*> obj
+                .: "bip350Address"
 
 
 data TestScriptPubKey = TestScriptPubKey
@@ -189,8 +193,10 @@ instance FromJSON TestScriptPubKey where
     parseJSON = withObject "TestScriptPubKey" $ \obj ->
         TestScriptPubKey
             <$> (unSpkGiven <$> obj .: "given")
-            <*> obj .: "intermediary"
-            <*> obj .: "expected"
+            <*> obj
+                .: "intermediary"
+            <*> obj
+                .: "expected"
 
 
 newtype TestVector = TestVector

@@ -50,8 +50,6 @@ import Bitcoin.Util
 import Control.Applicative ((<|>))
 import Control.DeepSeq
 import Control.Monad (guard, liftM2, (<=<))
-import qualified Data.Aeson as A
-import qualified Data.Aeson.Encoding as A
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.Bytes.Get
@@ -92,19 +90,6 @@ data ScriptOutput
     | -- | provably unspendable data carrier
       DataCarrier {getOutputData :: !ByteString}
     deriving (Eq, Show, Read, Generic, Hashable, NFData)
-
-
-instance A.FromJSON ScriptOutput where
-    parseJSON =
-        A.withText "scriptoutput" $ \t ->
-            either fail return $
-                maybeToEither "scriptoutput not hex" (decodeHex t)
-                    >>= decodeOutputBS
-
-
-instance A.ToJSON ScriptOutput where
-    toJSON = A.String . encodeHex . encodeOutputBS
-    toEncoding = A.text . encodeHex . encodeOutputBS
 
 
 -- | Is script a pay-to-public-key output?

@@ -32,18 +32,6 @@ import Bitcoin.Transaction.Common
 import Bitcoin.Util
 import Control.DeepSeq
 import Control.Monad (forM_, liftM2, mzero, replicateM, (<=<))
-import Data.Aeson (
-    FromJSON (..),
-    ToJSON (..),
-    Value (..),
-    object,
-    toJSON,
-    withObject,
-    withText,
-    (.:),
-    (.=),
- )
-import Data.Aeson.Encoding (pairs, unsafeToEncoding)
 import Data.Binary (Binary (..))
 import Data.Bits (shiftL, shiftR, (.&.), (.|.))
 import qualified Data.ByteString as B
@@ -111,17 +99,6 @@ instance Binary Block where
     put = serialize
 
 
-instance ToJSON Block where
-    toJSON (Block h t) = object ["header" .= h, "transactions" .= t]
-    toEncoding (Block h t) = pairs $ "header" .= h <> "transactions" .= t
-
-
-instance FromJSON Block where
-    parseJSON =
-        withObject "Block" $ \o ->
-            Block <$> o .: "header" <*> o .: "transactions"
-
-
 -- | Block header hash. To be serialized reversed for display purposes.
 newtype BlockHash = BlockHash
     { getBlockHash :: Hash256
@@ -153,21 +130,6 @@ instance IsString BlockHash where
     fromString s =
         let e = error "Could not read block hash from hex string"
          in fromMaybe e $ hexToBlockHash $ cs s
-
-
-instance FromJSON BlockHash where
-    parseJSON =
-        withText "BlockHash" $
-            maybe mzero return . hexToBlockHash
-
-
-instance ToJSON BlockHash where
-    toJSON = String . blockHashToHex
-    toEncoding h =
-        unsafeToEncoding $
-            char7 '"'
-                <> hexBuilder (BL.reverse (runPutL (serialize h)))
-                <> char7 '"'
 
 
 -- | Block hashes are reversed with respect to the in-memory byte order in a
@@ -210,43 +172,6 @@ data BlockHeader = BlockHeader
     -- ^ random nonce
     }
     deriving (Eq, Ord, Show, Read, Generic, Hashable, NFData)
-
-
--- 80 bytes
-
-instance ToJSON BlockHeader where
-    toJSON (BlockHeader v p m t b n) =
-        object
-            [ "version" .= v
-            , "prevblock" .= p
-            , "merkleroot" .= encodeHex (runPutS (serialize m))
-            , "timestamp" .= t
-            , "bits" .= b
-            , "nonce" .= n
-            ]
-    toEncoding (BlockHeader v p m t b n) =
-        pairs
-            ( "version" .= v
-                <> "prevblock" .= p
-                <> "merkleroot" .= encodeHex (runPutS (serialize m))
-                <> "timestamp" .= t
-                <> "bits" .= b
-                <> "nonce" .= n
-            )
-
-
-instance FromJSON BlockHeader where
-    parseJSON =
-        withObject "BlockHeader" $ \o ->
-            BlockHeader
-                <$> o .: "version"
-                <*> o .: "prevblock"
-                <*> (f =<< o .: "merkleroot")
-                <*> o .: "timestamp"
-                <*> o .: "bits"
-                <*> o .: "nonce"
-      where
-        f = maybe mzero return . (eitherToMaybe . runGetS deserialize <=< decodeHex)
 
 
 instance Serial BlockHeader where

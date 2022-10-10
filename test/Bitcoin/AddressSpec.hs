@@ -1,3 +1,4 @@
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Bitcoin.AddressSpec (spec) where
@@ -8,15 +9,41 @@ import Bitcoin.Data
 import Bitcoin.Keys
 import Bitcoin.Util
 import Bitcoin.Util.Arbitrary
+import Bitcoin.UtilSpec hiding (spec)
+import Data.Aeson
+import Data.Aeson.Encoding
+import Data.Aeson.Types (Parser)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS (append, empty, pack)
+import Data.Bytes.Serial
+import Data.Foldable
 import Data.Maybe (fromJust, isJust)
+import Data.Proxy (Proxy (..))
 import Data.Text (Text)
 import qualified Data.Text as T
+import Data.Typeable (Typeable, typeRep)
 import Test.HUnit
 import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck
+
+
+addrToJSON :: Network -> Address -> Value
+addrToJSON net a = toJSON (addrToText net a)
+
+
+addrToEncoding :: Network -> Address -> Encoding
+addrToEncoding net = maybe null_ text . addrToText net
+
+
+-- | JSON parsing for Bitcoin addresses. Works with 'Base58', and
+-- 'Bech32'.
+addrFromJSON :: Network -> Value -> Parser Address
+addrFromJSON net =
+    withText "address" $ \t ->
+        case textToAddr net t of
+            Nothing -> fail "could not decode address"
+            Just x -> return x
 
 
 serialVals :: [SerialBox]

@@ -6,10 +6,12 @@ import Bitcoin.Address
 import Bitcoin.Constants
 import Bitcoin.Data
 import Bitcoin.Keys
+import Bitcoin.Orphans ()
 import Bitcoin.Script
 import Bitcoin.Transaction
 import Bitcoin.Util
 import Bitcoin.Util.Arbitrary
+import Bitcoin.UtilSpec hiding (spec)
 import qualified Data.ByteString as B
 import Data.Bytes.Get
 import Data.Bytes.Put

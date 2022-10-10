@@ -45,7 +45,7 @@ module Bitcoin.Block.Headers (
     bip34,
     validVersion,
     lastNoMinDiff,
-    computeAsertBits,
+    computeAssertBits,
     nextPowWorkRequired,
     calcNextWork,
     isValidPOW,
@@ -68,19 +68,10 @@ import Bitcoin.Util
 import Control.Applicative ((<|>))
 import Control.DeepSeq
 import Control.Monad (guard, mzero, unless, when)
-import Control.Monad.Except (
-    ExceptT (..),
-    runExceptT,
-    throwError,
- )
-import Control.Monad.State.Strict as State (
-    StateT,
-    get,
-    gets,
-    lift,
-    modify,
- )
+import Control.Monad.Trans.Class (lift)
+import Control.Monad.Trans.Except (ExceptT (..), runExceptT, throwE)
 import Control.Monad.Trans.Maybe
+import Control.Monad.Trans.State.Strict as State (StateT, get, gets, modify)
 import Data.Binary (Binary (..))
 import Data.Bits (shiftL, shiftR, (.&.))
 import qualified Data.ByteString as B
@@ -323,7 +314,7 @@ connectBlocks _ _ [] = return $ Right []
 connectBlocks net t bhs@(bh : _) =
     runExceptT $ do
         unless (chained bhs) $
-            throwError "Blocks to connect do not form a chain"
+            throwE "Blocks to connect do not form a chain"
         par <-
             maybeToExceptT
                 "Could not get parent block"
@@ -347,13 +338,13 @@ connectBlocks net t bhs@(bh : _) =
             case skM of
                 Just sk -> return sk
                 Nothing ->
-                    throwError $
+                    throwE $
                         "BUG: Could not get skip for block "
                             ++ show (headerHash $ nodeHeader par)
         | otherwise = do
             let sn = ls !! fromIntegral (nodeHeight par - sh)
             when (nodeHeight sn /= sh) $
-                throwError "BUG: Node height not right in skip"
+                throwE "BUG: Node height not right in skip"
             return sn
       where
         sh = skipHeight (nodeHeight par + 1)
@@ -394,7 +385,7 @@ connectBlock net t bh =
             case skM of
                 Just sk -> return sk
                 Nothing ->
-                    throwError $
+                    throwE $
                         "BUG: Could not get skip for block "
                             ++ show (headerHash $ nodeHeader par)
         bb <- lift getBestBlockHeader
@@ -686,13 +677,13 @@ maxTarget :: Integer
 maxTarget = fst $ decodeCompact maxBits
 
 
-computeAsertBits ::
+computeAssertBits ::
     Integer ->
     Word32 ->
     Integer ->
     Integer ->
     Word32
-computeAsertBits halflife anchor_bits time_diff height_diff =
+computeAssertBits halflife anchor_bits time_diff height_diff =
     if e2 >= 0 && e2 < 65536
         then
             if g4 == 0

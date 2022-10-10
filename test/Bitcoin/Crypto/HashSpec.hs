@@ -6,6 +6,7 @@ import Bitcoin.Block
 import Bitcoin.Crypto
 import Bitcoin.Util
 import Bitcoin.Util.Arbitrary
+import Bitcoin.UtilSpec hiding (spec)
 import Data.Bits
 import Data.ByteString (ByteString)
 import Data.ByteString.Builder

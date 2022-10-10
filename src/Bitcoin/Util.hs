@@ -21,7 +21,6 @@ module Bitcoin.Util (
     -- * Maybe & Either Helpers
     eitherToMaybe,
     maybeToEither,
-    liftEither,
     liftMaybe,
 
     -- * Other Helpers
@@ -33,10 +32,6 @@ module Bitcoin.Util (
     fst3,
     snd3,
     lst3,
-
-    -- * JSON Utilities
-    dropFieldLabel,
-    dropSumLabels,
 
     -- * Serialization Helpers
     putList,
@@ -58,13 +53,7 @@ module Bitcoin.Util (
 ) where
 
 import Control.Monad
-import Control.Monad.Except (ExceptT (..), liftEither)
-import Data.Aeson.Types (
-    Options (..),
-    SumEncoding (..),
-    defaultOptions,
-    defaultTaggedObject,
- )
+import Control.Monad.Trans.Except (ExceptT (..), except)
 import Data.Bits
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
@@ -160,7 +149,7 @@ maybeToEither err = maybe (Left err) Right
 
 -- | Lift a 'Maybe' computation into the 'ExceptT' monad.
 liftMaybe :: Monad m => b -> Maybe a -> ExceptT b m a
-liftMaybe err = liftEither . maybeToEither err
+liftMaybe err = except . maybeToEither err
 
 
 -- Various helpers
@@ -215,26 +204,6 @@ snd3 (_, b, _) = b
 -- | Returns the last value of a triple.
 lst3 :: (a, b, c) -> c
 lst3 (_, _, c) = c
-
-
--- | Field label goes lowercase and first @n@ characters get removed.
-dropFieldLabel :: Int -> Options
-dropFieldLabel n =
-    defaultOptions
-        { fieldLabelModifier = map toLower . drop n
-        }
-
-
--- | Transformation from 'dropFieldLabel' is applied with argument @f@, plus
--- constructor tags are lowercased and first @c@ characters removed. @tag@ is
--- used as the name of the object field name that will hold the transformed
--- constructor tag as its value.
-dropSumLabels :: Int -> Int -> String -> Options
-dropSumLabels c f tag =
-    (dropFieldLabel f)
-        { constructorTagModifier = map toLower . drop c
-        , sumEncoding = defaultTaggedObject{tagFieldName = tag}
-        }
 
 
 -- | Convert from one power-of-two base to another, as long as it fits in a

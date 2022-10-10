@@ -35,17 +35,6 @@ import Bitcoin.Transaction.Segwit
 import Bitcoin.Util (matchTemplate, updateIndex)
 import Control.DeepSeq (NFData)
 import Control.Monad (foldM, when)
-import Data.Aeson (
-    FromJSON,
-    ToJSON (..),
-    object,
-    pairs,
-    parseJSON,
-    withObject,
-    (.:),
-    (.:?),
-    (.=),
- )
 import Data.Bytes.Get
 import Data.Bytes.Put
 import Data.Bytes.Serial
@@ -83,35 +72,6 @@ data SigInput = SigInput
     -- ^ redeem script
     }
     deriving (Eq, Show, Read, Generic, Hashable, NFData)
-
-
-instance ToJSON SigInput where
-    toJSON (SigInput so val op sh rdm) =
-        object $
-            [ "pkscript" .= so
-            , "value" .= val
-            , "outpoint" .= op
-            , "sighash" .= sh
-            ]
-                ++ ["redeem" .= r | r <- maybeToList rdm]
-    toEncoding (SigInput so val op sh rdm) =
-        pairs $
-            "pkscript" .= so
-                <> "value" .= val
-                <> "outpoint" .= op
-                <> "sighash" .= sh
-                <> maybe mempty ("redeem" .=) rdm
-
-
-instance FromJSON SigInput where
-    parseJSON =
-        withObject "SigInput" $ \o ->
-            SigInput
-                <$> o .: "pkscript"
-                <*> o .: "value"
-                <*> o .: "outpoint"
-                <*> o .: "sighash"
-                <*> o .:? "redeem"
 
 
 -- | Sign a transaction by providing the 'SigInput' signing parameters and a

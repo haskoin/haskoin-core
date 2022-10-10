@@ -6,11 +6,14 @@ module Bitcoin.Keys.ExtendedSpec (spec) where
 import Bitcoin.Address
 import Bitcoin.Constants
 import Bitcoin.Keys
+import Bitcoin.Orphans ()
 import Bitcoin.Util
 import Bitcoin.Util.Arbitrary
-import Bitcoin.UtilSpec (customCerealID)
+import Bitcoin.UtilSpec (JsonBox (..), NetBox (..), ReadBox (..), SerialBox (..), customCerealID, testIdentity)
 import Control.Monad (forM_)
 import Data.Aeson as A
+import Data.Aeson.Encoding
+import Data.Aeson.Types
 import Data.Bits ((.&.))
 import qualified Data.ByteString.Lazy.Char8 as B8
 import Data.Bytes.Get
@@ -72,6 +75,27 @@ netVals =
         , genNetData (snd <$> arbitraryXPubKey)
         )
     ]
+  where
+    xPrvToJSON :: Network -> XPrvKey -> Value
+    xPrvToJSON net = A.String . xPrvExport net
+    xPrvToEncoding :: Network -> XPrvKey -> Encoding
+    xPrvToEncoding net = text . xPrvExport net
+    xPrvFromJSON :: Network -> Value -> Parser XPrvKey
+    xPrvFromJSON net =
+        withText "xprv" $ \t ->
+            case xPrvImport net t of
+                Nothing -> fail "could not read xprv"
+                Just x -> return x
+    xPubFromJSON :: Network -> Value -> Parser XPubKey
+    xPubFromJSON net =
+        withText "xpub" $ \t ->
+            case xPubImport net t of
+                Nothing -> fail "could not read xpub"
+                Just x -> return x
+    xPubToJSON :: Network -> XPubKey -> Value
+    xPubToJSON net = A.String . xPubExport net
+    xPubToEncoding :: Network -> XPubKey -> Encoding
+    xPubToEncoding net = text . xPubExport net
 
 
 spec :: Spec

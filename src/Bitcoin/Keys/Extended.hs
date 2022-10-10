@@ -36,13 +36,7 @@ module Bitcoin.Keys.Extended (
     xPubWitnessAddr,
     xPubCompatWitnessAddr,
     xPubExport,
-    xPubToJSON,
-    xPubToEncoding,
-    xPubFromJSON,
     xPrvExport,
-    xPrvToJSON,
-    xPrvToEncoding,
-    xPrvFromJSON,
     xPubImport,
     xPrvImport,
     xPrvWif,
@@ -116,16 +110,6 @@ import Control.DeepSeq
 import Control.Exception (Exception, throw)
 import Control.Monad (guard, mzero, unless, (<=<))
 import Crypto.Secp256k1
-import Data.Aeson as A (
-    FromJSON,
-    ToJSON (..),
-    Value (String),
-    parseJSON,
-    toJSON,
-    withText,
- )
-import Data.Aeson.Encoding (Encoding, text)
-import Data.Aeson.Types (Parser)
 import Data.Binary (Binary (get, put))
 import Data.Bits (clearBit, setBit, testBit)
 import Data.ByteString (ByteString)
@@ -211,23 +195,6 @@ instance Serialize XPrvKey where
     get = deserialize
 
 
-xPrvToJSON :: Network -> XPrvKey -> Value
-xPrvToJSON net = A.String . xPrvExport net
-
-
-xPrvToEncoding :: Network -> XPrvKey -> Encoding
-xPrvToEncoding net = text . xPrvExport net
-
-
--- | Decode an extended private key from a JSON string
-xPrvFromJSON :: Network -> Value -> Parser XPrvKey
-xPrvFromJSON net =
-    withText "xprv" $ \t ->
-        case xPrvImport net t of
-            Nothing -> fail "could not read xprv"
-            Just x -> return x
-
-
 -- | Data type representing an extended BIP32 public key.
 data XPubKey = XPubKey
     { xPubDepth :: !Word8
@@ -268,24 +235,6 @@ instance Serialize XPubKey where
 instance Binary XPubKey where
     put = serialize
     get = deserialize
-
-
--- | Decode an extended public key from a JSON string
-xPubFromJSON :: Network -> Value -> Parser XPubKey
-xPubFromJSON net =
-    withText "xpub" $ \t ->
-        case xPubImport net t of
-            Nothing -> fail "could not read xpub"
-            Just x -> return x
-
-
--- | Get JSON 'Value' from 'XPubKey'.
-xPubToJSON :: Network -> XPubKey -> Value
-xPubToJSON net = A.String . xPubExport net
-
-
-xPubToEncoding :: Network -> XPubKey -> Encoding
-xPubToEncoding net = text . xPubExport net
 
 
 -- | Build a BIP32 compatible extended private key from a bytestring. This will
@@ -920,44 +869,6 @@ instance IsString SoftPath where
         fromMaybe e . parseSoft
       where
         e = error "Could not parse soft derivation path"
-
-
-instance FromJSON ParsedPath where
-    parseJSON = withText "ParsedPath" $ \str -> case parsePath $ cs str of
-        Just p -> return p
-        _ -> mzero
-
-
-instance FromJSON DerivPath where
-    parseJSON = withText "DerivPath" $ \str -> case parsePath $ cs str of
-        Just p -> return $ getParsedPath p
-        _ -> mzero
-
-
-instance FromJSON HardPath where
-    parseJSON = withText "HardPath" $ \str -> case parseHard $ cs str of
-        Just p -> return p
-        _ -> mzero
-
-
-instance FromJSON SoftPath where
-    parseJSON = withText "SoftPath" $ \str -> case parseSoft $ cs str of
-        Just p -> return p
-        _ -> mzero
-
-
-instance ToJSON (DerivPathI t) where
-    toJSON = A.String . cs . pathToStr
-    toEncoding = text . cs . pathToStr
-
-
-instance ToJSON ParsedPath where
-    toJSON (ParsedPrv p) = A.String . cs . ("m" ++) . pathToStr $ p
-    toJSON (ParsedPub p) = A.String . cs . ("M" ++) . pathToStr $ p
-    toJSON (ParsedEmpty p) = A.String . cs . ("" ++) . pathToStr $ p
-    toEncoding (ParsedPrv p) = text . cs . ("m" ++) . pathToStr $ p
-    toEncoding (ParsedPub p) = text . cs . ("M" ++) . pathToStr $ p
-    toEncoding (ParsedEmpty p) = text . cs . ("" ++) . pathToStr $ p
 
 
 {- Parsing derivation paths of the form m/1/2'/3 or M/1/2'/3 -}

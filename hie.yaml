@@ -1,0 +1,7 @@
+cradle:
+  stack:
+    - path: "./src"
+      component: "bitcoin:lib"
+
+    - path: "./test"
+      component: "bitcoin:test:spec"

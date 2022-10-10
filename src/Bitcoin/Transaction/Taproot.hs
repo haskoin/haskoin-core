@@ -41,7 +41,6 @@ import Crypto.Hash (
     hashUpdate,
     hashUpdates,
  )
-import Data.Aeson (FromJSON (parseJSON), ToJSON (toJSON), withText)
 import Data.Binary (Binary (..))
 import Data.Bits ((.&.), (.|.))
 import Data.Bool (bool)
@@ -91,19 +90,6 @@ instance Serialize XOnlyPubKey where
 instance Binary XOnlyPubKey where
     put = serialize
     get = deserialize
-
-
--- | Hex encoding
-instance FromJSON XOnlyPubKey where
-    parseJSON =
-        withText "XOnlyPubKey" $
-            either fail pure
-                . (runGetS deserialize <=< maybe (Left "Unable to decode hex") Right . decodeHex)
-
-
--- | Hex encoding
-instance ToJSON XOnlyPubKey where
-    toJSON = toJSON . encodeHex . runPutS . serialize
 
 
 type TapLeafVersion = Word8

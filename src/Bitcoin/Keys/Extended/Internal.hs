@@ -10,13 +10,6 @@ module Bitcoin.Keys.Extended.Internal (
 import Bitcoin.Util (decodeHex, encodeHex)
 import Control.DeepSeq (NFData)
 import Control.Monad ((>=>))
-import Data.Aeson (
-    FromJSON,
-    ToJSON,
-    parseJSON,
-    toJSON,
-    withText,
- )
 import Data.Binary (Binary (..))
 import Data.Bytes.Get (getWord32be)
 import Data.Bytes.Put (putWord32be)
@@ -84,11 +77,3 @@ instance Binary Fingerprint where
 instance Serialize Fingerprint where
     put = serialize
     get = deserialize
-
-
-instance FromJSON Fingerprint where
-    parseJSON = withText "Fingerprint" $ either fail pure . textToFingerprint
-
-
-instance ToJSON Fingerprint where
-    toJSON = toJSON . fingerprintToText

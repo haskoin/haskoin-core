@@ -51,7 +51,6 @@ import Bitcoin.Util
 import Control.Applicative ((<|>))
 import Control.Arrow (first)
 import Control.Monad (foldM, unless)
-import Control.Monad.Identity (runIdentity)
 import Crypto.Secp256k1
 import qualified Data.ByteString as B
 import Data.Bytes.Get

@@ -6,10 +6,11 @@ import Bitcoin.Address
 import Bitcoin.Constants
 import Bitcoin.Crypto
 import Bitcoin.Keys
+import Bitcoin.Orphans ()
 import Bitcoin.Script
 import Bitcoin.Util
 import Bitcoin.Util.Arbitrary
-import Bitcoin.UtilSpec (readTestFile)
+import Bitcoin.UtilSpec hiding (spec)
 import Control.Lens
 import Control.Monad
 import Data.Aeson as A

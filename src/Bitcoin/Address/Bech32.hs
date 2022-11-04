@@ -1,4 +1,5 @@
 {-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 -- |
@@ -16,6 +17,10 @@ module Bitcoin.Address.Bech32 (
     Data,
     bech32Encode,
     bech32Decode,
+    Bech32EncodeResult (..),
+    bech32EncodeResult,
+    Bech32DecodeResult (..),
+    bech32DecodeResult,
     toBase32,
     toBase256,
     segwitEncode,
@@ -23,9 +28,10 @@ module Bitcoin.Address.Bech32 (
     Word5 (..),
     word5,
     fromWord5,
+    maxBech32Length,
 ) where
 
-import Control.Monad (guard)
+import Control.Monad (guard, join)
 import Data.Array (
     Array,
     assocs,
@@ -78,7 +84,7 @@ type Data = [Word8]
 -- | Five-bit word for Bech32.
 newtype Word5
     = UnsafeWord5 Word8
-    deriving (Eq, Ord)
+    deriving (Show, Eq, Ord)
 
 
 instance Ix Word5 where
@@ -174,12 +180,36 @@ maxBech32Length = 90
 -- than 90 characters.
 bech32Encode :: Bech32Encoding -> HRP -> [Word5] -> Maybe Bech32
 bech32Encode enc hrp dat = do
-    guard $ checkHRP hrp
+    Bech32EncodeResult
+        { encodeResult
+        , encodeValidHrp = True
+        , encodeValidLength = True
+        } <-
+        pure $ bech32EncodeResult enc hrp dat
+    return encodeResult
+
+
+-- | The result of encoding a 'Bech32' string
+data Bech32EncodeResult = Bech32EncodeResult
+    { encodeResult :: Text
+    , encodeValidHrp :: Bool
+    , encodeValidLength :: Bool
+    }
+    deriving (Show, Eq)
+
+
+-- | Encode string of five-bit words into 'Bech32' using a provided
+-- human-readable part. This is similar to 'bech32Encode', but allows the caller
+-- to define custom failure conditions. This may be useful for custom
+-- applications like lightning and taro or for rich error reporting.
+bech32EncodeResult :: Bech32Encoding -> HRP -> [Word5] -> Bech32EncodeResult
+bech32EncodeResult enc hrp dat =
     let dat' = dat ++ bech32CreateChecksum enc (T.toLower hrp) dat
         rest = map (charset !) dat'
-        result = T.concat [T.toLower hrp, T.pack "1", T.pack rest]
-    guard $ T.length result <= maxBech32Length
-    return result
+        encodeResult = T.concat [T.toLower hrp, T.pack "1", T.pack rest]
+        encodeValidHrp = checkHRP hrp
+        encodeValidLength = encodeResult `T.compareLength` maxBech32Length /= GT
+     in Bech32EncodeResult{encodeResult, encodeValidHrp, encodeValidLength}
 
 
 -- | Check that human-readable part is valid for a 'Bech32' string.
@@ -193,17 +223,61 @@ checkHRP hrp =
 -- string of five-bit words.
 bech32Decode :: Bech32 -> Maybe (Bech32Encoding, HRP, [Word5])
 bech32Decode bech32 = do
-    guard $ T.length bech32 <= maxBech32Length
-    guard $ T.toUpper bech32 == bech32 || lowerBech32 == bech32
-    let (hrp, dat) = T.breakOnEnd "1" lowerBech32
-    guard $ T.length dat >= 6
-    hrp' <- T.stripSuffix "1" hrp
-    guard $ checkHRP hrp'
-    dat' <- mapM charsetMap $ T.unpack dat
-    enc <- bech32VerifyChecksum hrp' dat'
-    return (enc, hrp', take (T.length dat - 6) dat')
+    Bech32DecodeResult
+        { decodeValidChecksum = Just enc
+        , decodeValidHrp = Just hrp
+        , decodeResult = Just words
+        , decodeValidLength = True
+        , decodeValidCase = True
+        , decodeValidDataLength = True
+        } <-
+        pure $ bech32DecodeResult bech32
+    return (enc, hrp, words)
+
+
+-- | Decode human-readable 'Bech32' string into a human-readable part and a
+-- string of five-bit words. This is similar to 'bech32Encode', but allows the
+-- caller to define custom failure conditions. This may be useful for custom
+-- applications like lightning and taro or rich error reporting.
+bech32DecodeResult :: Bech32 -> Bech32DecodeResult
+bech32DecodeResult bech32 =
+    let decodeValidLength = bech32 `T.compareLength` maxBech32Length /= GT
+        decodeValidCase = T.toUpper bech32 == bech32 || lowerBech32 == bech32
+        (hrp, dat) = T.breakOnEnd "1" lowerBech32
+        decodeValidDataLength = dat `T.compareLength` 6 /= LT
+        decodeValidHrp = do
+            hrp' <- T.stripSuffix "1" hrp
+            guard $ checkHRP hrp'
+            return hrp'
+        decodeValidDataPart = mapM charsetMap $ T.unpack dat
+        decodeValidChecksum =
+            join $
+                bech32VerifyChecksum
+                    <$> decodeValidHrp
+                    <*> decodeValidDataPart
+        decodeResult = take (T.length dat - 6) <$> decodeValidDataPart
+     in Bech32DecodeResult
+            { decodeValidChecksum
+            , decodeValidHrp
+            , decodeResult
+            , decodeValidLength
+            , decodeValidCase
+            , decodeValidDataLength
+            }
   where
     lowerBech32 = T.toLower bech32
+
+
+-- | The result of decoding a 'Bech32' string
+data Bech32DecodeResult = Bech32DecodeResult
+    { decodeValidChecksum :: Maybe Bech32Encoding
+    , decodeValidHrp :: Maybe HRP
+    , decodeResult :: Maybe [Word5]
+    , decodeValidLength :: Bool
+    , decodeValidCase :: Bool
+    , decodeValidDataLength :: Bool
+    }
+    deriving (Show, Eq)
 
 
 type Pad f = Int -> Int -> Word -> [[Word]] -> f [[Word]]

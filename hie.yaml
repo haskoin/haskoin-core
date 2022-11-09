@@ -5,3 +5,6 @@ cradle:
 
     - path: "./test"
       component: "bitcoin:test:spec"
+
+    - path: "./benchmark"
+      component: "bitcoin:bench:benchmark"

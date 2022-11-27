@@ -49,7 +49,7 @@ import Data.Bits (
     (.&.),
     (.|.),
  )
-import qualified Data.ByteString as B
+import qualified Data.ByteString as BS
 import Data.Char (toUpper)
 import Data.Foldable (foldl')
 import Data.Functor.Identity (Identity, runIdentity)
@@ -143,7 +143,7 @@ bech32HRPExpand hrp =
         ++ [UnsafeWord5 0]
         ++ map word5 hrpBytes
   where
-    hrpBytes = B.unpack $ E.encodeUtf8 hrp
+    hrpBytes = BS.unpack $ E.encodeUtf8 hrp
 
 
 bech32Const :: Bech32Encoding -> Word

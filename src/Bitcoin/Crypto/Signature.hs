@@ -17,24 +17,34 @@ module Bitcoin.Crypto.Signature (
     exportSig,
 ) where
 
-import Bitcoin.Crypto.Hash
+import Bitcoin.Crypto.Hash (Hash256)
+import qualified Bitcoin.Util as U
 import Control.Monad (guard, unless, when)
-import Crypto.Secp256k1
-import Data.Binary (Binary (..))
+import Crypto.Secp256k1 (
+    CompactSig (getCompactSig),
+    Msg,
+    PubKey,
+    SecKey,
+    Sig,
+    exportCompactSig,
+    exportSig,
+    importSig,
+    msg,
+    normalizeSig,
+    signMsg,
+    verifySig,
+ )
+import Data.Binary.Get (Get, getByteString, getWord8, lookAhead)
+import Data.Binary.Put (Put, putByteString)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-import Data.Bytes.Get
-import Data.Bytes.Put
-import Data.Bytes.Serial
 import Data.Maybe (fromMaybe, isNothing)
-import Data.Serialize (Serialize (..))
 import Numeric (showHex)
 
 
 -- | Convert 256-bit hash into a 'Msg' for signing or verification.
 hashToMsg :: Hash256 -> Msg
-hashToMsg =
-    fromMaybe e . msg . runPutS . serialize
+hashToMsg = fromMaybe e . msg . U.encodeS
   where
     e = error "Could not convert 32-byte hash to secp256k1 message"
 
@@ -52,7 +62,7 @@ verifyHashSig h s p = verifySig p norm (hashToMsg h)
 
 
 -- | Deserialize an ECDSA signature as commonly encoded in Bitcoin.
-getSig :: MonadGet m => m Sig
+getSig :: Get Sig
 getSig = do
     l <-
         lookAhead $ do
@@ -72,7 +82,7 @@ getSig = do
 
 
 -- | Serialize an ECDSA signature for Bitcoin use.
-putSig :: MonadPut m => Sig -> m ()
+putSig :: Sig -> Put
 putSig s = putByteString $ exportSig s
 
 

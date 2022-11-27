@@ -1,45 +1,98 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Bitcoin.Transaction.PartialSpec (spec) where
 
-import Bitcoin.Address
-import Bitcoin.Constants
-import Bitcoin.Crypto
-import Bitcoin.Data
-import Bitcoin.Keys
-import Bitcoin.Script
-import Bitcoin.Transaction
-import Bitcoin.Util
-import Bitcoin.Util.Arbitrary
+import Bitcoin.Address (addressToScript, pubKeyAddr)
+import Bitcoin.Constants (Network, btc)
+import Bitcoin.Crypto (derivePubKey, secKey, signHash)
+import Bitcoin.Keys (
+    DerivPathI (Deriv, (:/), (:|)),
+    PubKeyI (..),
+    SecKeyI (secKeyData),
+    XPrvKey (xPrvKey),
+    derivePath,
+    deriveXPubKey,
+    makeXPrvKey,
+    xPubFP,
+ )
+import Bitcoin.Script (
+    Script,
+    ScriptOutput (PayMulSig),
+    TxSignature (TxSignature),
+    decodeOutput,
+    decodeOutputBS,
+    encodeOutput,
+    encodeOutputBS,
+    encodeTxSig,
+    isPayPKHash,
+    isPayWitnessPKHash,
+    isPayWitnessScriptHash,
+    sigHashAll,
+    toP2SH,
+    txSigHash,
+ )
+import Bitcoin.Transaction (
+    Input (..),
+    Key (Key),
+    OutPoint (..),
+    Output (..),
+    PartiallySignedTransaction (..),
+    Tx (..),
+    TxHash,
+    TxIn (..),
+    TxOut (..),
+    UnknownMap (UnknownMap),
+    complete,
+    emptyInput,
+    emptyOutput,
+    emptyPSBT,
+    finalTransaction,
+    getSignerKey,
+    mergeMany,
+    secKeySigner,
+    txHash,
+    verifyStdTx,
+    xPrvSigner,
+ )
+import Bitcoin.Util (decodeHex, encodeHex)
+import qualified Bitcoin.Util as U
+import Bitcoin.Util.Arbitrary (
+    arbitraryKeyPair,
+    arbitraryMSParam,
+ )
 import Bitcoin.UtilSpec (readTestFile)
 import Control.Monad ((<=<))
 import Data.Aeson (FromJSON, parseJSON, withObject, (.:))
 import Data.Bifunctor (first)
+import qualified Data.Binary as Bin
 import Data.ByteString (ByteString)
 import Data.ByteString.Base64 (decodeBase64)
-import Data.Bytes.Get
-import Data.Bytes.Put
-import Data.Bytes.Serial
+import qualified Data.ByteString.Lazy as BSL
 import Data.Either (fromRight, isLeft, isRight)
 import Data.HashMap.Strict (fromList, singleton)
 import Data.Maybe (fromJust, isJust)
-import Data.Serialize as S
 import Data.Text (Text)
 import qualified Data.Text as Text
 import Data.Text.Encoding (encodeUtf8)
 import Test.HUnit (Assertion, assertBool, assertEqual)
-import Test.Hspec
-import Test.QuickCheck
+import Test.Hspec (Spec, describe, it)
+import Test.QuickCheck (
+    Gen,
+    Testable (property),
+    forAll,
+    vectorOf,
+ )
 
 
 spec :: Spec
 spec = describe "partially signed bitcoin transaction unit tests" $ do
     it "encodes trivial psbt" $
-        encodeHex (S.encode trivialPSBT) == trivialPSBTHex
+        encodeHex (U.encodeS trivialPSBT) == trivialPSBTHex
     it "decodes trivial psbt" $
         decodeHexPSBT trivialPSBTHex == Right trivialPSBT
     it "encodes and decodes non-empty transactions" $
-        S.decode (S.encode nonEmptyTransactionPSBT) == Right nonEmptyTransactionPSBT
+        (U.decode . Bin.encode) nonEmptyTransactionPSBT == Right nonEmptyTransactionPSBT
     it "does not decode invalid bip vectors" $
         mapM_ invalidVecTest invalidVec
     it "encodes valid bip vecs" $
@@ -61,7 +114,7 @@ spec = describe "partially signed bitcoin transaction unit tests" $ do
             forAll arbitraryMultiSig $
                 verifyNonWitnessPSBT btc . unfinalizedMsPSBT btc
     it "encodes and decodes psbt with final witness script" $
-        (fmap (encodeHex . S.encode) . decodeHexPSBT) validVec7Hex == Right validVec7Hex
+        (fmap (encodeHex . U.encodeS) . decodeHexPSBT) validVec7Hex == Right validVec7Hex
     it "handles complex psbts correctly" complexPsbtTest
     it "calculates keys properly" psbtSignerTest
 
@@ -194,13 +247,15 @@ vec5Test = do
                     , inputRedeemScript =
                         Just
                             . fromRight (error "vec5Test: Could not decode redeem script")
-                            . decode
+                            . U.decode
+                            . BSL.fromStrict
                             . fromJust
                             $ decodeHex "0020771fd18ad459666dd49f3d564e3dbc42f4c84774e360ada16816a8ed488d5681"
                     , inputWitnessScript =
                         Just
                             . fromRight (error "vec5Test: Could not decode witness script")
-                            . decode
+                            . U.decode
+                            . BSL.fromStrict
                             . fromJust
                             $ decodeHex "522103b1341ccba7683b6af4f1238cd6e97e7167d569fac47f1e48d47541844355bd462103de55d1e1dac805e3f8a58c1fbf9b94c02f3dbaafe127fefca4995f26f82083bd52ae"
                     , inputHDKeypaths =
@@ -327,7 +382,7 @@ witnessScriptPubKey =
 
 
 decodeHexPSBT :: Text -> Either String PartiallySignedTransaction
-decodeHexPSBT = S.decode . fromJust . decodeHex
+decodeHexPSBT = U.decode . BSL.fromStrict . fromJust . decodeHex
 
 
 decodeHexPSBTM :: (Monad m, MonadFail m) => String -> Text -> m PartiallySignedTransaction
@@ -336,13 +391,11 @@ decodeHexPSBTM errMsg = either (fail . (errMsg <>) . (": " <>)) return . decodeH
 
 hexScript :: Text -> ByteString
 hexScript =
-    either (error "Could not decode script") encodeScript
-        . runGetS deserialize
+    either (error "Could not decode script") U.encodeS
+        . U.decode @Script
+        . BSL.fromStrict
         . fromJust
         . decodeHex
-  where
-    encodeScript :: Script -> ByteString
-    encodeScript = runPutS . serialize
 
 
 invalidVecTest :: Text -> Assertion
@@ -354,7 +407,7 @@ decodeVecTest i = assertBool (show i <> " decodes correctly") . isRight . decode
 
 
 encodeVecTest :: PartiallySignedTransaction -> Text -> Assertion
-encodeVecTest psbt hex = assertEqual "encodes correctly" (S.encode psbt) (fromJust $ decodeHex hex)
+encodeVecTest psbt hex = assertEqual "encodes correctly" (U.encodeS psbt) (fromJust $ decodeHex hex)
 
 
 trivialPSBT :: PartiallySignedTransaction
@@ -398,7 +451,7 @@ unfinalizedPkhPSBT net (prvKey, pubKey) =
     prevOut =
         TxOut
             { outValue = 200000000
-            , scriptOutput = runPutS (serialize prevOutScript)
+            , scriptOutput = U.encodeS prevOutScript
             }
     h = txSigHash net currTx prevOutScript (outValue prevOut) 0 sigHashAll
     sig = encodeTxSig $ TxSignature (signHash (secKeyData prvKey) h) sigHashAll
@@ -605,6 +658,6 @@ instance FromJSON ComplexPsbtData where
             <*> psbtField "complete_psbt" obj
             <*> (obj .: "final_tx" >>= parseTx)
       where
-        parseTx = either fail pure . (S.decode <=< maybe (Left "hex") Right . decodeHex)
-        parsePsbt = either fail pure . (S.decode <=< first Text.unpack . decodeBase64) . encodeUtf8
+        parseTx = either fail pure . (U.decode . BSL.fromStrict <=< maybe (Left "hex") Right . decodeHex)
+        parsePsbt = either fail pure . (U.decode . BSL.fromStrict <=< first Text.unpack . decodeBase64) . encodeUtf8
         psbtField fieldName obj = obj .: fieldName >>= parsePsbt

@@ -15,22 +15,39 @@ module Bitcoin.Network.Message (
     getMessage,
 ) where
 
-import Bitcoin.Block.Common
-import Bitcoin.Block.Merkle
-import Bitcoin.Crypto.Hash
-import Bitcoin.Data
-import Bitcoin.Network.Bloom
-import Bitcoin.Network.Common
-import Bitcoin.Transaction.Common
-import Control.DeepSeq
+import Bitcoin.Block.Common (
+    Block,
+    GetBlocks,
+    GetHeaders,
+    Headers,
+ )
+import Bitcoin.Block.Merkle (MerkleBlock)
+import Bitcoin.Crypto.Hash (CheckSum32, checkSum32)
+import Bitcoin.Data (Network (getNetworkMagic))
+import Bitcoin.Network.Bloom (FilterAdd, FilterLoad)
+import Bitcoin.Network.Common (
+    Addr,
+    Alert,
+    GetData,
+    Inv,
+    MessageCommand (..),
+    NotFound,
+    Ping,
+    Pong,
+    Reject,
+    Version,
+ )
+import Bitcoin.Transaction.Common (Tx)
+import qualified Bitcoin.Util as U
+import Control.DeepSeq (NFData)
 import Control.Monad (unless)
 import Data.Binary (Binary (..))
+import qualified Data.Binary as Bin
+import Data.Binary.Get (Get, getByteString, getLazyByteString, getWord32be, getWord32le, lookAhead)
+import Data.Binary.Put (Put, putLazyByteString, putWord32be, putWord32le)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-import Data.Bytes.Get
-import Data.Bytes.Put
-import Data.Bytes.Serial
-import Data.Serialize (Serialize (..))
+import qualified Data.ByteString.Lazy as BSL
 import Data.Word (Word32)
 import GHC.Generics (Generic)
 
@@ -50,30 +67,20 @@ data MessageHeader = MessageHeader
     deriving (Eq, Show, Generic, NFData)
 
 
-instance Serial MessageHeader where
-    deserialize =
+instance Binary MessageHeader where
+    get =
         MessageHeader
             <$> getWord32be
-            <*> deserialize
+            <*> get
             <*> getWord32le
-            <*> deserialize
+            <*> get
 
 
-    serialize (MessageHeader m c l chk) = do
+    put (MessageHeader m c l chk) = do
         putWord32be m
-        serialize c
+        put c
         putWord32le l
-        serialize chk
-
-
-instance Binary MessageHeader where
-    put = serialize
-    get = deserialize
-
-
-instance Serialize MessageHeader where
-    put = serialize
-    get = deserialize
+        put chk
 
 
 -- | The 'Message' type is used to identify all the valid messages that can be
@@ -137,10 +144,10 @@ msgType (MOther c _) = MCOther c
 
 
 -- | Deserializer for network messages.
-getMessage :: MonadGet m => Network -> m Message
+getMessage :: Network -> Get Message
 getMessage net = do
-    (MessageHeader mgc cmd len chk) <- deserialize
-    bs <- lookAhead $ getByteString $ fromIntegral len
+    (MessageHeader mgc cmd len chk) <- get
+    bs <- getLazyByteString $ fromIntegral len
     unless
         (mgc == getNetworkMagic net)
         (fail $ "get: Invalid network magic bytes: " ++ show mgc)
@@ -149,32 +156,31 @@ getMessage net = do
         (fail $ "get: Invalid message checksum: " ++ show chk)
     if len > 0
         then do
-            bs <- ensure (fromIntegral len)
             let f = case cmd of
-                    MCVersion -> MVersion <$> deserialize
-                    MCAddr -> MAddr <$> deserialize
-                    MCInv -> MInv <$> deserialize
-                    MCGetData -> MGetData <$> deserialize
-                    MCNotFound -> MNotFound <$> deserialize
-                    MCGetBlocks -> MGetBlocks <$> deserialize
-                    MCGetHeaders -> MGetHeaders <$> deserialize
-                    MCTx -> MTx <$> deserialize
-                    MCBlock -> MBlock <$> deserialize
-                    MCMerkleBlock -> MMerkleBlock <$> deserialize
-                    MCHeaders -> MHeaders <$> deserialize
-                    MCFilterLoad -> MFilterLoad <$> deserialize
-                    MCFilterAdd -> MFilterAdd <$> deserialize
-                    MCPing -> MPing <$> deserialize
-                    MCPong -> MPong <$> deserialize
-                    MCAlert -> MAlert <$> deserialize
-                    MCReject -> MReject <$> deserialize
+                    MCVersion -> MVersion <$> get
+                    MCAddr -> MAddr <$> get
+                    MCInv -> MInv <$> get
+                    MCGetData -> MGetData <$> get
+                    MCNotFound -> MNotFound <$> get
+                    MCGetBlocks -> MGetBlocks <$> get
+                    MCGetHeaders -> MGetHeaders <$> get
+                    MCTx -> MTx <$> get
+                    MCBlock -> MBlock <$> get
+                    MCMerkleBlock -> MMerkleBlock <$> get
+                    MCHeaders -> MHeaders <$> get
+                    MCFilterLoad -> MFilterLoad <$> get
+                    MCFilterAdd -> MFilterAdd <$> get
+                    MCPing -> MPing <$> get
+                    MCPong -> MPong <$> get
+                    MCAlert -> MAlert <$> get
+                    MCReject -> MReject <$> get
                     MCOther c -> MOther c <$> getByteString (fromIntegral len)
                     _ ->
                         fail $
                             "get: command "
                                 ++ show cmd
                                 ++ " should not carry a payload"
-            either fail return (runGetS f bs)
+            either fail return $ U.runGet f bs
         else case cmd of
             MCGetAddr -> return MGetAddr
             MCVerAck -> return MVerAck
@@ -190,35 +196,35 @@ getMessage net = do
 
 
 -- | Serializer for network messages.
-putMessage :: MonadPut m => Network -> Message -> m ()
+putMessage :: Network -> Message -> Put
 putMessage net msg = do
     let (cmd, payload) =
             case msg of
-                MVersion m -> (MCVersion, runPutS $ serialize m)
-                MVerAck -> (MCVerAck, BS.empty)
-                MAddr m -> (MCAddr, runPutS $ serialize m)
-                MInv m -> (MCInv, runPutS $ serialize m)
-                MGetData m -> (MCGetData, runPutS $ serialize m)
-                MNotFound m -> (MCNotFound, runPutS $ serialize m)
-                MGetBlocks m -> (MCGetBlocks, runPutS $ serialize m)
-                MGetHeaders m -> (MCGetHeaders, runPutS $ serialize m)
-                MTx m -> (MCTx, runPutS $ serialize m)
-                MBlock m -> (MCBlock, runPutS $ serialize m)
-                MMerkleBlock m -> (MCMerkleBlock, runPutS $ serialize m)
-                MHeaders m -> (MCHeaders, runPutS $ serialize m)
-                MGetAddr -> (MCGetAddr, BS.empty)
-                MFilterLoad m -> (MCFilterLoad, runPutS $ serialize m)
-                MFilterAdd m -> (MCFilterAdd, runPutS $ serialize m)
-                MFilterClear -> (MCFilterClear, BS.empty)
-                MPing m -> (MCPing, runPutS $ serialize m)
-                MPong m -> (MCPong, runPutS $ serialize m)
-                MAlert m -> (MCAlert, runPutS $ serialize m)
-                MMempool -> (MCMempool, BS.empty)
-                MReject m -> (MCReject, runPutS $ serialize m)
-                MSendHeaders -> (MCSendHeaders, BS.empty)
-                MOther c p -> (MCOther c, p)
+                MVersion m -> (MCVersion, Bin.encode m)
+                MVerAck -> (MCVerAck, BSL.empty)
+                MAddr m -> (MCAddr, Bin.encode m)
+                MInv m -> (MCInv, Bin.encode m)
+                MGetData m -> (MCGetData, Bin.encode m)
+                MNotFound m -> (MCNotFound, Bin.encode m)
+                MGetBlocks m -> (MCGetBlocks, Bin.encode m)
+                MGetHeaders m -> (MCGetHeaders, Bin.encode m)
+                MTx m -> (MCTx, Bin.encode m)
+                MBlock m -> (MCBlock, Bin.encode m)
+                MMerkleBlock m -> (MCMerkleBlock, Bin.encode m)
+                MHeaders m -> (MCHeaders, Bin.encode m)
+                MGetAddr -> (MCGetAddr, BSL.empty)
+                MFilterLoad m -> (MCFilterLoad, Bin.encode m)
+                MFilterAdd m -> (MCFilterAdd, Bin.encode m)
+                MFilterClear -> (MCFilterClear, BSL.empty)
+                MPing m -> (MCPing, Bin.encode m)
+                MPong m -> (MCPong, Bin.encode m)
+                MAlert m -> (MCAlert, Bin.encode m)
+                MMempool -> (MCMempool, BSL.empty)
+                MReject m -> (MCReject, Bin.encode m)
+                MSendHeaders -> (MCSendHeaders, BSL.empty)
+                MOther c p -> (MCOther c, BSL.fromStrict p)
         chk = checkSum32 payload
-        len = fromIntegral $ BS.length payload
+        len = fromIntegral $ BSL.length payload
         header = MessageHeader (getNetworkMagic net) cmd len chk
-    serialize header
-    putByteString payload
+    put header
+    putLazyByteString payload

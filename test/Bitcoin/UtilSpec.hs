@@ -3,7 +3,6 @@
 
 module Bitcoin.UtilSpec (
     spec,
-    customCerealID,
     readTestFile,
     SerialBox (..),
     ReadBox (..),
@@ -17,29 +16,46 @@ module Bitcoin.UtilSpec (
 ) where
 
 import Bitcoin (Network)
-import Bitcoin.Util
-import Bitcoin.Util.Arbitrary
+import Bitcoin.Util (
+    bsToInteger,
+    decodeHex,
+    eitherToMaybe,
+    encodeHex,
+    integerToBS,
+    matchTemplate,
+    maybeToEither,
+    updateIndex,
+ )
+import qualified Bitcoin.Util as U
+import Bitcoin.Util.Arbitrary (arbitraryBS, fromMap, toMap)
 import Control.Monad (forM_, (<=<))
 import Data.Aeson (FromJSON, ToJSON)
 import qualified Data.Aeson as A
-import Data.Aeson.Encoding
-import Data.Aeson.Types
+import Data.Aeson.Encoding (
+    Encoding,
+    encodingToLazyByteString,
+    pair,
+ )
+import Data.Aeson.Types (
+    Parser,
+    Result (Success),
+    ToJSON (toEncoding, toJSON),
+    Value,
+    fromJSON,
+    parseMaybe,
+ )
+import Data.Binary (Binary)
+import qualified Data.Binary as Bin
 import qualified Data.ByteString as BS
-import Data.ByteString.Lazy (fromStrict, toStrict)
-import Data.Bytes.Get
-import Data.Bytes.Put
-import Data.Bytes.Serial
-import Data.Either (fromLeft, fromRight, isLeft, isRight)
+import qualified Data.ByteString.Lazy as BSL
 import Data.Foldable (toList)
 import Data.List (permutations)
-import Data.Map.Strict (singleton)
-import Data.Maybe
+import Data.Maybe (catMaybes, isNothing)
 import qualified Data.Sequence as Seq
-import Data.Serialize as S
-import Data.Typeable
-import Test.Hspec
-import Test.Hspec.QuickCheck
-import Test.QuickCheck
+import Data.Typeable (Proxy (..), Typeable, typeRep)
+import Test.Hspec (Spec, describe, shouldBe, shouldSatisfy)
+import Test.Hspec.QuickCheck (prop)
+import Test.QuickCheck (Gen, forAll)
 
 
 spec :: Spec
@@ -57,7 +73,7 @@ spec =
 {- Various utilities -}
 
 getPutInteger :: Integer -> Bool
-getPutInteger i = bsToInteger (integerToBS $ abs i) == abs i
+getPutInteger i = (bsToInteger . BSL.fromStrict . integerToBS . abs) i == abs i
 
 
 fromToHex :: BS.ByteString -> Bool
@@ -98,10 +114,6 @@ testMaybeToEither m str = maybeToEither str m == Left str
 
 {-- Test Utilities --}
 
-customCerealID :: Eq a => Get a -> Putter a -> a -> Bool
-customCerealID g p a = runGet g (runPut (p a)) == Right a
-
-
 readTestFile :: A.FromJSON a => FilePath -> IO a
 readTestFile fp =
     A.eitherDecodeFileStrict ("data/" <> fp) >>= either (error . message) return
@@ -113,7 +125,7 @@ readTestFile fp =
 
 data SerialBox
     = forall a.
-        (Show a, Eq a, Typeable a, Serial a) =>
+        (Show a, Eq a, Typeable a, Binary a) =>
       SerialBox (Gen a)
 
 
@@ -200,14 +212,11 @@ testNetJson j e p g = do
 
 -- | Generate binary identity tests
 testSerial ::
-    (Eq a, Show a, Typeable a, Serial a) => Gen a -> Spec
+    (Eq a, Show a, Typeable a, Binary a) => Gen a -> Spec
 testSerial gen =
     prop ("Binary encoding/decoding identity for " <> name) $
         forAll gen $ \x -> do
-            (runGetL deserialize . runPutL . serialize) x `shouldBe` x
-            (runGetL deserialize . fromStrict . runPutS . serialize) x `shouldBe` x
-            (runGetS deserialize . runPutS . serialize) x `shouldBe` Right x
-            (runGetS deserialize . toStrict . runPutL . serialize) x `shouldBe` Right x
+            (U.decode . Bin.encode) x `shouldBe` Right x
   where
     name = show $ typeRep $ proxy gen
     proxy :: Gen a -> Proxy a

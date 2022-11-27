@@ -29,25 +29,23 @@ module Bitcoin.Block.Merkle (
     boolsToWord8,
 ) where
 
-import Bitcoin.Block.Common
-import Bitcoin.Crypto.Hash
-import Bitcoin.Data
-import Bitcoin.Network.Common
-import Bitcoin.Transaction.Common
-import Control.DeepSeq
+import Bitcoin.Block.Common (BlockHeader (merkleRoot))
+import Bitcoin.Crypto.Hash (Hash256, doubleSHA256, doubleSHA256L)
+import Bitcoin.Data (Network (getMaxBlockSize))
+import Bitcoin.Network.Common (VarInt (VarInt), putVarInt)
+import Bitcoin.Transaction.Common (TxHash (..))
+import Control.DeepSeq (NFData)
 import Control.Monad (forM_, replicateM, when)
 import Data.Binary (Binary (..))
-import Data.Bits
+import Data.Binary.Get (getWord32le, getWord8)
+import Data.Binary.Put (putWord32le, putWord8, runPut)
+import Data.Bits (Bits (setBit, shiftL, shiftR, testBit))
 import qualified Data.ByteString as BS
-import Data.Bytes.Get
-import Data.Bytes.Put
-import Data.Bytes.Serial
 import Data.Either (isRight)
-import Data.Hashable
-import Data.Maybe
-import Data.Serialize (Serialize (..))
+import Data.Hashable (Hashable)
+import Data.Maybe (fromMaybe, isNothing)
 import Data.Word (Word32, Word8)
-import GHC.Generics
+import GHC.Generics (Generic)
 
 
 -- | Hash of the block's Merkle root.
@@ -77,35 +75,25 @@ data MerkleBlock = MerkleBlock
     deriving (Eq, Show, Read, Generic, Hashable, NFData)
 
 
-instance Serial MerkleBlock where
-    deserialize = do
-        header <- deserialize
+instance Binary MerkleBlock where
+    get = do
+        header <- get
         ntx <- getWord32le
-        (VarInt matchLen) <- deserialize
-        hashes <- replicateM (fromIntegral matchLen) deserialize
-        (VarInt flagLen) <- deserialize
+        (VarInt matchLen) <- get
+        hashes <- replicateM (fromIntegral matchLen) get
+        (VarInt flagLen) <- get
         ws <- replicateM (fromIntegral flagLen) getWord8
         return $ MerkleBlock header ntx hashes (decodeMerkleFlags ws)
 
 
-    serialize (MerkleBlock h ntx hashes flags) = do
-        serialize h
+    put (MerkleBlock h ntx hashes flags) = do
+        put h
         putWord32le ntx
         putVarInt $ length hashes
-        forM_ hashes serialize
+        mapM_ put hashes
         let ws = encodeMerkleFlags flags
         putVarInt $ length ws
-        forM_ ws putWord8
-
-
-instance Binary MerkleBlock where
-    put = serialize
-    get = deserialize
-
-
-instance Serialize MerkleBlock where
-    put = serialize
-    get = deserialize
+        mapM_ putWord8 ws
 
 
 -- | Unpack Merkle flags into 'FlagBits' structure.
@@ -155,7 +143,7 @@ buildMerkleRoot txs = calcHash (calcTreeHeight $ length txs) 0 txs
 
 -- | Concatenate and compute double SHA256.
 hash2 :: Hash256 -> Hash256 -> Hash256
-hash2 a b = doubleSHA256 $ runPutS (serialize a) <> runPutS (serialize b)
+hash2 a b = doubleSHA256L . runPut $ put a >> put b
 
 
 -- | Computes the hash of a specific node in a Merkle tree.

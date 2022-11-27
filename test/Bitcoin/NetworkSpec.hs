@@ -2,24 +2,60 @@
 
 module Bitcoin.NetworkSpec (spec) where
 
-import Bitcoin.Address
-import Bitcoin.Constants
-import Bitcoin.Keys
-import Bitcoin.Network
-import Bitcoin.Transaction
-import Bitcoin.Util
-import Bitcoin.Util.Arbitrary
-import Bitcoin.UtilSpec hiding (spec)
-import Data.Bytes.Get
-import Data.Bytes.Put
-import Data.Bytes.Serial
+import Bitcoin.Address (Address (getAddrHash160), pubKeyAddr)
+import Bitcoin.Constants (btc)
+import Bitcoin.Keys (derivePubKeyI, fromWif)
+import Bitcoin.Network (
+    BloomFlags (BloomUpdateAll),
+    bloomContains,
+    bloomCreate,
+    bloomInsert,
+    bloomRelevantUpdate,
+    getMessage,
+    putMessage,
+ )
+import Bitcoin.Transaction (
+    OutPoint (OutPoint),
+    Tx (..),
+    TxIn (..),
+    TxOut (..),
+ )
+import Bitcoin.Util (decodeHex)
+import qualified Bitcoin.Util as U
+import Bitcoin.Util.Arbitrary (
+    arbitraryAddr1,
+    arbitraryAlert,
+    arbitraryBloomFilter,
+    arbitraryBloomFlags,
+    arbitraryFilterAdd,
+    arbitraryFilterLoad,
+    arbitraryGetData,
+    arbitraryInv1,
+    arbitraryInvType,
+    arbitraryInvVector,
+    arbitraryMessage,
+    arbitraryMessageCommand,
+    arbitraryMessageHeader,
+    arbitraryNetwork,
+    arbitraryNetworkAddress,
+    arbitraryNotFound,
+    arbitraryPing,
+    arbitraryPong,
+    arbitraryReject,
+    arbitraryRejectCode,
+    arbitraryVarInt,
+    arbitraryVarString,
+    arbitraryVersion,
+ )
+import Bitcoin.UtilSpec (SerialBox (..), testIdentity)
+import Data.Binary.Put (runPut)
 import Data.Maybe (fromJust)
 import Data.Text (Text)
 import Data.Word (Word32)
 import Test.HUnit (Assertion, assertBool, assertEqual)
-import Test.Hspec
-import Test.Hspec.QuickCheck
-import Test.QuickCheck
+import Test.Hspec (Spec, describe, it)
+import Test.Hspec.QuickCheck (prop)
+import Test.QuickCheck (forAll)
 
 
 serialVals :: [SerialBox]
@@ -54,8 +90,8 @@ spec = do
     describe "Custom identity tests" $ do
         prop "Data.Serialize Encoding for type Message" $
             forAll arbitraryNetwork $ \net ->
-                forAll (arbitraryMessage net) $
-                    customCerealID (getMessage net) (putMessage net)
+                forAll (arbitraryMessage net) $ \x ->
+                    Right x == (U.runGet (getMessage net) . runPut . putMessage net) x
     describe "bloom filters" $ do
         it "bloom filter vector 1" bloomFilter1
         it "bloom filter vector 2" bloomFilter2
@@ -74,7 +110,7 @@ bloomFilter n x = do
     assertBool "Bloom filter doesn't contain vector 3" $ bloomContains f3 v3
     assertBool "Bloom filter doesn't contain vector 4" $ bloomContains f4 v4
     assertBool "Bloom filter serialization is incorrect" $
-        runPutS (serialize f4) == bs
+        U.encodeS f4 == bs
   where
     f0 = bloomCreate 3 0.01 n BloomUpdateAll
     f1 = bloomInsert f0 v1
@@ -98,11 +134,11 @@ bloomFilter2 = bloomFilter 2147483649 "03ce4299050000000100008001"
 bloomFilter3 :: Assertion
 bloomFilter3 =
     assertBool "Bloom filter serialization is incorrect" $
-        runPutS (serialize f2) == bs
+        U.encodeS f2 == bs
   where
     f0 = bloomCreate 2 0.001 0 BloomUpdateAll
-    f1 = bloomInsert f0 $ runPutS $ serialize p
-    f2 = bloomInsert f1 $ runPutS $ serialize $ getAddrHash160 $ pubKeyAddr p
+    f1 = bloomInsert f0 $ U.encodeS p
+    f2 = bloomInsert f1 $ U.encodeS $ getAddrHash160 $ pubKeyAddr p
     k = fromJust $ fromWif btc "5Kg1gnAjaLfKiwhhPpGS3QfRg2m6awQvaj98JCZBZQ5SuS2F15C"
     p = derivePubKeyI k
     bs = fromJust $ decodeHex "038fc16b080000000000000001"
@@ -117,7 +153,7 @@ relevantOutputUpdated =
     relevantOutputHash = fromJust $ decodeHex "03f47604ea2736334151081e13265b4fe38e6fa8"
     bf1 = bloomInsert bf0 relevantOutputHash
     bf2 = fromJust $ bloomRelevantUpdate bf1 relevantTx
-    spendTxInput = runPutS . serialize . prevOutput <$> txIn spendRelevantTx
+    spendTxInput = U.encodeS . prevOutput <$> txIn spendRelevantTx
 
 
 irrelevantOutputNotUpdated :: Assertion

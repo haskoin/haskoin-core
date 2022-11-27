@@ -45,24 +45,36 @@ module Bitcoin.Address (
 
 import Bitcoin.Address.Base58
 import Bitcoin.Address.Bech32
-import Bitcoin.Crypto
-import Bitcoin.Data
-import Bitcoin.Keys.Common
-import Bitcoin.Script
-import Bitcoin.Util
-import Control.Applicative
+import Bitcoin.Crypto (Hash160, Hash256, addressHash, addressHashL, sha256)
+import Bitcoin.Data (Network (..))
+import Bitcoin.Keys.Common (PubKeyI)
+import Bitcoin.Script (
+    Script,
+    ScriptInput (..),
+    ScriptOutput (..),
+    SimpleInput (SpendPKHash),
+    decodeOutput,
+    decodeOutputBS,
+    encodeOutput,
+    encodeOutputBS,
+    toP2WSH,
+ )
+import Bitcoin.Util (eitherToMaybe, encodeHex, maybeToEither)
+import qualified Bitcoin.Util as U
+import Control.Applicative ((<|>))
 import Control.Arrow (second)
-import Control.DeepSeq
-import Control.Monad
-import Data.Binary (Binary (..))
+import Control.DeepSeq (NFData)
+import Control.Monad ((<=<))
+import Data.Binary (Binary (..), Get, Put)
+import qualified Data.Binary as Bin
+import Data.Binary.Get (runGet)
+import qualified Data.Binary.Get as Get
+import Data.Binary.Put (runPut)
+import qualified Data.Binary.Put as Put
 import Data.ByteString (ByteString)
-import qualified Data.ByteString as B
-import Data.Bytes.Get
-import Data.Bytes.Put
-import Data.Bytes.Serial
-import Data.Hashable
-import Data.Maybe
-import Data.Serialize (Serialize (..))
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BSL
+import Data.Hashable (Hashable)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Word (Word8)
@@ -100,50 +112,41 @@ data Address
         (Eq, Ord, Generic, Show, Read, Hashable, NFData)
 
 
-instance Serial Address where
-    serialize (PubKeyAddress k) = do
-        putWord8 0x00
-        serialize k
-    serialize (ScriptAddress s) = do
-        putWord8 0x01
-        serialize s
-    serialize (WitnessPubKeyAddress h) = do
-        putWord8 0x02
-        serialize h
-    serialize (WitnessScriptAddress s) = do
-        putWord8 0x03
-        serialize s
-    serialize (WitnessAddress v d) = do
-        putWord8 0x04
-        putWord8 v
-        putWord64be (fromIntegral (B.length d))
-        putByteString d
+instance Binary Address where
+    put = \case
+        PubKeyAddress k -> do
+            Put.putWord8 0x00
+            put k
+        ScriptAddress s -> do
+            Put.putWord8 0x01
+            put s
+        WitnessPubKeyAddress h -> do
+            Put.putWord8 0x02
+            put h
+        WitnessScriptAddress s -> do
+            Put.putWord8 0x03
+            put s
+        WitnessAddress v d -> do
+            Put.putWord8 0x04
+            Put.putWord8 v
+            Put.putWord64be (fromIntegral (BS.length d))
+            Put.putByteString d
 
 
-    deserialize =
-        getWord8 >>= \case
-            0x00 -> PubKeyAddress <$> deserialize
-            0x01 -> ScriptAddress <$> deserialize
-            0x02 -> WitnessPubKeyAddress <$> deserialize
-            0x03 -> WitnessScriptAddress <$> deserialize
+    get =
+        Get.getWord8 >>= \case
+            0x00 -> PubKeyAddress <$> get
+            0x01 -> ScriptAddress <$> get
+            0x02 -> WitnessPubKeyAddress <$> get
+            0x03 -> WitnessScriptAddress <$> get
             0x04 ->
                 WitnessAddress
-                    <$> getWord8
-                    <*> (getByteString . fromIntegral =<< getWord64be)
+                    <$> Get.getWord8
+                    <*> (Get.getByteString . fromIntegral =<< Get.getWord64be)
             b ->
                 fail . T.unpack $
                     "Could not decode address type byte: "
-                        <> encodeHex (B.singleton b)
-
-
-instance Serialize Address where
-    put = serialize
-    get = deserialize
-
-
-instance Binary Address where
-    put = serialize
-    get = deserialize
+                        <> encodeHex (BS.singleton b)
 
 
 -- | 'Address' pays to a public key hash.
@@ -178,17 +181,17 @@ isWitnessAddress _ = False
 -- | Convert address to human-readable string. Uses 'Base58', or 'Bech32'
 -- depending on network.
 addrToText :: Network -> Address -> Maybe Text
-addrToText net a@PubKeyAddress{} = Just . encodeBase58Check . runPutS $ base58put net a
-addrToText net a@ScriptAddress{} = Just . encodeBase58Check . runPutS $ base58put net a
+addrToText net a@PubKeyAddress{} = Just . encodeBase58Check . Put.runPut $ base58put net a
+addrToText net a@ScriptAddress{} = Just . encodeBase58Check . Put.runPut $ base58put net a
 addrToText net WitnessPubKeyAddress{getAddrHash160 = h} = do
     hrp <- getBech32Prefix net
-    segwitEncode hrp 0 (B.unpack (runPutS $ serialize h))
+    segwitEncode hrp 0 . BSL.unpack $ Bin.encode h
 addrToText net WitnessScriptAddress{getAddrHash256 = h} = do
     hrp <- getBech32Prefix net
-    segwitEncode hrp 0 (B.unpack (runPutS $ serialize h))
+    segwitEncode hrp 0 . BSL.unpack $ Bin.encode h
 addrToText net WitnessAddress{getAddrVersion = v, getAddrData = d} = do
     hrp <- getBech32Prefix net
-    segwitEncode hrp v (B.unpack d)
+    segwitEncode hrp v (BS.unpack d)
 
 
 -- | Parse 'Base58', or 'Bech32' address, depending on network.
@@ -200,24 +203,24 @@ textToAddr net txt =
 bech32ToAddr :: Network -> Text -> Maybe Address
 bech32ToAddr net txt = do
     hrp <- getBech32Prefix net
-    (ver, bs) <- second B.pack <$> segwitDecode hrp txt
+    (ver, bs) <- second BS.pack <$> segwitDecode hrp txt
     case ver of
-        0 -> case B.length bs of
-            20 -> WitnessPubKeyAddress <$> eitherToMaybe (runGetS deserialize bs)
-            32 -> WitnessScriptAddress <$> eitherToMaybe (runGetS deserialize bs)
+        0 -> case BS.length bs of
+            20 -> WitnessPubKeyAddress <$> (eitherToMaybe . U.decode . BSL.fromStrict) bs
+            32 -> WitnessScriptAddress <$> (eitherToMaybe . U.decode . BSL.fromStrict) bs
             _ -> Nothing
         _ -> Just $ WitnessAddress ver bs
 
 
 base58ToAddr :: Network -> Text -> Maybe Address
 base58ToAddr net txt =
-    eitherToMaybe . runGetS (base58get net) =<< decodeBase58Check txt
+    eitherToMaybe . U.runGet (base58get net) =<< decodeBase58Check txt
 
 
-base58get :: MonadGet m => Network -> m Address
+base58get :: Network -> Get Address
 base58get net = do
-    pfx <- getWord8
-    addr <- deserialize
+    pfx <- Get.getWord8
+    addr <- get
     f pfx addr
   where
     f x a
@@ -226,19 +229,19 @@ base58get net = do
         | otherwise = fail "Does not recognize address prefix"
 
 
-base58put :: MonadPut m => Network -> Address -> m ()
+base58put :: Network -> Address -> Put
 base58put net (PubKeyAddress h) = do
-    putWord8 (getAddrPrefix net)
-    serialize h
+    Put.putWord8 (getAddrPrefix net)
+    put h
 base58put net (ScriptAddress h) = do
-    putWord8 (getScriptPrefix net)
-    serialize h
+    Put.putWord8 (getScriptPrefix net)
+    put h
 base58put _ _ = error "Cannot serialize this address as Base58"
 
 
 -- | Obtain a standard pay-to-public-key-hash address from a public key.
 pubKeyAddr :: PubKeyI -> Address
-pubKeyAddr = PubKeyAddress . addressHash . runPutS . serialize
+pubKeyAddr = PubKeyAddress . addressHashL . Bin.encode
 
 
 -- | Obtain a standard pay-to-public-key-hash (P2PKH) address from a 'Hash160'.
@@ -249,7 +252,7 @@ p2pkhAddr = PubKeyAddress
 -- | Obtain a SegWit pay-to-witness-public-key-hash (P2WPKH) address from a
 -- public key.
 pubKeyWitnessAddr :: PubKeyI -> Address
-pubKeyWitnessAddr = WitnessPubKeyAddress . addressHash . runPutS . serialize
+pubKeyWitnessAddr = WitnessPubKeyAddress . addressHashL . Bin.encode
 
 
 -- | Obtain a backwards-compatible SegWit P2SH-P2WPKH address from a public key.
@@ -259,9 +262,8 @@ pubKeyCompatWitnessAddr =
         . addressHash
         . encodeOutputBS
         . PayWitnessPKHash
-        . addressHash
-        . runPutS
-        . serialize
+        . addressHashL
+        . Bin.encode
 
 
 -- | Obtain a SegWit pay-to-witness-public-key-hash (P2WPKH) address from a
@@ -316,7 +318,7 @@ addressToScript = encodeOutput . addressToOutput
 
 -- | Encode address as output script in 'ByteString' form.
 addressToScriptBS :: Address -> ByteString
-addressToScriptBS = runPutS . serialize . addressToScript
+addressToScriptBS = U.encodeS . addressToScript
 
 
 -- | Decode an output script into an 'Address' if it has such representation.

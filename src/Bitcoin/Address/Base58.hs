@@ -14,22 +14,21 @@ module Bitcoin.Address.Base58 (
     decodeBase58Check,
 ) where
 
-import Bitcoin.Crypto.Hash
-import Bitcoin.Util
-import Control.Monad
-import Data.Array
+import Bitcoin.Crypto.Hash (checkSum32)
+import Bitcoin.Util (bsToInteger, integerToBS)
+import Control.Monad (guard)
+import Data.Array (Array, assocs, listArray, (!), (//))
+import qualified Data.Binary as Bin
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as C
-import Data.Bytes.Get
-import Data.Bytes.Put
-import Data.Bytes.Serial
-import Data.Char
+import qualified Data.ByteString.Lazy as BSL
+import Data.Char (chr, ord)
 import Data.Maybe (fromMaybe, isJust, listToMaybe)
 import Data.String.Conversions (cs)
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Word
+import Data.Word (Word8)
 import Numeric (readInt, showIntAtBase)
 
 
@@ -84,42 +83,42 @@ decodeBase58I s =
 
 -- | Encode an arbitrary 'ByteString' into a its 'Base58' representation,
 -- preserving leading zeroes.
-encodeBase58 :: ByteString -> Base58
+encodeBase58 :: BSL.ByteString -> Base58
 encodeBase58 bs =
     l <> r
   where
-    (z, b) = BS.span (== 0) bs
-    l = cs $ BS.replicate (BS.length z) (b58 0) -- preserve leading 0's
+    (z, b) = BSL.span (== 0) bs
+    l = cs $ BSL.replicate (BSL.length z) (b58 0) -- preserve leading 0's
     r
-        | BS.null b = T.empty
+        | BSL.null b = T.empty
         | otherwise = encodeBase58I $ bsToInteger b
 
 
 -- | Decode a 'Base58'-encoded 'Text' to a 'ByteString'.
-decodeBase58 :: Base58 -> Maybe ByteString
+decodeBase58 :: Base58 -> Maybe BSL.ByteString
 decodeBase58 t =
-    BS.append prefix <$> r
+    BSL.append prefix <$> r
   where
-    (z, b) = BS.span (== b58 0) (cs t)
-    prefix = BS.replicate (BS.length z) 0 -- preserve leading 1's
+    (z, b) = BSL.span (== b58 0) (cs t)
+    prefix = BSL.replicate (BSL.length z) 0 -- preserve leading 1's
     r
-        | BS.null b = Just BS.empty
-        | otherwise = integerToBS <$> decodeBase58I (cs b)
+        | BSL.null b = Just mempty
+        | otherwise = BSL.fromStrict . integerToBS <$> decodeBase58I (cs b)
 
 
 -- | Computes a checksum for the input 'ByteString' and encodes the input and
 -- the checksum as 'Base58'.
-encodeBase58Check :: ByteString -> Base58
+encodeBase58Check :: BSL.ByteString -> Base58
 encodeBase58Check bs =
-    encodeBase58 $ BS.append bs $ runPutS $ serialize $ checkSum32 bs
+    encodeBase58 . BSL.append bs . Bin.encode $ checkSum32 bs
 
 
 -- | Decode a 'Base58'-encoded string that contains a checksum. This function
 -- returns 'Nothing' if the input string contains invalid 'Base58' characters or
 -- if the checksum fails.
-decodeBase58Check :: Base58 -> Maybe ByteString
+decodeBase58Check :: Base58 -> Maybe BSL.ByteString
 decodeBase58Check bs = do
     rs <- decodeBase58 bs
-    let (res, chk) = BS.splitAt (BS.length rs - 4) rs
-    guard $ chk == runPutS (serialize (checkSum32 res))
+    let (res, chk) = BSL.splitAt (BSL.length rs - 4) rs
+    guard $ chk == Bin.encode (checkSum32 res)
     return res

@@ -10,7 +10,7 @@ import Bitcoin.Util
 import Control.Monad
 import Data.Bits (xor)
 import Data.ByteString (ByteString)
-import qualified Data.ByteString as B
+import qualified Data.ByteString as BS
 import Data.Char (chr, ord, toLower)
 import Data.Maybe
 import Data.String.Conversions
@@ -120,7 +120,7 @@ testInvalidAddress address = do
 
 segwitScriptPubkey :: Word8 -> [Word8] -> ByteString
 segwitScriptPubkey witver witprog =
-    B.pack $ witver' : fromIntegral (length witprog) : witprog
+    BS.pack $ witver' : fromIntegral (length witprog) : witprog
   where
     witver' = if witver == 0 then 0 else witver + 0x50
 

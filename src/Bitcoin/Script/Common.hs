@@ -18,17 +18,18 @@ module Bitcoin.Script.Common (
     scriptOpToInt,
 ) where
 
+import qualified Bitcoin.Util as U
 import Control.DeepSeq
 import Control.Monad
 import Data.Binary (Binary (..))
+import qualified Data.Binary as Bin
+import Data.Binary.Get (getByteString, getWord16le, getWord32le, getWord8, isEmpty)
+import Data.Binary.Put (putByteString, putWord16le, putWord32le, putWord8)
 import Data.ByteString (ByteString)
-import qualified Data.ByteString as B
-import Data.Bytes.Get
-import Data.Bytes.Put
-import Data.Bytes.Serial
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BSL
 import Data.Either (fromRight)
 import Data.Hashable
-import Data.Serialize (Serialize (..))
 import Data.Word (Word8)
 import GHC.Generics (Generic)
 
@@ -49,28 +50,18 @@ newtype Script = Script
     deriving (Eq, Show, Read, Generic, Hashable, NFData)
 
 
-instance Serial Script where
-    deserialize =
+instance Binary Script where
+    get =
         Script <$> getScriptOps
       where
         getScriptOps = do
             empty <- isEmpty
             if empty
                 then return []
-                else (:) <$> deserialize <*> getScriptOps
+                else (:) <$> get <*> getScriptOps
 
 
-    serialize (Script ops) = forM_ ops serialize
-
-
-instance Binary Script where
-    put = serialize
-    get = deserialize
-
-
-instance Serialize Script where
-    put = serialize
-    get = deserialize
+    put (Script ops) = mapM_ put ops
 
 
 -- | Data type representing the type of an OP_PUSHDATA opcode.
@@ -216,8 +207,8 @@ data ScriptOp
     deriving (Show, Read, Eq, Generic, Hashable, NFData)
 
 
-instance Serial ScriptOp where
-    deserialize = go . fromIntegral =<< getWord8
+instance Binary ScriptOp where
+    get = go . fromIntegral =<< getWord8
       where
         go op
             | op == 0x00 = return OP_0
@@ -358,9 +349,9 @@ instance Serial ScriptOp where
             | otherwise = return $ OP_INVALIDOPCODE op
 
 
-    serialize op = case op of
+    put op = case op of
         (OP_PUSHDATA payload optype) -> do
-            let len = B.length payload
+            let len = BS.length payload
             case optype of
                 OPCODE -> do
                     unless (len <= 0x4b) $
@@ -508,16 +499,6 @@ instance Serial ScriptOp where
         OP_CHECKSIGADD -> putWord8 0xba
 
 
-instance Binary ScriptOp where
-    put = serialize
-    get = deserialize
-
-
-instance Serialize ScriptOp where
-    put = serialize
-    get = deserialize
-
-
 -- | Check whether opcode is only data.
 isPushOp :: ScriptOp -> Bool
 isPushOp op = case op of
@@ -552,7 +533,7 @@ opPushData bs
     | len <= 0xffffffff = OP_PUSHDATA bs OPDATA4
     | otherwise = error "opPushData: payload size too big"
   where
-    len = B.length bs
+    len = BS.length bs
 
 
 -- | Transforms integers @[1 .. 16]@ to 'ScriptOp' @[OP_1 .. OP_16]@.
@@ -563,8 +544,8 @@ intToScriptOp i
   where
     op =
         fromRight err
-            . runGetS deserialize
-            . B.singleton
+            . U.decode
+            . BSL.singleton
             . fromIntegral
             $ i + 0x50
     err = error $ "intToScriptOp: Invalid integer " ++ show i
@@ -577,4 +558,4 @@ scriptOpToInt s
     | res `elem` [1 .. 16] = return res
     | otherwise = Left $ "scriptOpToInt: invalid opcode " ++ show s
   where
-    res = fromIntegral (B.head $ runPutS $ serialize s) - 0x50
+    res = (fromIntegral . BSL.head . Bin.encode) s - 0x50

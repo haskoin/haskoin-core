@@ -1,31 +1,48 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Bitcoin.AddressSpec (spec) where
 
-import Bitcoin.Address
-import Bitcoin.Constants
-import Bitcoin.Data
-import Bitcoin.Keys
-import Bitcoin.Util
-import Bitcoin.Util.Arbitrary
-import Bitcoin.UtilSpec hiding (spec)
-import Data.Aeson
-import Data.Aeson.Encoding
+import Bitcoin.Address (
+    Address,
+    addrToText,
+    addressToOutput,
+    decodeBase58,
+    decodeBase58Check,
+    encodeBase58,
+    encodeBase58Check,
+    outputAddress,
+    pubKeyCompatWitnessAddr,
+    textToAddr,
+ )
+import Bitcoin.Constants (Network, btcTest)
+import Bitcoin.Keys (derivePubKeyI, fromWif)
+import Bitcoin.Util (decodeHex, encodeHex)
+import Bitcoin.Util.Arbitrary (
+    arbitraryAddress,
+    arbitraryAddressAll,
+    arbitraryBS,
+    arbitraryNetAddress,
+ )
+import Bitcoin.UtilSpec (
+    NetBox (..),
+    ReadBox (..),
+    SerialBox (..),
+    testIdentity,
+ )
+import Data.Aeson (Encoding, ToJSON (toJSON), Value, withText)
+import Data.Aeson.Encoding (null_, text)
 import Data.Aeson.Types (Parser)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS (append, empty, pack)
-import Data.Bytes.Serial
-import Data.Foldable
+import qualified Data.ByteString.Lazy as BSL
 import Data.Maybe (fromJust, isJust)
-import Data.Proxy (Proxy (..))
 import Data.Text (Text)
-import qualified Data.Text as T
-import Data.Typeable (Typeable, typeRep)
-import Test.HUnit
-import Test.Hspec
-import Test.Hspec.QuickCheck
-import Test.QuickCheck
+import Test.HUnit (Assertion, assertBool, assertEqual)
+import Test.Hspec (Spec, describe, it)
+import Test.Hspec.QuickCheck (prop)
+import Test.QuickCheck (forAll)
 
 
 addrToJSON :: Network -> Address -> Value
@@ -64,11 +81,11 @@ spec = do
     testIdentity serialVals readVals [] netVals
     describe "Address properties" $ do
         prop "encodes and decodes base58 bytestring" $
-            forAll arbitraryBS $ \bs ->
-                decodeBase58 (encodeBase58 bs) == Just bs
+            forAll (BSL.fromStrict <$> arbitraryBS) $ \bs ->
+                (decodeBase58 . encodeBase58) bs == Just bs
         prop "encodes and decodes base58 bytestring with checksum" $
-            forAll arbitraryBS $ \bs ->
-                decodeBase58Check (encodeBase58Check bs) == Just bs
+            forAll (BSL.fromStrict <$> arbitraryBS) $ \bs ->
+                (decodeBase58Check . encodeBase58Check) bs == Just bs
         prop "textToAddr . addrToText identity" $
             forAll arbitraryNetAddress $ \(net, a) ->
                 (textToAddr net =<< addrToText net a) == Just a
@@ -89,7 +106,7 @@ spec = do
 
 
 testVector :: (ByteString, Text, Text) -> Assertion
-testVector (bs, e, chk) = do
+testVector (BSL.fromStrict -> bs, e, chk) = do
     assertEqual "encodeBase58" e b58
     assertEqual "encodeBase58Check" chk b58Chk
     assertEqual "decodeBase58" (Just bs) (decodeBase58 b58)
@@ -133,10 +150,10 @@ vectors =
 testBase58Vector :: (Text, Text) -> Assertion
 testBase58Vector (a, b) = do
     assertEqual "encodeBase58 match" b (encodeBase58 bsA)
-    assertEqual "decodeBase58 match" a (encodeHex bsB)
+    assertEqual "decodeBase58 match" a $ (encodeHex . BSL.toStrict) bsB
     assertEqual "bytestring match" bsA bsB
   where
-    bsA = fromJust $ decodeHex a
+    bsA = BSL.fromStrict . fromJust $ decodeHex a
     bsB = fromJust $ decodeBase58 b
 
 
@@ -190,7 +207,7 @@ base58Vectors =
 
 testBase58InvalidVector :: (Text, Maybe Text) -> Assertion
 testBase58InvalidVector (a, resM) =
-    assertEqual "decodeBase58 invalid match" resM (encodeHex <$> decodeBase58 a)
+    assertEqual "decodeBase58 invalid match" resM $ encodeHex . BSL.toStrict <$> decodeBase58 a
 
 
 base58InvalidVectors :: [(Text, Maybe Text)]
@@ -213,7 +230,7 @@ testBase58ChkInvalidVector (a, resM) =
     assertEqual
         "decodeBase58Check invalid match"
         resM
-        (encodeHex <$> decodeBase58Check a)
+        $ encodeHex . BSL.toStrict <$> decodeBase58Check a
 
 
 base58ChkInvalidVectors :: [(Text, Maybe Text)]

@@ -3,22 +3,74 @@
 
 module Bitcoin.Keys.ExtendedSpec (spec) where
 
-import Bitcoin.Address
-import Bitcoin.Constants
-import Bitcoin.Keys
+import Bitcoin.Address (addrToText)
+import Bitcoin.Constants (Network, btc)
+import Bitcoin.Keys (
+    DerivPath,
+    DerivPathI (Deriv, (:/), (:|)),
+    ParsedPath (getParsedPath),
+    SoftPath,
+    XKey (XPrv, XPub),
+    XPrvKey (xPrvChain, xPrvKey),
+    XPubKey (xPubKey),
+    applyPath,
+    derivePath,
+    derivePubPath,
+    deriveXPubKey,
+    exportPubKey,
+    getSecKey,
+    getXPrvKey,
+    getXPubKey,
+    hardSubKey,
+    listToPath,
+    makeXPrvKey,
+    parsePath,
+    pathToList,
+    pathToStr,
+    prvSubKey,
+    pubSubKey,
+    putXPrvKey,
+    putXPubKey,
+    toHard,
+    toSoft,
+    xPrvExport,
+    xPrvFP,
+    xPrvID,
+    xPrvImport,
+    xPrvWif,
+    xPubAddr,
+    xPubExport,
+    xPubImport,
+ )
 import Bitcoin.Orphans ()
-import Bitcoin.Util
-import Bitcoin.Util.Arbitrary
-import Bitcoin.UtilSpec (JsonBox (..), NetBox (..), ReadBox (..), SerialBox (..), customCerealID, testIdentity)
+import Bitcoin.Util (decodeHex, encodeHex)
+import qualified Bitcoin.Util as U
+import Bitcoin.Util.Arbitrary (
+    arbitraryBip32PathIndex,
+    arbitraryDerivPath,
+    arbitraryHardPath,
+    arbitraryNetwork,
+    arbitraryParsedPath,
+    arbitrarySoftPath,
+    arbitraryXPrvKey,
+    arbitraryXPubKey,
+    genNetData,
+ )
+import Bitcoin.UtilSpec (JsonBox (..), NetBox (..), ReadBox (..), SerialBox (..), testIdentity)
 import Control.Monad (forM_)
-import Data.Aeson as A
-import Data.Aeson.Encoding
-import Data.Aeson.Types
+import Data.Aeson as A (
+    Encoding,
+    Value (String),
+    decode,
+    encode,
+    withText,
+ )
+import Data.Aeson.Encoding (text)
+import Data.Aeson.Types (Parser)
+import Data.Binary.Put (runPut)
 import Data.Bits ((.&.))
+import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString.Lazy.Char8 as B8
-import Data.Bytes.Get
-import Data.Bytes.Put
-import Data.Bytes.Serial
 import Data.Either (isLeft)
 import Data.Maybe (fromJust, isJust, isNothing)
 import Data.String (fromString)
@@ -26,9 +78,9 @@ import Data.String.Conversions (cs)
 import Data.Text (Text)
 import Data.Word (Word32)
 import Test.HUnit (Assertion, assertBool, assertEqual)
-import Test.Hspec
-import Test.Hspec.QuickCheck
-import Test.QuickCheck hiding ((.&.))
+import Test.Hspec (Spec, describe, it)
+import Test.Hspec.QuickCheck (prop)
+import Test.QuickCheck (forAll)
 
 
 serialVals :: [SerialBox]
@@ -104,12 +156,12 @@ spec = do
     describe "Custom identity tests" $ do
         prop "encodes and decodes extended private key" $
             forAll arbitraryNetwork $ \net ->
-                forAll arbitraryXPrvKey $
-                    customCerealID (getXPrvKey net) (putXPrvKey net)
+                forAll arbitraryXPrvKey $ \x ->
+                    (U.runGet (getXPrvKey net) . runPut) (putXPrvKey net x) == Right x
         prop "encodes and decodes extended public key" $
             forAll arbitraryNetwork $ \net ->
-                forAll arbitraryXPubKey $
-                    customCerealID (getXPubKey net) (putXPubKey net) . snd
+                forAll arbitraryXPubKey $ \(_, x) ->
+                    (U.runGet (getXPubKey net) . runPut) (putXPubKey net x) == Right x
     describe "bip32 subkey derivation vector 1" $ vectorSpec m1 vector1
     describe "bip32 subkey derivation vector 2" $ vectorSpec m2 vector2
     describe "bip32 subkey derivation vector 3" $ vectorSpec m3 vector3
@@ -392,8 +444,8 @@ vectorSpec mTxt vecTxt =
 
 runVector :: XPrvKey -> TestVector -> Assertion
 runVector m v = do
-    assertBool "xPrvID" $ encodeHex (runPutS . serialize $ xPrvID m) == v !! 0
-    assertBool "xPrvFP" $ encodeHex (runPutS . serialize $ xPrvFP m) == v !! 1
+    assertBool "xPrvID" $ encodeHex (U.encodeS $ xPrvID m) == v !! 0
+    assertBool "xPrvFP" $ encodeHex (U.encodeS $ xPrvFP m) == v !! 1
     assertBool "xPrvAddr" $
         addrToText btc (xPubAddr $ deriveXPubKey m) == Just (v !! 2)
     assertBool "bip44Addr" $
@@ -403,32 +455,12 @@ runVector m v = do
     assertBool "xPrvWIF" $ xPrvWif btc m == v !! 5
     assertBool "pubKey" $
         encodeHex (exportPubKey True $ xPubKey $ deriveXPubKey m) == v !! 6
-    assertBool "chain code" $ encodeHex (runPutS . serialize $ xPrvChain m) == v !! 7
+    assertBool "chain code" $ encodeHex (U.encodeS $ xPrvChain m) == v !! 7
     assertBool "Hex PubKey" $
-        encodeHex (runPutS $ putXPubKey btc $ deriveXPubKey m) == v !! 8
-    assertBool "Hex PrvKey" $ encodeHex (runPutS (putXPrvKey btc m)) == v !! 9
+        (encodeHex . BSL.toStrict . runPut . putXPubKey btc) (deriveXPubKey m) == v !! 8
+    assertBool "Hex PrvKey" $ (encodeHex . BSL.toStrict . runPut . putXPrvKey btc) m == v !! 9
     assertBool "Base58 PubKey" $ xPubExport btc (deriveXPubKey m) == v !! 10
     assertBool "Base58 PrvKey" $ xPrvExport btc m == v !! 11
-
-
--- This function was used to generate addition data for the test vectors
-genVector :: XPrvKey -> [(Text, Text)]
-genVector m =
-    [ ("xPrvID", encodeHex (runPutS . serialize $ xPrvID m))
-    , ("xPrvFP", encodeHex (runPutS . serialize $ xPrvFP m))
-    , ("xPrvAddr", fromJust $ addrToText btc (xPubAddr $ deriveXPubKey m))
-    ,
-        ( "bip44Addr"
-        , fromJust $
-            addrToText btc (xPubAddr $ deriveXPubKey $ derivePath bip44Addr m)
-        )
-    , ("prvKey", encodeHex (getSecKey $ xPrvKey m))
-    , ("xPrvWIF", xPrvWif btc m)
-    , ("pubKey", encodeHex (exportPubKey True $ xPubKey $ deriveXPubKey m))
-    , ("chain code", encodeHex (runPutS . serialize $ xPrvChain m))
-    , ("Hex PubKey", encodeHex (runPutS $ putXPubKey btc $ deriveXPubKey m))
-    , ("Hex PrvKey", encodeHex (runPutS (putXPrvKey btc m)))
-    ]
 
 
 parseVector :: TestKey -> [TestVector] -> [(Text, XPrvKey, TestVector)]

@@ -2,22 +2,35 @@
 
 module Bitcoin.Keys.MnemonicSpec (spec) where
 
-import Bitcoin.Keys
-import Bitcoin.Util
-import Bitcoin.Util.Arbitrary
-import Control.Monad (zipWithM_)
+import Bitcoin.Keys (
+    Mnemonic,
+    fromMnemonic,
+    mnemonicToSeed,
+    toMnemonic,
+ )
+import Bitcoin.Util (decodeHex, encodeHex, getBits)
+import Bitcoin.Util.Arbitrary (arbitraryBS)
+import Control.Monad (zipWithM_, (<=<))
+import Data.Binary (Binary)
+import qualified Data.Binary as Bin
 import Data.Bits (shiftR, (.&.))
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BSL
 import Data.Either (fromRight)
 import Data.List (isPrefixOf)
 import Data.Maybe (fromJust)
-import Data.Serialize (Serialize, encode)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Word (Word32, Word64)
-import Test.HUnit
-import Test.Hspec
-import Test.QuickCheck hiding ((.&.))
+import Test.HUnit (Assertion, assertBool, assertEqual)
+import Test.Hspec (Spec, describe, it)
+import Test.QuickCheck (
+    Arbitrary (arbitrary),
+    Property,
+    Testable (property),
+    choose,
+    (==>),
+ )
 
 
 spec :: Spec
@@ -293,10 +306,10 @@ invalidMss =
     ]
 
 
-binWordsToBS :: Serialize a => [a] -> BS.ByteString
-binWordsToBS = foldr f BS.empty
+binWordsToBS :: Binary a => [a] -> BSL.ByteString
+binWordsToBS = foldr f BSL.empty
   where
-    f b a = a `BS.append` encode b
+    f b a = a `BSL.append` Bin.encode b
 
 
 {- Encode mnemonic -}
@@ -304,34 +317,37 @@ binWordsToBS = foldr f BS.empty
 toMnemonic128 :: (Word64, Word64) -> Bool
 toMnemonic128 (a, b) = l == 12
   where
-    bs = encode a `BS.append` encode b
+    bs = Bin.encode a `BSL.append` Bin.encode b
     l =
         length
             . T.words
             . fromRight (error "Could not decode mnemonic senttence")
-            $ toMnemonic bs
+            . toMnemonic
+            $ BSL.toStrict bs
 
 
 toMnemonic160 :: (Word32, Word64, Word64) -> Bool
 toMnemonic160 (a, b, c) = l == 15
   where
-    bs = BS.concat [encode a, encode b, encode c]
+    bs = BSL.concat [Bin.encode a, Bin.encode b, Bin.encode c]
     l =
         length
             . T.words
             . fromRight (error "Could not decode mnemonic sentence")
-            $ toMnemonic bs
+            . toMnemonic
+            $ BSL.toStrict bs
 
 
 toMnemonic256 :: (Word64, Word64, Word64, Word64) -> Bool
 toMnemonic256 (a, b, c, d) = l == 24
   where
-    bs = BS.concat [encode a, encode b, encode c, encode d]
+    bs = BSL.concat [Bin.encode a, Bin.encode b, Bin.encode c, Bin.encode d]
     l =
         length
             . T.words
             . fromRight (error "Could not decode mnemonic sentence")
-            $ toMnemonic bs
+            . toMnemonic
+            $ BSL.toStrict bs
 
 
 toMnemonic512 ::
@@ -339,98 +355,105 @@ toMnemonic512 ::
 toMnemonic512 ((a, b, c, d), (e, f, g, h)) = l == 48
   where
     bs =
-        BS.concat
-            [ encode a
-            , encode b
-            , encode c
-            , encode d
-            , encode e
-            , encode f
-            , encode g
-            , encode h
+        BSL.concat
+            [ Bin.encode a
+            , Bin.encode b
+            , Bin.encode c
+            , Bin.encode d
+            , Bin.encode e
+            , Bin.encode f
+            , Bin.encode g
+            , Bin.encode h
             ]
     l =
         length
             . T.words
             . fromRight (error "Could not decode mnemonic sentence")
-            $ toMnemonic bs
+            . toMnemonic
+            $ BSL.toStrict bs
 
 
 toMnemonicVar :: [Word32] -> Property
-toMnemonicVar ls = not (null ls) && length ls <= 8 ==> l == wc
+toMnemonicVar ls = not (null ls) && length ls <= 8 ==> l == fromIntegral wc
   where
     bs = binWordsToBS ls
-    bl = BS.length bs
+    bl = BSL.length bs
     cb = bl `div` 4
     wc = (cb + bl * 8) `div` 11
     l =
         length
             . T.words
             . fromRight (error "Could not decode mnemonic sentence")
-            $ toMnemonic bs
+            . toMnemonic
+            $ BSL.toStrict bs
 
 
 {- Encode/Decode -}
 
 fromToMnemonic128 :: (Word64, Word64) -> Bool
-fromToMnemonic128 (a, b) = bs == bs'
+fromToMnemonic128 (a, b) = bs == BSL.fromStrict bs'
   where
-    bs = encode a `BS.append` encode b
+    bs = Bin.encode a `BSL.append` Bin.encode b
     bs' =
         fromRight
             (error "Could not decode mnemonic entropy")
-            (fromMnemonic =<< toMnemonic bs)
+            . (fromMnemonic <=< toMnemonic)
+            $ BSL.toStrict bs
 
 
 fromToMnemonic160 :: (Word32, Word64, Word64) -> Bool
-fromToMnemonic160 (a, b, c) = bs == bs'
+fromToMnemonic160 (a, b, c) = bs == BSL.fromStrict bs'
   where
-    bs = BS.concat [encode a, encode b, encode c]
+    bs = BSL.concat [Bin.encode a, Bin.encode b, Bin.encode c]
     bs' =
         fromRight
             (error "Could not decode mnemonic entropy")
-            (fromMnemonic =<< toMnemonic bs)
+            . (fromMnemonic <=< toMnemonic)
+            $ BSL.toStrict bs
 
 
 fromToMnemonic256 :: (Word64, Word64, Word64, Word64) -> Bool
-fromToMnemonic256 (a, b, c, d) = bs == bs'
+fromToMnemonic256 (a, b, c, d) = bs == BSL.fromStrict bs'
   where
-    bs = BS.concat [encode a, encode b, encode c, encode d]
+    bs = BSL.concat [Bin.encode a, Bin.encode b, Bin.encode c, Bin.encode d]
     bs' =
         fromRight
             (error "Could not decode mnemonic entropy")
-            (fromMnemonic =<< toMnemonic bs)
+            . (fromMnemonic <=< toMnemonic)
+            $ BSL.toStrict bs
 
 
 fromToMnemonic512 ::
     ((Word64, Word64, Word64, Word64), (Word64, Word64, Word64, Word64)) -> Bool
-fromToMnemonic512 ((a, b, c, d), (e, f, g, h)) = bs == bs'
+fromToMnemonic512 ((a, b, c, d), (e, f, g, h)) = bs == BSL.fromStrict bs'
   where
     bs =
-        BS.concat
-            [ encode a
-            , encode b
-            , encode c
-            , encode d
-            , encode e
-            , encode f
-            , encode g
-            , encode h
+        BSL.concat
+            [ Bin.encode a
+            , Bin.encode b
+            , Bin.encode c
+            , Bin.encode d
+            , Bin.encode e
+            , Bin.encode f
+            , Bin.encode g
+            , Bin.encode h
             ]
     bs' =
         fromRight
             (error "Could not decode mnemonic entropy")
-            (fromMnemonic =<< toMnemonic bs)
+            . (fromMnemonic <=< toMnemonic)
+            $ BSL.toStrict bs
 
 
 fromToMnemonicVar :: [Word32] -> Property
-fromToMnemonicVar ls = not (null ls) && length ls <= 8 ==> bs == bs'
+fromToMnemonicVar ls = not (null ls) && length ls <= 8 ==> bs == BSL.fromStrict bs'
   where
     bs = binWordsToBS ls
     bs' =
         fromRight
             (error "Could not decode mnemonic entropy")
-            (fromMnemonic =<< toMnemonic bs)
+            . (fromMnemonic <=< toMnemonic)
+            $ BSL.toStrict bs
 
 
 {- Mnemonic to seed -}
@@ -438,33 +461,36 @@ fromToMnemonicVar ls = not (null ls) && length ls <= 8 ==> bs == bs'
 mnemonicToSeed128 :: (Word64, Word64) -> Bool
 mnemonicToSeed128 (a, b) = l == 64
   where
-    bs = encode a `BS.append` encode b
+    bs = Bin.encode a `BSL.append` Bin.encode b
     seed =
         fromRight
             (error "Could not decode mnemonic seed")
-            (mnemonicToSeed "" =<< toMnemonic bs)
+            . (mnemonicToSeed "" <=< toMnemonic)
+            $ BSL.toStrict bs
     l = BS.length seed
 
 
 mnemonicToSeed160 :: (Word32, Word64, Word64) -> Bool
 mnemonicToSeed160 (a, b, c) = l == 64
   where
-    bs = BS.concat [encode a, encode b, encode c]
+    bs = BSL.concat [Bin.encode a, Bin.encode b, Bin.encode c]
     seed =
         fromRight
             (error "Could not decode mnemonic seed")
-            (mnemonicToSeed "" =<< toMnemonic bs)
+            . (mnemonicToSeed "" <=< toMnemonic)
+            $ BSL.toStrict bs
     l = BS.length seed
 
 
 mnemonicToSeed256 :: (Word64, Word64, Word64, Word64) -> Bool
 mnemonicToSeed256 (a, b, c, d) = l == 64
   where
-    bs = BS.concat [encode a, encode b, encode c, encode d]
+    bs = BSL.concat [Bin.encode a, Bin.encode b, Bin.encode c, Bin.encode d]
     seed =
         fromRight
             (error "Could not decode mnemonic seed")
-            (mnemonicToSeed "" =<< toMnemonic bs)
+            . (mnemonicToSeed "" <=< toMnemonic)
+            $ BSL.toStrict bs
     l = BS.length seed
 
 
@@ -473,20 +499,21 @@ mnemonicToSeed512 ::
 mnemonicToSeed512 ((a, b, c, d), (e, f, g, h)) = l == 64
   where
     bs =
-        BS.concat
-            [ encode a
-            , encode b
-            , encode c
-            , encode d
-            , encode e
-            , encode f
-            , encode g
-            , encode h
+        BSL.concat
+            [ Bin.encode a
+            , Bin.encode b
+            , Bin.encode c
+            , Bin.encode d
+            , Bin.encode e
+            , Bin.encode f
+            , Bin.encode g
+            , Bin.encode h
             ]
     seed =
         fromRight
             (error "Could not decode mnemonic seed")
-            (mnemonicToSeed "" =<< toMnemonic bs)
+            . (mnemonicToSeed "" <=< toMnemonic)
+            $ BSL.toStrict bs
     l = BS.length seed
 
 
@@ -497,7 +524,8 @@ mnemonicToSeedVar ls = not (null ls) && length ls <= 16 ==> l == 64
     seed =
         fromRight
             (error "Could not decode mnemonic seed")
-            (mnemonicToSeed "" =<< toMnemonic bs)
+            . (mnemonicToSeed "" <=< toMnemonic)
+            $ BSL.toStrict bs
     l = BS.length seed
 
 

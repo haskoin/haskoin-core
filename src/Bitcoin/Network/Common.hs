@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 -- |
@@ -16,9 +17,6 @@ module Bitcoin.Network.Common (
     Inv (..),
     InvVector (..),
     InvType (..),
-    HostAddress,
-    hostToSockAddr,
-    sockToHostAddress,
     NetworkAddress (..),
     NotFound (..),
     Ping (..),
@@ -41,24 +39,25 @@ module Bitcoin.Network.Common (
     putVarInt,
 ) where
 
-import Bitcoin.Crypto.Hash
-import Control.DeepSeq
+import Bitcoin.Crypto.Hash (Hash256)
+import qualified Bitcoin.Util as U
+import Control.DeepSeq (NFData)
 import Control.Monad (forM_, liftM2, replicateM, unless)
-import Data.Binary (Binary (..))
+import Data.Binary (Binary (..), Get, Put)
+import qualified Data.Binary.Get as Get
+import qualified Data.Binary.Put as Put
 import Data.Bits (shiftL)
 import Data.ByteString (ByteString)
-import qualified Data.ByteString as B
-import Data.ByteString.Char8 as C (replicate)
-import Data.Bytes.Get
-import Data.Bytes.Put
-import Data.Bytes.Serial
-import Data.Serialize (Serialize (..))
-import Data.String
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as C
+import qualified Data.ByteString.Lazy as BSL
+import Data.String (IsString (..))
 import Data.String.Conversions (cs)
 import Data.Word (Word32, Word64)
 import GHC.Generics (Generic)
-import Network.Socket (SockAddr (..))
-import Text.Read as R
+import Network.Socket (HostAddress6, SockAddr (..))
+import Text.Read (Lexeme (String))
+import qualified Text.Read as R
 
 
 -- | Network address with a timestamp.
@@ -74,26 +73,16 @@ newtype Addr = Addr
     deriving (Eq, Show, Generic, NFData)
 
 
-instance Serial Addr where
-    deserialize = Addr <$> (repList =<< deserialize)
+instance Binary Addr where
+    get = Addr <$> (repList =<< get)
       where
         repList (VarInt c) = replicateM (fromIntegral c) action
-        action = liftM2 (,) getWord32le deserialize
+        action = liftM2 (,) Get.getWord32le get
 
 
-    serialize (Addr xs) = do
+    put (Addr xs) = do
         putVarInt $ length xs
-        forM_ xs $ \(a, b) -> putWord32le a >> serialize b
-
-
-instance Binary Addr where
-    get = deserialize
-    put = serialize
-
-
-instance Serialize Addr where
-    get = deserialize
-    put = serialize
+        forM_ xs $ \(a, b) -> Put.putWord32le a >> put b
 
 
 -- | Data type describing signed messages that can be sent between bitcoin
@@ -108,19 +97,9 @@ data Alert = Alert
     deriving (Eq, Show, Read, Generic, NFData)
 
 
-instance Serial Alert where
-    deserialize = Alert <$> deserialize <*> deserialize
-    serialize (Alert p s) = serialize p >> serialize s
-
-
 instance Binary Alert where
-    put = serialize
-    get = deserialize
-
-
-instance Serialize Alert where
-    put = serialize
-    get = deserialize
+    get = Alert <$> get <*> get
+    put (Alert p s) = put p >> put s
 
 
 -- | The 'GetData' type is used to retrieve information on a specific object
@@ -137,25 +116,15 @@ newtype GetData = GetData
     deriving (Eq, Show, Generic, NFData)
 
 
-instance Serial GetData where
-    deserialize = GetData <$> (repList =<< deserialize)
-      where
-        repList (VarInt c) = replicateM (fromIntegral c) deserialize
-
-
-    serialize (GetData xs) = do
-        putVarInt $ length xs
-        forM_ xs serialize
-
-
 instance Binary GetData where
-    get = deserialize
-    put = serialize
+    get = GetData <$> (repList =<< get)
+      where
+        repList (VarInt c) = replicateM (fromIntegral c) get
 
 
-instance Serialize GetData where
-    get = deserialize
-    put = serialize
+    put (GetData xs) = do
+        putVarInt $ length xs
+        forM_ xs put
 
 
 -- | 'Inv' messages are used by nodes to advertise their knowledge of new
@@ -168,25 +137,15 @@ newtype Inv = Inv
     deriving (Eq, Show, Generic, NFData)
 
 
-instance Serial Inv where
-    deserialize = Inv <$> (repList =<< deserialize)
-      where
-        repList (VarInt c) = replicateM (fromIntegral c) deserialize
-
-
-    serialize (Inv xs) = do
-        putVarInt $ length xs
-        forM_ xs serialize
-
-
 instance Binary Inv where
-    get = deserialize
-    put = serialize
+    get = Inv <$> (repList =<< get)
+      where
+        repList (VarInt c) = replicateM (fromIntegral c) get
 
 
-instance Serialize Inv where
-    get = deserialize
-    put = serialize
+    put (Inv xs) = do
+        putVarInt $ length xs
+        forM_ xs put
 
 
 -- | Data type identifying the type of an inventory vector. SegWit types are
@@ -211,8 +170,8 @@ data InvType
     deriving (Eq, Show, Read, Generic, NFData)
 
 
-instance Serial InvType where
-    deserialize = go =<< getWord32le
+instance Binary InvType where
+    get = go =<< Get.getWord32le
       where
         go x =
             case x of
@@ -225,8 +184,8 @@ instance Serial InvType where
                     | x == 1 `shiftL` 30 + 2 -> return InvWitnessBlock
                     | x == 1 `shiftL` 30 + 3 -> return InvWitnessMerkleBlock
                     | otherwise -> return (InvType x)
-    serialize x =
-        putWord32le $
+    put x =
+        Put.putWord32le $
             case x of
                 InvError -> 0
                 InvTx -> 1
@@ -236,16 +195,6 @@ instance Serial InvType where
                 InvWitnessBlock -> 1 `shiftL` 30 + 2
                 InvWitnessMerkleBlock -> 1 `shiftL` 30 + 3
                 InvType w -> w
-
-
-instance Binary InvType where
-    get = deserialize
-    put = serialize
-
-
-instance Serialize InvType where
-    get = deserialize
-    put = serialize
 
 
 -- | Invectory vectors represent hashes identifying objects such as a 'Block' or
@@ -260,39 +209,9 @@ data InvVector = InvVector
     deriving (Eq, Show, Generic, NFData)
 
 
-instance Serial InvVector where
-    deserialize = InvVector <$> deserialize <*> deserialize
-    serialize (InvVector t h) = serialize t >> serialize h
-
-
 instance Binary InvVector where
-    get = deserialize
-    put = serialize
-
-
-instance Serialize InvVector where
-    get = deserialize
-    put = serialize
-
-
-newtype HostAddress
-    = HostAddress ByteString
-    deriving (Eq, Show, Ord, Generic, NFData)
-
-
-instance Serial HostAddress where
-    serialize (HostAddress bs) = putByteString bs
-    deserialize = HostAddress <$> getByteString 18
-
-
-instance Binary HostAddress where
-    get = deserialize
-    put = serialize
-
-
-instance Serialize HostAddress where
-    get = deserialize
-    put = serialize
+    get = InvVector <$> get <*> get
+    put (InvVector t h) = put t >> put h
 
 
 -- | Data type describing a bitcoin network address. Addresses are stored in
@@ -301,68 +220,36 @@ instance Serialize HostAddress where
 data NetworkAddress = NetworkAddress
     { naServices :: !Word64
     -- ^ bitmask of services available for this address
-    , naAddress :: !HostAddress
+    , naAddress :: !HostAddress6
     -- ^ address and port information
     }
     deriving (Eq, Show, Generic, NFData)
 
 
-hostToSockAddr :: HostAddress -> SockAddr
-hostToSockAddr (HostAddress bs) =
-    case runGetS getSockAddr bs of
-        Left e -> error e
-        Right x -> x
+putHostAddr6 :: HostAddress6 -> Put
+putHostAddr6 (a, b, c, d) = do
+    Put.putWord32be a
+    Put.putWord32be b
+    Put.putWord32be c
+    Put.putWord32be d
 
 
-sockToHostAddress :: SockAddr -> HostAddress
-sockToHostAddress = HostAddress . runPutS . putSockAddr
-
-
-putSockAddr :: MonadPut m => SockAddr -> m ()
-putSockAddr (SockAddrInet6 p _ (a, b, c, d) _) = do
-    putWord32be a
-    putWord32be b
-    putWord32be c
-    putWord32be d
-    putWord16be (fromIntegral p)
-putSockAddr (SockAddrInet p a) = do
-    putWord32be 0x00000000
-    putWord32be 0x00000000
-    putWord32be 0x0000ffff
-    putWord32host a
-    putWord16be (fromIntegral p)
-putSockAddr _ = error "Invalid address type"
-
-
-getSockAddr :: MonadGet m => m SockAddr
-getSockAddr = do
-    a <- getWord32be
-    b <- getWord32be
-    c <- getWord32be
-    if a == 0x00000000 && b == 0x00000000 && c == 0x0000ffff
-        then do
-            d <- getWord32host
-            p <- getWord16be
-            return $ SockAddrInet (fromIntegral p) d
-        else do
-            d <- getWord32be
-            p <- getWord16be
-            return $ SockAddrInet6 (fromIntegral p) 0 (a, b, c, d) 0
-
-
-instance Serial NetworkAddress where
-    deserialize = NetworkAddress <$> getWord64le <*> deserialize
-    serialize (NetworkAddress s a) = putWord64le s >> serialize a
+getHostAddr6 :: Get HostAddress6
+getHostAddr6 =
+    (,,,)
+        <$> Get.getWord32be
+        <*> Get.getWord32be
+        <*> Get.getWord32be
+        <*> Get.getWord32be
 
 
 instance Binary NetworkAddress where
-    get = deserialize
-    put = serialize
-
-
-instance Serialize NetworkAddress where
-    get = deserialize
-    put = serialize
+    get =
+        NetworkAddress
+            <$> Get.getWord64le
+            <*> getHostAddr6
+    put (NetworkAddress s a) =
+        Put.putWord64le s >> putHostAddr6 a
 
 
 -- | A 'NotFound' message is returned as a response to a 'GetData' message
@@ -376,25 +263,15 @@ newtype NotFound = NotFound
     deriving (Eq, Show, Generic, NFData)
 
 
-instance Serial NotFound where
-    deserialize = NotFound <$> (repList =<< deserialize)
-      where
-        repList (VarInt c) = replicateM (fromIntegral c) deserialize
-
-
-    serialize (NotFound xs) = do
-        putVarInt $ length xs
-        forM_ xs serialize
-
-
 instance Binary NotFound where
-    get = deserialize
-    put = serialize
+    get = NotFound <$> (repList =<< get)
+      where
+        repList (VarInt c) = replicateM (fromIntegral c) get
 
 
-instance Serialize NotFound where
-    get = deserialize
-    put = serialize
+    put (NotFound xs) = do
+        putVarInt $ length xs
+        forM_ xs put
 
 
 -- | A 'Ping' message is sent to bitcoin peers to check if a connection is still
@@ -415,34 +292,14 @@ newtype Pong = Pong
     deriving (Eq, Show, Read, Generic, NFData)
 
 
-instance Serial Ping where
-    deserialize = Ping <$> getWord64le
-    serialize (Ping n) = putWord64le n
-
-
-instance Serial Pong where
-    deserialize = Pong <$> getWord64le
-    serialize (Pong n) = putWord64le n
-
-
 instance Binary Ping where
-    get = deserialize
-    put = serialize
+    get = Ping <$> Get.getWord64le
+    put (Ping n) = Put.putWord64le n
 
 
 instance Binary Pong where
-    get = deserialize
-    put = serialize
-
-
-instance Serialize Ping where
-    get = deserialize
-    put = serialize
-
-
-instance Serialize Pong where
-    get = deserialize
-    put = serialize
+    get = Pong <$> Get.getWord64le
+    put (Pong n) = Put.putWord64le n
 
 
 -- | The 'Reject' message is sent when messages are rejected by a peer.
@@ -472,9 +329,9 @@ data RejectCode
     deriving (Eq, Show, Read, Generic, NFData)
 
 
-instance Serial RejectCode where
-    deserialize =
-        getWord8 >>= \code -> case code of
+instance Binary RejectCode where
+    get =
+        Get.getWord8 >>= \case
             0x01 -> return RejectMalformed
             0x10 -> return RejectInvalid
             0x11 -> return RejectObsolete
@@ -483,7 +340,7 @@ instance Serial RejectCode where
             0x41 -> return RejectDust
             0x42 -> return RejectInsufficientFee
             0x43 -> return RejectCheckpoint
-            _ ->
+            code ->
                 fail $
                     unwords
                         [ "Reject get: Invalid code"
@@ -491,61 +348,42 @@ instance Serial RejectCode where
                         ]
 
 
-    serialize code = putWord8 $ case code of
-        RejectMalformed -> 0x01
-        RejectInvalid -> 0x10
-        RejectObsolete -> 0x11
-        RejectDuplicate -> 0x12
-        RejectNonStandard -> 0x40
-        RejectDust -> 0x41
-        RejectInsufficientFee -> 0x42
-        RejectCheckpoint -> 0x43
-
-
-instance Binary RejectCode where
-    put = serialize
-    get = deserialize
-
-
-instance Serialize RejectCode where
-    put = serialize
-    get = deserialize
+    put =
+        Put.putWord8 . \case
+            RejectMalformed -> 0x01
+            RejectInvalid -> 0x10
+            RejectObsolete -> 0x11
+            RejectDuplicate -> 0x12
+            RejectNonStandard -> 0x40
+            RejectDust -> 0x41
+            RejectInsufficientFee -> 0x42
+            RejectCheckpoint -> 0x43
 
 
 -- | Convenience function to build a 'Reject' message.
 reject :: MessageCommand -> RejectCode -> ByteString -> Reject
 reject cmd code reason =
-    Reject cmd code (VarString reason) B.empty
-
-
-instance Serial Reject where
-    deserialize =
-        deserialize >>= \(VarString bs) ->
-            Reject (stringToCommand bs)
-                <$> deserialize
-                <*> deserialize
-                <*> maybeData
-      where
-        maybeData =
-            isEmpty >>= \done ->
-                if done
-                    then return B.empty
-                    else getByteString 32
-    serialize (Reject cmd code reason dat) = do
-        serialize $ VarString $ commandToString cmd
-        serialize code
-        serialize reason
-        unless (B.null dat) $ putByteString dat
+    Reject cmd code (VarString reason) BS.empty
 
 
 instance Binary Reject where
-    put = serialize
-    get = deserialize
-
-
-instance Serialize Reject where
-    put = serialize
-    get = deserialize
+    get =
+        get >>= \(VarString bs) ->
+            Reject (stringToCommand bs)
+                <$> get
+                <*> get
+                <*> maybeData
+      where
+        maybeData =
+            Get.isEmpty >>= \done ->
+                if done
+                    then return BS.empty
+                    else Get.getByteString 32
+    put (Reject cmd code reason dat) = do
+        put $ VarString $ commandToString cmd
+        put code
+        put reason
+        unless (BS.null dat) $ Put.putByteString dat
 
 
 -- | Data type representing a variable-length integer. The 'VarInt' type
@@ -554,41 +392,31 @@ newtype VarInt = VarInt {getVarInt :: Word64}
     deriving (Eq, Show, Read, Generic, NFData)
 
 
-instance Serial VarInt where
-    deserialize = VarInt <$> (getWord8 >>= go)
+instance Binary VarInt where
+    get = VarInt <$> (Get.getWord8 >>= go)
       where
-        go 0xff = getWord64le
-        go 0xfe = fromIntegral <$> getWord32le
-        go 0xfd = fromIntegral <$> getWord16le
+        go 0xff = Get.getWord64le
+        go 0xfe = fromIntegral <$> Get.getWord32le
+        go 0xfd = fromIntegral <$> Get.getWord16le
         go x = return $ fromIntegral x
 
 
-    serialize (VarInt x)
+    put (VarInt x)
         | x < 0xfd =
-            putWord8 $ fromIntegral x
+            Put.putWord8 $ fromIntegral x
         | x <= 0xffff = do
-            putWord8 0xfd
-            putWord16le $ fromIntegral x
+            Put.putWord8 0xfd
+            Put.putWord16le $ fromIntegral x
         | x <= 0xffffffff = do
-            putWord8 0xfe
-            putWord32le $ fromIntegral x
+            Put.putWord8 0xfe
+            Put.putWord32le $ fromIntegral x
         | otherwise = do
-            putWord8 0xff
-            putWord64le x
+            Put.putWord8 0xff
+            Put.putWord64le x
 
 
-instance Binary VarInt where
-    put = serialize
-    get = deserialize
-
-
-instance Serialize VarInt where
-    put = serialize
-    get = deserialize
-
-
-putVarInt :: (MonadPut m, Integral a) => a -> m ()
-putVarInt = serialize . VarInt . fromIntegral
+putVarInt :: Integral a => a -> Put
+putVarInt = put . VarInt . fromIntegral
 
 
 -- | Data type for serialization of variable-length strings.
@@ -596,25 +424,15 @@ newtype VarString = VarString {getVarString :: ByteString}
     deriving (Eq, Show, Read, Generic, NFData)
 
 
-instance Serial VarString where
-    deserialize = VarString <$> (readBS =<< deserialize)
-      where
-        readBS (VarInt len) = getByteString (fromIntegral len)
-
-
-    serialize (VarString bs) = do
-        putVarInt $ B.length bs
-        putByteString bs
-
-
 instance Binary VarString where
-    put = serialize
-    get = deserialize
+    get = VarString <$> (readBS =<< get)
+      where
+        readBS (VarInt len) = Get.getByteString (fromIntegral len)
 
 
-instance Serialize VarString where
-    put = serialize
-    get = deserialize
+    put (VarString bs) = do
+        putVarInt $ BS.length bs
+        Put.putByteString bs
 
 
 -- | When a bitcoin node creates an outgoing connection to another node,
@@ -643,56 +461,46 @@ data Version = Version
     deriving (Eq, Show, Generic, NFData)
 
 
-instance Serial Version where
-    deserialize =
+instance Binary Version where
+    get =
         Version
-            <$> getWord32le
-            <*> getWord64le
-            <*> getWord64le
-            <*> deserialize
-            <*> deserialize
-            <*> getWord64le
-            <*> deserialize
-            <*> getWord32le
-            <*> (go =<< isEmpty)
+            <$> Get.getWord32le
+            <*> Get.getWord64le
+            <*> Get.getWord64le
+            <*> get
+            <*> get
+            <*> Get.getWord64le
+            <*> get
+            <*> Get.getWord32le
+            <*> (go =<< Get.isEmpty)
       where
         go True = return True
         go False = getBool
 
 
-    serialize (Version v s t ar as n ua sh r) = do
-        putWord32le v
-        putWord64le s
-        putWord64le t
-        serialize ar
-        serialize as
-        putWord64le n
-        serialize ua
-        putWord32le sh
+    put (Version v s t ar as n ua sh r) = do
+        Put.putWord32le v
+        Put.putWord64le s
+        Put.putWord64le t
+        put ar
+        put as
+        Put.putWord64le n
+        put ua
+        Put.putWord32le sh
         putBool r
 
 
-instance Binary Version where
-    put = serialize
-    get = deserialize
-
-
-instance Serialize Version where
-    put = serialize
-    get = deserialize
-
-
 -- | 0x00 is 'False', anything else is 'True'.
-getBool :: MonadGet m => m Bool
-getBool = go =<< getWord8
+getBool :: Get Bool
+getBool = go =<< Get.getWord8
   where
     go 0 = return False
     go _ = return True
 
 
-putBool :: MonadPut m => Bool -> m ()
-putBool True = putWord8 1
-putBool False = putWord8 0
+putBool :: Bool -> Put
+putBool True = Put.putWord8 1
+putBool False = Put.putWord8 0
 
 
 -- | A 'MessageCommand' is included in a 'MessageHeader' in order to identify
@@ -733,27 +541,17 @@ instance Show MessageCommand where
 
 instance Read MessageCommand where
     readPrec = do
-        String str <- lexP
+        String str <- R.lexP
         return (stringToCommand (cs str))
 
 
-instance Serial MessageCommand where
-    deserialize = go <$> getByteString 12
+instance Binary MessageCommand where
+    get = go <$> Get.getByteString 12
       where
         go bs =
             let str = unpackCommand bs
              in stringToCommand str
-    serialize mc = putByteString $ packCommand $ commandToString mc
-
-
-instance Binary MessageCommand where
-    put = serialize
-    get = deserialize
-
-
-instance Serialize MessageCommand where
-    put = serialize
-    get = deserialize
+    put = Put.putByteString . packCommand . commandToString
 
 
 instance IsString MessageCommand where
@@ -819,13 +617,13 @@ commandToString mc = case mc of
 -- | Pack a string 'MessageCommand' so that it is exactly 12-bytes long.
 packCommand :: ByteString -> ByteString
 packCommand s =
-    B.take 12 $
+    BS.take 12 $
         s `mappend` C.replicate 12 '\NUL'
 
 
 -- | Undo packing done by 'packCommand'.
 unpackCommand :: ByteString -> ByteString
-unpackCommand = B.takeWhile (/= 0)
+unpackCommand = BS.takeWhile (/= 0)
 
 
 -- | Node offers no services.

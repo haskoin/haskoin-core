@@ -25,24 +25,33 @@ module Bitcoin.Network.Bloom (
     bloomRelevantUpdate,
 ) where
 
-import Bitcoin.Network.Common
-import Bitcoin.Script.Standard
-import Bitcoin.Transaction.Common
-import Control.DeepSeq
-import Control.Monad (forM_, replicateM)
+import Bitcoin.Network.Common (VarInt (VarInt), putVarInt)
+import Bitcoin.Script.Standard (
+    ScriptOutput (..),
+    decodeOutputBS,
+    isPayMulSig,
+    isPayPK,
+ )
+import Bitcoin.Transaction.Common (
+    OutPoint (..),
+    Tx (txOut),
+    TxOut (scriptOutput),
+    txHash,
+ )
+import qualified Bitcoin.Util as U
+import Control.DeepSeq (NFData)
+import Control.Monad (replicateM)
 import Data.Binary (Binary (..))
-import Data.Bits
+import Data.Binary.Get (getByteString, getWord32le, getWord8)
+import Data.Binary.Put (putByteString, putWord32le, putWord8)
+import Data.Bits (Bits (shiftL, shiftR, (.&.), (.|.)))
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-import Data.Bytes.Get
-import Data.Bytes.Put
-import Data.Bytes.Serial
 import qualified Data.Foldable as F
 import Data.Hash.Murmur (murmur3)
 import Data.List (foldl')
 import qualified Data.Sequence as S
-import Data.Serialize (Serialize (..))
-import Data.Word
+import Data.Word (Word32, Word64, Word8)
 import GHC.Generics (Generic)
 
 
@@ -79,8 +88,8 @@ data BloomFlags
     deriving (Eq, Show, Read, Generic, NFData)
 
 
-instance Serial BloomFlags where
-    deserialize = go =<< getWord8
+instance Binary BloomFlags where
+    get = go =<< getWord8
       where
         go 0 = return BloomUpdateNone
         go 1 = return BloomUpdateAll
@@ -88,20 +97,10 @@ instance Serial BloomFlags where
         go _ = fail "BloomFlags get: Invalid bloom flag"
 
 
-    serialize f = putWord8 $ case f of
+    put f = putWord8 $ case f of
         BloomUpdateNone -> 0
         BloomUpdateAll -> 1
         BloomUpdateP2PubKeyOnly -> 2
-
-
-instance Binary BloomFlags where
-    get = deserialize
-    put = serialize
-
-
-instance Serialize BloomFlags where
-    get = deserialize
-    put = serialize
 
 
 -- | A bloom filter is a probabilistic data structure that SPV clients send to
@@ -123,53 +122,28 @@ data BloomFilter = BloomFilter
     deriving (Eq, Show, Read, Generic, NFData)
 
 
-instance Serial BloomFilter where
-    deserialize =
+instance Binary BloomFilter where
+    get =
         BloomFilter
-            <$> (S.fromList <$> (readDat =<< deserialize))
+            <$> (S.fromList <$> (readDat =<< get))
             <*> getWord32le
             <*> getWord32le
-            <*> deserialize
+            <*> get
       where
         readDat (VarInt len) = replicateM (fromIntegral len) getWord8
 
 
-    serialize (BloomFilter dat hashFuncs tweak flags) = do
+    put (BloomFilter dat hashFuncs tweak flags) = do
         putVarInt $ S.length dat
-        forM_ (F.toList dat) putWord8
+        mapM_ putWord8 $ F.toList dat
         putWord32le hashFuncs
         putWord32le tweak
-        serialize flags
-
-
-instance Binary BloomFilter where
-    put = serialize
-    get = deserialize
-
-
-instance Serialize BloomFilter where
-    put = serialize
-    get = deserialize
+        put flags
 
 
 -- | Set a new bloom filter on the peer connection.
 newtype FilterLoad = FilterLoad {filterLoadBloomFilter :: BloomFilter}
-    deriving (Eq, Show, Read, Generic, NFData)
-
-
-instance Serial FilterLoad where
-    deserialize = FilterLoad <$> deserialize
-    serialize (FilterLoad f) = serialize f
-
-
-instance Binary FilterLoad where
-    put = serialize
-    get = deserialize
-
-
-instance Serialize FilterLoad where
-    put = serialize
-    get = deserialize
+    deriving (Eq, Show, Read, Generic, NFData, Binary)
 
 
 -- | Add the given data element to the connections current filter without
@@ -178,26 +152,15 @@ newtype FilterAdd = FilterAdd {getFilterData :: ByteString}
     deriving (Eq, Show, Read, Generic, NFData)
 
 
-instance Serial FilterAdd where
-    deserialize = do
-        (VarInt len) <- deserialize
-        dat <- getByteString $ fromIntegral len
-        return $ FilterAdd dat
+instance Binary FilterAdd where
+    get = do
+        (VarInt len) <- get
+        FilterAdd <$> getByteString (fromIntegral len)
 
 
-    serialize (FilterAdd bs) = do
+    put (FilterAdd bs) = do
         putVarInt $ BS.length bs
         putByteString bs
-
-
-instance Binary FilterAdd where
-    put = serialize
-    get = deserialize
-
-
-instance Serialize FilterAdd where
-    put = serialize
-    get = deserialize
 
 
 -- | Build a bloom filter that will provide the given false positive rate when
@@ -314,14 +277,14 @@ bloomRelevantUpdate bfilter tx
             (BloomUpdateAll, _) -> bloomInsert bf outpoint
             _ -> error "Error Updating Bloom Filter with relevant outpoint"
       where
-        outpoint = runPutS $ serialize $ OutPoint{outPointHash = h, outPointIndex = id'}
+        outpoint = U.encodeS $ OutPoint{outPointHash = h, outPointIndex = id'}
         scriptType = (\s -> isPayPK s || isPayMulSig s) scriptOut
     -- Encodes a scriptOutput so it can be checked agains the Bloom Filter
     encodeScriptOut :: ScriptOutput -> ByteString
-    encodeScriptOut (PayMulSig outputMuSig _) = runPutS $ serialize outputMuSig
-    encodeScriptOut (PayWitnessScriptHash scriptHash) = runPutS $ serialize scriptHash
-    encodeScriptOut (DataCarrier getOutputDat) = runPutS $ serialize getOutputDat
-    encodeScriptOut outputHash = (runPutS . serialize . getOutputHash) outputHash
+    encodeScriptOut (PayMulSig outputMuSig _) = U.encodeS outputMuSig
+    encodeScriptOut (PayWitnessScriptHash scriptHash) = U.encodeS scriptHash
+    encodeScriptOut (DataCarrier getOutputDat) = U.encodeS getOutputDat
+    encodeScriptOut outputHash = (U.encodeS . getOutputHash) outputHash
 
 
 -- | Returns True if the filter is empty (all bytes set to 0x00)

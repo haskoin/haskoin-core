@@ -2,29 +2,69 @@
 
 module Bitcoin.Crypto.SignatureSpec (spec) where
 
-import Bitcoin.Address
-import Bitcoin.Constants
-import Bitcoin.Crypto
-import Bitcoin.Keys
-import Bitcoin.Script
-import Bitcoin.Transaction
-import Bitcoin.Util
-import Bitcoin.Util.Arbitrary
+import Bitcoin (getCompactSig)
+import Bitcoin.Address (
+    Address (WitnessPubKeyAddress),
+    pubKeyWitnessAddr,
+ )
+import Bitcoin.Constants (btc)
+import Bitcoin.Crypto (
+    SecKey,
+    Sig,
+    decodeStrictSig,
+    derivePubKey,
+    exportCompactSig,
+    exportSig,
+    getSig,
+    importSig,
+    isCanonicalHalfOrder,
+    putSig,
+    secKey,
+    sha256,
+    signHash,
+    signMsg,
+    verifyHashSig,
+ )
+import Bitcoin.Keys (PubKeyI, derivePubKeyI, wrapSecKey)
+import Bitcoin.Script (
+    ScriptOutput (..),
+    encodeOutput,
+    setAnyoneCanPayFlag,
+    sigHashAll,
+    sigHashNone,
+    sigHashSingle,
+    toP2WSH,
+ )
+import Bitcoin.Transaction (
+    SigInput (SigInput),
+    Tx (txIn),
+    TxIn (prevOutput),
+    signNestedWitnessTx,
+    signTx,
+ )
+import Bitcoin.Util (decodeHex, encodeHex, lst3)
+import qualified Bitcoin.Util as U
+import Bitcoin.Util.Arbitrary (arbitrarySignature)
 import Bitcoin.UtilSpec (readTestFile)
-import Control.Monad
+import Control.Monad (foldM, void, (<=<), (>=>))
+import Data.Binary.Put (runPut)
 import Data.Bits (testBit)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import Data.Maybe
-import Data.Serialize as S
+import Data.Maybe (fromJust)
 import Data.String.Conversions (cs)
 import Data.Text (Text)
-import Test.HUnit
-import Test.Hspec
-import Test.Hspec.QuickCheck
-import Test.QuickCheck
+import Test.HUnit (
+    Assertion,
+    assertBool,
+    assertEqual,
+    assertFailure,
+ )
+import Test.Hspec (Spec, describe, it, runIO)
+import Test.Hspec.QuickCheck (prop)
+import Test.QuickCheck (forAll)
 
 
 spec :: Spec
@@ -46,8 +86,8 @@ spec = do
             forAll arbitrarySignature $
                 (\s -> importSig (exportSig s) == Just s) . lst3
         prop "getSig . putSig identity" $
-            forAll arbitrarySignature $
-                (\s -> runGet getSig (runPut $ putSig s) == Right s) . lst3
+            forAll arbitrarySignature $ \(_, _, s) ->
+                (U.runGet getSig . runPut . putSig) s == Right s
     describe "Signature vectors" $
         checkDistSig $ \file1 file2 -> do
             vectors <- runIO (readTestFile file1 :: IO [(Text, Text, Text)])
@@ -188,7 +228,7 @@ toVector (prv, m, res) = (fromJust $ (secKey <=< decodeHex) prv, cs m, res)
 
 testRFC6979Vector :: (SecKey, ByteString, Text) -> Assertion
 testRFC6979Vector (prv, m, res) = do
-    assertEqual "RFC 6979 Vector" res (encodeHex $ encode $ exportCompactSig s)
+    assertEqual "RFC 6979 Vector" res $ encodeHex . getCompactSig $ exportCompactSig s
     assertBool "Signature is valid" $ verifyHashSig h s (derivePubKey prv)
     assertBool "Signature is canonical" $ testIsCanonical s
     assertBool "Signature is normalized" $ isCanonicalHalfOrder s

@@ -4,32 +4,71 @@ module Bitcoin.BlockSpec (
     spec,
 ) where
 
-import Bitcoin.Block
-import Bitcoin.Constants
-import Bitcoin.Data
+import Bitcoin.Block (
+    BlockHeader,
+    BlockHeaders,
+    BlockNode (nodeHeader, nodeHeight),
+    HeaderMemory,
+    Timestamp,
+    appendBlocks,
+    blockHashToHex,
+    buildMerkleRoot,
+    buildPartialMerkle,
+    calcTreeHeight,
+    calcTreeWidth,
+    computeAssertBits,
+    computeSubsidy,
+    connectBlocks,
+    decodeCompact,
+    encodeCompact,
+    extractMatches,
+    hexToBlockHash,
+    initialChain,
+    splitPoint,
+ )
+import Bitcoin.Constants (
+    Network (..),
+    btc,
+    btcRegTest,
+ )
 import Bitcoin.Orphans ()
-import Bitcoin.Transaction
-import Bitcoin.Util
-import Bitcoin.Util.Arbitrary
-import Bitcoin.UtilSpec hiding (spec)
-import Control.Monad (MonadPlus (..), forM_, unless, (<=<))
-import Control.Monad.Trans.State.Strict
-import Data.Aeson
-import Data.Aeson.Encoding
-import qualified Data.ByteString.Lazy as BL
-import Data.Bytes.Get
-import Data.Bytes.Put (runPutL, runPutS)
-import Data.Bytes.Serial
+import Bitcoin.Transaction (TxHash (getTxHash), hexToTxHash)
+import Bitcoin.Util.Arbitrary (
+    arbitraryBlock,
+    arbitraryBlockHash,
+    arbitraryBlockHeader,
+    arbitraryBlockNode,
+    arbitraryGetBlocks,
+    arbitraryGetHeaders,
+    arbitraryHeaders,
+    arbitraryMerkleBlock,
+    arbitraryNetwork,
+    arbitraryTxHash,
+ )
+import Bitcoin.UtilSpec (
+    JsonBox (..),
+    ReadBox (..),
+    SerialBox (..),
+    testIdentity,
+ )
+import Control.Monad (forM_, unless)
+import Control.Monad.Trans.State.Strict (State, evalState)
 import Data.Either (fromRight)
 import Data.Maybe (fromJust)
 import Data.String (fromString)
 import Data.String.Conversions (cs)
 import Data.Text (Text)
 import Data.Word (Word32)
-import Test.HUnit hiding (State)
-import Test.Hspec
-import Test.Hspec.QuickCheck
-import Test.QuickCheck
+import Test.HUnit (Assertion, assertBool, assertEqual)
+import Test.Hspec (Spec, SpecWith, describe, it, runIO, shouldBe)
+import Test.Hspec.QuickCheck (prop)
+import Test.QuickCheck (
+    Arbitrary (arbitrary),
+    Property,
+    forAll,
+    listOf1,
+    (==>),
+ )
 import Text.Printf (printf)
 
 

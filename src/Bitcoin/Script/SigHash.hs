@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 -- |
@@ -27,24 +28,39 @@ module Bitcoin.Script.SigHash (
     decodeTxSig,
 ) where
 
-import Bitcoin.Crypto
-import Bitcoin.Crypto.Hash
-import Bitcoin.Data
-import Bitcoin.Network.Common
-import Bitcoin.Script.Common
-import Bitcoin.Transaction.Common
-import Bitcoin.Util
-import Control.DeepSeq
-import Control.Monad
-import Data.Bits
+import Bitcoin.Crypto (
+    Hash256,
+    Sig,
+    decodeStrictSig,
+    putSig,
+ )
+import Bitcoin.Crypto.Hash (doubleSHA256L)
+import Bitcoin.Data (Network)
+import Bitcoin.Network.Common (putVarInt)
+import Bitcoin.Script.Common (
+    Script (..),
+    ScriptOp (OP_CODESEPARATOR),
+ )
+import Bitcoin.Transaction.Common (Tx (..), TxIn (..), TxOut (TxOut))
+import Bitcoin.Util (updateIndex)
+import qualified Bitcoin.Util as U
+import Control.DeepSeq (NFData)
+import Control.Monad (when)
+import Data.Binary (put)
+import qualified Data.Binary as Bin
+import Data.Binary.Put (
+    putLazyByteString,
+    putWord32le,
+    putWord64le,
+    putWord8,
+    runPut,
+ )
+import Data.Bits (Bits ((.&.), (.|.)))
 import qualified Data.ByteString as BS
-import Data.Bytes.Get
-import Data.Bytes.Put
-import Data.Bytes.Serial
-import Data.Hashable
-import Data.Maybe
-import Data.Scientific
-import Data.Word
+import qualified Data.ByteString.Lazy as BSL
+import Data.Hashable (Hashable)
+import Data.Maybe (fromMaybe)
+import Data.Word (Word32, Word64)
 import GHC.Generics (Generic)
 
 
@@ -174,17 +190,18 @@ txSigHash ::
     SigHash ->
     -- | hash to be signed
     Hash256
-txSigHash net tx out v i sh = do
+txSigHash _net tx out _v i sh = do
     let newIn = buildInputs (txIn tx) fout i sh
     -- When SigSingle and input index > outputs, then sign integer 1
     fromMaybe one $ do
         newOut <- buildOutputs (txOut tx) i sh
         let newTx = Tx (txVersion tx) newIn newOut [] (txLockTime tx)
-        return $
-            doubleSHA256 $
-                runPutS $ do
-                    serialize newTx
-                    putWord32le $ fromIntegral sh
+        return
+            . doubleSHA256L
+            . runPut
+            $ do
+                put newTx
+                putWord32le $ fromIntegral sh
   where
     fout = Script $ filter (/= OP_CODESEPARATOR) $ scriptOps out
     one = "0100000000000000000000000000000000000000000000000000000000000000"
@@ -194,13 +211,13 @@ txSigHash net tx out v i sh = do
 buildInputs :: [TxIn] -> Script -> Int -> SigHash -> [TxIn]
 buildInputs txins out i sh
     | hasAnyoneCanPayFlag sh =
-        [(txins !! i){scriptInput = runPutS $ serialize out}]
+        [(txins !! i){scriptInput}]
     | isSigHashAll sh || isSigHashUnknown sh = single
     | otherwise = zipWith noSeq single [0 ..]
   where
     emptyIn = map (\ti -> ti{scriptInput = BS.empty}) txins
-    single =
-        updateIndex i emptyIn $ \ti -> ti{scriptInput = runPutS $ serialize out}
+    single = updateIndex i emptyIn $ \ti -> ti{scriptInput}
+    scriptInput = U.encodeS out
     noSeq ti j =
         if i == j
             then ti
@@ -235,38 +252,38 @@ txSigHashSegwitV0 ::
     -- | hash to be signed
     Hash256
 txSigHashSegwitV0 _ tx out v i sh =
-    doubleSHA256 . runPutS $ do
+    doubleSHA256L . runPut $ do
         putWord32le $ txVersion tx
-        serialize hashPrevouts
-        serialize hashSequence
-        serialize $ prevOutput $ txIn tx !! i
+        put hashPrevouts
+        put hashSequence
+        put $ prevOutput $ txIn tx !! i
         putScript out
         putWord64le v
         putWord32le $ txInSequence $ txIn tx !! i
-        serialize hashOutputs
+        put hashOutputs
         putWord32le $ txLockTime tx
         putWord32le $ fromIntegral sh
   where
     hashPrevouts
         | not $ hasAnyoneCanPayFlag sh =
-            doubleSHA256 $ runPutS $ mapM_ (serialize . prevOutput) $ txIn tx
+            doubleSHA256L . runPut . mapM_ (put . prevOutput) $ txIn tx
         | otherwise = zeros
     hashSequence
         | not (hasAnyoneCanPayFlag sh)
             && not (isSigHashSingle sh)
             && not (isSigHashNone sh) =
-            doubleSHA256 $ runPutS $ mapM_ (putWord32le . txInSequence) $ txIn tx
+            doubleSHA256L . runPut . mapM_ (putWord32le . txInSequence) $ txIn tx
         | otherwise = zeros
     hashOutputs
         | not (isSigHashSingle sh) && not (isSigHashNone sh) =
-            doubleSHA256 $ runPutS $ mapM_ serialize $ txOut tx
+            doubleSHA256L . runPut . mapM_ put $ txOut tx
         | isSigHashSingle sh && i < length (txOut tx) =
-            doubleSHA256 $ runPutS $ serialize $ txOut tx !! i
+            doubleSHA256L . Bin.encode $ txOut tx !! i
         | otherwise = zeros
     putScript s = do
-        let encodedScript = runPutS $ serialize s
-        putVarInt $ BS.length encodedScript
-        putByteString encodedScript
+        let encodedScript = Bin.encode s
+        putVarInt $ BSL.length encodedScript
+        putLazyByteString encodedScript
     zeros :: Hash256
     zeros = "0000000000000000000000000000000000000000000000000000000000000000"
 
@@ -290,13 +307,14 @@ instance NFData TxSignature
 encodeTxSig :: TxSignature -> BS.ByteString
 encodeTxSig TxSignatureEmpty = error "Can not encode an empty signature"
 encodeTxSig (TxSignature sig (SigHash n)) =
-    runPutS $ putSig sig >> putWord8 (fromIntegral n)
+    BSL.toStrict . runPut $ putSig sig >> putWord8 (fromIntegral n)
 
 
 -- | Deserialize a 'TxSignature'.
 decodeTxSig :: Network -> BS.ByteString -> Either String TxSignature
+-- TODO remove unused parameter
 decodeTxSig _ bs | BS.null bs = Left "Empty signature candidate"
-decodeTxSig net bs =
+decodeTxSig _net bs =
     case decodeStrictSig $ BS.init bs of
         Just sig -> do
             let sh = fromIntegral $ BS.last bs

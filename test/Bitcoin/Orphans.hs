@@ -4,18 +4,63 @@
 
 module Bitcoin.Orphans where
 
-import Bitcoin
-import Control.Monad
-import Data.Aeson
-import Data.Aeson.Encoding
+import Bitcoin (
+    Block (Block),
+    BlockHash,
+    BlockHeader (BlockHeader),
+    DerivPath,
+    DerivPathI,
+    HardPath,
+    OutPoint (OutPoint),
+    ParsedPath (..),
+    PubKeyI,
+    ScriptOutput,
+    SigHash (..),
+    SigInput (SigInput),
+    SoftPath,
+    Tx (Tx),
+    TxHash,
+    TxIn (TxIn),
+    TxOut (TxOut),
+    XOnlyPubKey,
+    blockHashToHex,
+    decodeHex,
+    decodeOutputBS,
+    eitherToMaybe,
+    encodeHex,
+    encodeOutputBS,
+    hexBuilder,
+    hexToBlockHash,
+    hexToTxHash,
+    maybeToEither,
+    parseHard,
+    parsePath,
+    parseSoft,
+    pathToStr,
+    txHashToHex,
+ )
+import qualified Bitcoin.Util as U
+import Control.Monad (MonadPlus (mzero), (<=<))
+import Data.Aeson (
+    FromJSON (parseJSON),
+    KeyValue ((.=)),
+    ToJSON (toEncoding, toJSON),
+    Value (Number, String),
+    object,
+    pairs,
+    withObject,
+    withScientific,
+    withText,
+    (.:),
+    (.:?),
+ )
+import Data.Aeson.Encoding (text, unsafeToEncoding)
+import qualified Data.Binary as Bin
 import Data.ByteString.Builder (char7)
-import qualified Data.ByteString.Lazy as BL
-import Data.Bytes.Get
-import Data.Bytes.Put
-import Data.Bytes.Serial
-import Data.Maybe
-import Data.Scientific
-import Data.String.Conversions
+import qualified Data.ByteString.Lazy as BSL
+import Data.Maybe (maybeToList)
+import Data.Scientific (toBoundedInteger)
+import Data.String.Conversions (cs)
 
 
 instance FromJSON BlockHash where
@@ -29,7 +74,7 @@ instance ToJSON BlockHash where
     toEncoding h =
         unsafeToEncoding $
             char7 '"'
-                <> hexBuilder (BL.reverse (runPutL (serialize h)))
+                <> (hexBuilder . BSL.reverse . Bin.encode) h
                 <> char7 '"'
 
 
@@ -38,7 +83,7 @@ instance ToJSON BlockHeader where
         object
             [ "version" .= v
             , "prevblock" .= p
-            , "merkleroot" .= encodeHex (runPutS (serialize m))
+            , "merkleroot" .= (encodeHex . U.encodeS) m
             , "timestamp" .= t
             , "bits" .= b
             , "nonce" .= n
@@ -48,15 +93,15 @@ instance ToJSON BlockHeader where
             ( "version"
                 .= v
                 <> "prevblock"
-                .= p
+                    .= p
                 <> "merkleroot"
-                .= encodeHex (runPutS (serialize m))
+                    .= (encodeHex . U.encodeS) m
                 <> "timestamp"
-                .= t
+                    .= t
                 <> "bits"
-                .= b
+                    .= b
                 <> "nonce"
-                .= n
+                    .= n
             )
 
 
@@ -64,19 +109,14 @@ instance FromJSON BlockHeader where
     parseJSON =
         withObject "BlockHeader" $ \o ->
             BlockHeader
-                <$> o
-                    .: "version"
-                <*> o
-                    .: "prevblock"
+                <$> o .: "version"
+                <*> o .: "prevblock"
                 <*> (f =<< o .: "merkleroot")
-                <*> o
-                    .: "timestamp"
-                <*> o
-                    .: "bits"
-                <*> o
-                    .: "nonce"
+                <*> o .: "timestamp"
+                <*> o .: "bits"
+                <*> o .: "nonce"
       where
-        f = maybe mzero return . (eitherToMaybe . runGetS deserialize <=< decodeHex)
+        f = maybe mzero return . (eitherToMaybe . U.decode . BSL.fromStrict <=< decodeHex)
 
 
 instance FromJSON TxHash where
@@ -90,7 +130,7 @@ instance ToJSON TxHash where
     toEncoding h =
         unsafeToEncoding $
             char7 '"'
-                <> hexBuilder (BL.reverse (runPutL (serialize h)))
+                <> (hexBuilder . BSL.reverse . Bin.encode) h
                 <> char7 '"'
 
 
@@ -109,11 +149,9 @@ instance FromJSON TxIn where
     parseJSON =
         withObject "TxIn" $ \o ->
             TxIn
-                <$> o
-                    .: "prevoutput"
+                <$> o .: "prevoutput"
                 <*> (maybe mzero return . decodeHex =<< o .: "inputscript")
-                <*> o
-                    .: "sequence"
+                <*> o .: "sequence"
 
 
 instance ToJSON TxIn where
@@ -128,9 +166,9 @@ instance ToJSON TxIn where
             ( "prevoutput"
                 .= o
                 <> "inputscript"
-                .= encodeHex s
+                    .= encodeHex s
                 <> "sequence"
-                .= q
+                    .= q
             )
 
 
@@ -138,8 +176,7 @@ instance FromJSON TxOut where
     parseJSON =
         withObject "TxOut" $ \o ->
             TxOut
-                <$> o
-                    .: "value"
+                <$> o .: "value"
                 <*> (maybe mzero return . decodeHex =<< o .: "outputscript")
 
 
@@ -153,15 +190,11 @@ instance ToJSON TxOut where
 instance FromJSON Tx where
     parseJSON = withObject "Tx" $ \o ->
         Tx
-            <$> o
-                .: "version"
-            <*> o
-                .: "inputs"
-            <*> o
-                .: "outputs"
+            <$> o .: "version"
+            <*> o .: "inputs"
+            <*> o .: "outputs"
             <*> (mapM (mapM f) =<< o .: "witnessdata")
-            <*> o
-                .: "locktime"
+            <*> o .: "locktime"
       where
         f = maybe mzero return . decodeHex
 
@@ -180,13 +213,13 @@ instance ToJSON Tx where
             ( "version"
                 .= v
                 <> "inputs"
-                .= i
+                    .= i
                 <> "outputs"
-                .= o
+                    .= o
                 <> "witnessdata"
-                .= fmap (fmap encodeHex) w
+                    .= fmap (fmap encodeHex) w
                 <> "locktime"
-                .= l
+                    .= l
             )
 
 
@@ -240,18 +273,18 @@ instance FromJSON SoftPath where
 
 
 instance ToJSON PubKeyI where
-    toJSON = String . encodeHex . runPutS . serialize
+    toJSON = String . encodeHex . U.encodeS
     toEncoding s =
         unsafeToEncoding $
             char7 '"'
-                <> hexBuilder (runPutL (serialize s))
+                <> (hexBuilder . Bin.encode) s
                 <> char7 '"'
 
 
 instance FromJSON PubKeyI where
     parseJSON =
         withText "PubKeyI" $
-            maybe mzero return . ((eitherToMaybe . runGetS deserialize) <=< decodeHex)
+            maybe mzero return . ((eitherToMaybe . U.decode . BSL.fromStrict) <=< decodeHex)
 
 
 instance FromJSON SigHash where
@@ -292,11 +325,11 @@ instance ToJSON SigInput where
             "pkscript"
                 .= so
                 <> "value"
-                .= val
+                    .= val
                 <> "outpoint"
-                .= op
+                    .= op
                 <> "sighash"
-                .= sh
+                    .= sh
                 <> maybe mempty ("redeem" .=) rdm
 
 
@@ -304,16 +337,11 @@ instance FromJSON SigInput where
     parseJSON =
         withObject "SigInput" $ \o ->
             SigInput
-                <$> o
-                    .: "pkscript"
-                <*> o
-                    .: "value"
-                <*> o
-                    .: "outpoint"
-                <*> o
-                    .: "sighash"
-                <*> o
-                    .:? "redeem"
+                <$> o .: "pkscript"
+                <*> o .: "value"
+                <*> o .: "outpoint"
+                <*> o .: "sighash"
+                <*> o .:? "redeem"
 
 
 -- | Hex encoding
@@ -321,4 +349,4 @@ instance FromJSON XOnlyPubKey where
     parseJSON =
         withText "XOnlyPubKey" $
             either fail pure
-                . (runGetS deserialize <=< maybe (Left "Unable to decode hex") Right . decodeHex)
+                . (U.decode . BSL.fromStrict <=< maybe (Left "Unable to decode hex") Right . decodeHex)

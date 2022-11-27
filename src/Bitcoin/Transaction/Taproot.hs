@@ -27,12 +27,13 @@ module Bitcoin.Transaction.Taproot (
 
 import Bitcoin.Crypto (PubKey, initTaggedHash, tweak, tweakAddPubKey)
 import Bitcoin.Keys.Common (PubKeyI (PubKeyI), pubKeyPoint)
+import Bitcoin.Network.Common (VarInt (VarInt))
 import Bitcoin.Script.Common (Script)
 import Bitcoin.Script.Standard (ScriptOutput (PayWitness))
 import Bitcoin.Transaction.Common (WitnessStack)
-import Bitcoin.Util (decodeHex, eitherToMaybe, encodeHex)
+import Bitcoin.Util (eitherToMaybe)
+import qualified Bitcoin.Util as U
 import Control.Applicative (many)
-import Control.Monad ((<=<))
 import Crypto.Hash (
     Digest,
     SHA256,
@@ -42,18 +43,18 @@ import Crypto.Hash (
     hashUpdates,
  )
 import Data.Binary (Binary (..))
+import qualified Data.Binary as Bin
+import Data.Binary.Get (getByteString, getLazyByteString, getWord8)
+import Data.Binary.Put (putLazyByteString, runPut)
 import Data.Bits ((.&.), (.|.))
 import Data.Bool (bool)
 import qualified Data.ByteArray as BA
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-import Data.Bytes.Get (getBytes, runGetS)
-import Data.Bytes.Put (putByteString, runPutS)
-import Data.Bytes.Serial (Serial (..), deserialize, serialize)
-import Data.Bytes.VarInt (VarInt (VarInt))
+import qualified Data.ByteString.Lazy as BSL
 import Data.Foldable (foldl')
+import Data.Function (on)
 import Data.Maybe (fromMaybe, mapMaybe)
-import Data.Serialize (Serialize, get, getByteString, getWord8, put)
 import Data.Word (Word8)
 
 
@@ -65,31 +66,20 @@ newtype XOnlyPubKey = XOnlyPubKey {xOnlyPubKey :: PubKey}
 
 
 instance Eq XOnlyPubKey where
-    k1 == k2 = runPutS (serialize k1) == runPutS (serialize k2)
-
-
-instance Serial XOnlyPubKey where
-    serialize (XOnlyPubKey pk) =
-        putByteString
-            . BS.drop 1
-            . runPutS
-            . serialize
-            $ PubKeyI pk True
-    deserialize =
-        either fail (pure . XOnlyPubKey . pubKeyPoint)
-            . runGetS deserialize
-            . BS.cons 0x02
-            =<< getBytes 32
-
-
-instance Serialize XOnlyPubKey where
-    put = serialize
-    get = deserialize
+    (==) = (==) `on` Bin.encode
 
 
 instance Binary XOnlyPubKey where
-    put = serialize
-    get = deserialize
+    put (XOnlyPubKey pk) =
+        putLazyByteString
+            . BSL.drop 1
+            . Bin.encode
+            $ PubKeyI pk True
+    get =
+        either fail (pure . XOnlyPubKey . pubKeyPoint)
+            . U.decode
+            . BSL.cons 0x02
+            =<< getLazyByteString 32
 
 
 type TapLeafVersion = Word8
@@ -142,14 +132,15 @@ hashBranch hashA hashB =
 leafHash :: TapLeafVersion -> Script -> Digest SHA256
 leafHash leafVersion leafScript =
     hashFinalize
-        . hashUpdate (initTaggedHash "TapLeaf")
-        . runPutS
+        . hashUpdates (initTaggedHash "TapLeaf")
+        . BSL.toChunks
+        . runPut
         $ do
-            serialize leafVersion
-            serialize $ VarInt (BS.length scriptBytes)
-            putByteString scriptBytes
+            put leafVersion
+            put $ (VarInt . fromIntegral . BSL.length) scriptBytes
+            putLazyByteString scriptBytes
   where
-    scriptBytes = runPutS $ serialize leafScript
+    scriptBytes = Bin.encode leafScript
 
 
 -- | Representation of a full taproot output.
@@ -173,15 +164,15 @@ taprootCommitment internalKey merkleRoot =
     BA.convert
         . hashFinalize
         . maybe id (flip hashUpdate) merkleRoot
-        . (`hashUpdate` keyBytes)
+        . (`hashUpdates` BSL.toChunks keyBytes)
         $ initTaggedHash "TapTweak"
   where
-    keyBytes = runPutS . serialize $ XOnlyPubKey internalKey
+    keyBytes = Bin.encode $ XOnlyPubKey internalKey
 
 
 -- | Generate the output script for a taproot output
 taprootScriptOutput :: TaprootOutput -> ScriptOutput
-taprootScriptOutput = PayWitness 0x01 . runPutS . serialize . XOnlyPubKey . taprootOutputKey
+taprootScriptOutput = PayWitness 0x01 . U.encodeS . XOnlyPubKey . taprootOutputKey
 
 
 -- | Comprehension of taproot witness data
@@ -216,7 +207,7 @@ viewTaprootWitness witnessStack = case reverse witnessStack of
   where
     parseSpendPathData scriptPathAnnex = \case
         scriptBytes : controlBytes : scriptPathStack -> do
-            scriptPathScript <- eitherToMaybe $ runGetS deserialize scriptBytes
+            scriptPathScript <- eitherToMaybe . U.decode $ BSL.fromStrict scriptBytes
             (v, scriptPathInternalKey, scriptPathControl) <- deconstructControl controlBytes
             pure . ScriptPathSpend $
                 ScriptPathData
@@ -229,10 +220,10 @@ viewTaprootWitness witnessStack = case reverse witnessStack of
                     , scriptPathControl
                     }
         _ -> Nothing
-    deconstructControl = eitherToMaybe . runGetS deserializeControl
+    deconstructControl = eitherToMaybe . U.runGet deserializeControl . BSL.fromStrict
     deserializeControl = do
         v <- getWord8
-        k <- xOnlyPubKey <$> deserialize
+        k <- xOnlyPubKey <$> get
         proof <- many $ getByteString 32
         pure (v, k, proof)
 
@@ -243,10 +234,10 @@ encodeTaprootWitness = \case
     KeyPathSpend signature -> pure signature
     ScriptPathSpend scriptPathData ->
         scriptPathStack scriptPathData
-            <> [ runPutS . serialize $ scriptPathScript scriptPathData
+            <> [ U.encodeS $ scriptPathScript scriptPathData
                , mconcat
                     [ BS.pack [scriptPathLeafVersion scriptPathData .|. parity scriptPathData]
-                    , runPutS . serialize . XOnlyPubKey $ scriptPathInternalKey scriptPathData
+                    , U.encodeS . XOnlyPubKey $ scriptPathInternalKey scriptPathData
                     , mconcat $ scriptPathControl scriptPathData
                     ]
                , fromMaybe mempty $ scriptPathAnnex scriptPathData
@@ -277,6 +268,6 @@ verifyScriptPathData outputKey scriptPathData = fromMaybe False $ do
 
 
 keyParity :: PubKey -> Word8
-keyParity key = case BS.unpack . runPutS . serialize $ PubKeyI key True of
+keyParity key = case BSL.unpack . Bin.encode $ PubKeyI key True of
     0x02 : _ -> 0x00
     _ -> 0x01

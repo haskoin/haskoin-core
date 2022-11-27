@@ -24,6 +24,7 @@ import Data.Bits (shiftL, shiftR)
 import qualified Data.ByteArray as BA
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BSL
 import Data.List
 import qualified Data.Map.Strict as M
 import Data.Maybe
@@ -114,7 +115,7 @@ calcCS len = getBits len . BA.convert . hashWith SHA256
 
 numCS :: Int -> Entropy -> Integer
 numCS len =
-    shiftCS . bsToInteger
+    shiftCS . bsToInteger . BSL.fromStrict
   where
     shiftCS = case 8 - len `mod` 8 of
         8 -> id
@@ -176,7 +177,7 @@ indicesToBS is = do
 -- | Turn a 'ByteString' into a list of 11-bit numbers.
 bsToIndices :: ByteString -> [Int]
 bsToIndices bs =
-    reverse . go q $ bsToInteger bs `shiftR` r
+    reverse . go q $ bsToInteger (BSL.fromStrict bs) `shiftR` r
   where
     (q, r) = (BS.length bs * 8) `quotRem` 11
     go 0 _ = []

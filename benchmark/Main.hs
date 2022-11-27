@@ -14,8 +14,6 @@ import qualified Data.Binary as Bin
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as BSL
 import Data.Proxy (Proxy (..))
-import Data.Serialize (Serialize)
-import qualified Data.Serialize as S
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.IO as TIO
@@ -58,7 +56,7 @@ main = do
 
 roundTrip ::
     forall a.
-    (NFData a, Binary a, Serialize a) =>
+    (NFData a, Binary a) =>
     Proxy a ->
     String ->
     Text ->
@@ -70,11 +68,6 @@ roundTrip _ label xHex =
             "binary"
             [ bench "encode" $ nf Bin.encode x
             , bench "decode" $ nf binDecode xBytes
-            ]
-        , bgroup
-            "cereal"
-            [ bench "encode" $ nf S.encode x
-            , bench "decode" $ nf (S.decode @a) xBytes
             ]
         ]
   where

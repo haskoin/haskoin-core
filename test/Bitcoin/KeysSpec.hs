@@ -1,34 +1,73 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Bitcoin.KeysSpec (spec) where
 
-import Bitcoin.Address
-import Bitcoin.Constants
-import Bitcoin.Crypto
-import Bitcoin.Keys
+import Bitcoin (getSecKey, secKey)
+import Bitcoin.Address (
+    addrToText,
+    addressToOutput,
+    outputAddress,
+    pubKeyAddr,
+    textToAddr,
+ )
+import Bitcoin.Constants (allNets, btc, btcRegTest, btcTest)
+import Bitcoin.Crypto (
+    Hash256,
+    SecKey,
+    doubleSHA256,
+    signHash,
+    verifyHashSig,
+ )
+import Bitcoin.Keys (
+    PubKeyI (pubKeyCompressed, pubKeyPoint),
+    SecKeyI (secKeyCompressed, secKeyData),
+    derivePubKeyI,
+    fromMiniKey,
+    fromWif,
+    toWif,
+    wrapSecKey,
+ )
 import Bitcoin.Orphans ()
-import Bitcoin.Script
-import Bitcoin.Util
-import Bitcoin.Util.Arbitrary
-import Bitcoin.UtilSpec hiding (spec)
-import Control.Lens
-import Control.Monad
-import Data.Aeson as A
-import Data.Aeson.Lens
+import Bitcoin.Script (
+    ScriptOutput,
+    decodeOutputBS,
+    encodeOutputBS,
+ )
+import Bitcoin.Util (decodeHex, eitherToMaybe, encodeHex)
+import qualified Bitcoin.Util as U
+import Bitcoin.Util.Arbitrary (
+    arbitraryKeyPair,
+    arbitraryNetwork,
+    arbitrarySecKeyI,
+ )
+import Bitcoin.UtilSpec (
+    JsonBox (..),
+    ReadBox (..),
+    SerialBox (..),
+    readTestFile,
+    testIdentity,
+ )
+import Control.Monad (forM_, (<=<))
+import Data.Aeson as A (Object, Value (Bool))
+import qualified Data.Aeson.KeyMap as A
+import qualified Data.Binary as Bin
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as C
-import Data.Bytes.Get
-import Data.Bytes.Put
-import Data.Bytes.Serial
-import Data.Maybe
-import qualified Data.Serialize as S
+import qualified Data.ByteString.Lazy as BSL
+import Data.Maybe (fromJust, fromMaybe, isJust, isNothing)
 import Data.String (fromString)
 import Data.String.Conversions (cs)
 import Data.Text (Text)
-import Test.HUnit
-import Test.Hspec
-import Test.Hspec.QuickCheck
-import Test.QuickCheck
+import Test.HUnit (
+    Assertion,
+    assertBool,
+    assertEqual,
+    assertFailure,
+ )
+import Test.Hspec (Spec, describe, it, runIO)
+import Test.Hspec.QuickCheck (prop)
+import Test.QuickCheck (Arbitrary (arbitrary), Gen, forAll)
 
 
 serialVals :: [SerialBox]
@@ -59,7 +98,7 @@ spec = do
             forAll arbitraryKeyPair (isCanonicalPubKey . snd)
         prop "Public key fromString identity" $
             forAll arbitraryKeyPair $ \(_, k) ->
-                fromString (cs . encodeHex $ runPutS $ serialize k) == k
+                fromString (cs . encodeHex $ U.encodeS k) == k
     describe "SecKey properties" $
         prop "fromWif . toWif identity" $
             forAll arbitraryNetwork $ \net ->
@@ -75,7 +114,7 @@ spec = do
     describe "MiniKey vectors" $
         it "Passes MiniKey decoding tests" testMiniKey
     describe "key_io_valid.json vectors" $ do
-        vectors <- runIO (readTestFile "key_io_valid.json" :: IO [(Text, Text, A.Value)])
+        vectors <- runIO (readTestFile "key_io_valid.json" :: IO [(Text, Text, A.Object)])
         it "Passes the key_io_valid.json vectors" $
             mapM_ testKeyIOValidVector vectors
     describe "key_io_invalid.json vectors" $ do
@@ -90,46 +129,46 @@ isCanonicalPubKey :: PubKeyI -> Bool
 isCanonicalPubKey p =
     not $
         -- Non-canonical public key: too short
-        (BS.length bs < 33)
+        (BSL.length bs < 33)
             ||
             -- Non-canonical public key: invalid length for uncompressed key
-            (BS.index bs 0 == 4 && BS.length bs /= 65)
+            (BSL.index bs 0 == 4 && BSL.length bs /= 65)
             ||
             -- Non-canonical public key: invalid length for compressed key
-            (BS.index bs 0 `elem` [2, 3] && BS.length bs /= 33)
+            (BSL.index bs 0 `elem` [2, 3] && BSL.length bs /= 33)
             ||
             -- Non-canonical public key: compressed nor uncompressed
-            (BS.index bs 0 `notElem` [2, 3, 4])
+            (BSL.index bs 0 `notElem` [2, 3, 4])
   where
-    bs = runPutS $ serialize p
+    bs = Bin.encode p
 
 
 testMiniKey :: Assertion
 testMiniKey =
     assertEqual "fromMiniKey" (Just res) (go "S6c56bnXQiBjk9mqSYE7ykVQ7NzrRy")
   where
-    go = fmap (encodeHex . runPutS . S.put . secKeyData) . fromMiniKey
+    go = fmap (encodeHex . getSecKey . secKeyData) . fromMiniKey
     res = "4c7a9640c72dc2099f23715d0c8a0d8a35f8906e3cab61dd3f78b67bf887c9ab"
 
 
 -- Test vectors from:
 -- https://github.com/bitcoin/bitcoin/blob/master/src/test/key_io_tests.cpp
 
-testKeyIOValidVector :: (Text, Text, A.Value) -> Assertion
+testKeyIOValidVector :: (Text, Text, A.Object) -> Assertion
 testKeyIOValidVector (a, payload, obj)
     | disabled = return () -- There are invalid version 1 bech32 addresses
     | isPrv = do
         -- Test from WIF to SecKey
-        let isComp = obj ^?! key "isCompressed" . _Bool
+        let Just isComp = A.lookup "isCompressed" obj >>= getBool
             prvKeyM = fromWif net a
-            prvKeyHexM = encodeHex . runPutS . S.put . secKeyData <$> prvKeyM
+            prvKeyHexM = encodeHex . getSecKey . secKeyData <$> prvKeyM
         assertBool "Valid PrvKey" $ isJust prvKeyM
         assertEqual "Valid compression" (Just isComp) (secKeyCompressed <$> prvKeyM)
         assertEqual "WIF matches payload" (Just payload) prvKeyHexM
         let prvAsPubM = (eitherToMaybe . decodeOutputBS <=< decodeHex) a
         assertBool "PrvKey is invalid ScriptOutput" $ isNothing prvAsPubM
         -- Test from SecKey to WIF
-        let secM = eitherToMaybe . runGetS S.get =<< decodeHex payload
+        let secM = secKey =<< decodeHex payload
             wifM = toWif net . wrapSecKey isComp <$> secM
         assertEqual "Payload matches WIF" (Just a) wifM
     | otherwise = do
@@ -139,10 +178,7 @@ testKeyIOValidVector (a, payload, obj)
         assertBool ("Valid Address " <> cs a) $ isJust addrM
         assertEqual "Address matches payload" (Just payload) scriptM
         let pubAsWifM = fromWif net a
-            pubAsSecM =
-                eitherToMaybe . runGetS S.get
-                    =<< decodeHex a ::
-                    Maybe SecKey
+            pubAsSecM = secKey =<< decodeHex a
         assertBool "Address is invalid Wif" $ isNothing pubAsWifM
         assertBool "Address is invalid PrvKey" $ isNothing pubAsSecM
         -- Test Script to Addr
@@ -150,21 +186,24 @@ testKeyIOValidVector (a, payload, obj)
             resM = addrToText net =<< outputAddress =<< outM
         assertEqual "Payload matches address" (Just a) resM
   where
-    isPrv = obj ^?! key "isPrivkey" . _Bool
-    disabled = fromMaybe False $ obj ^? key "disabled" . _Bool
-    chain = obj ^?! key "chain" . _String
+    Just isPrv = A.lookup "isPrivkey" obj >>= getBool
+    disabled = fromMaybe False $ A.lookup "disabled" obj >>= getBool
+    Just chain = A.lookup "chain" obj
     net =
         case chain of
             "main" -> btc
             "test" -> btcTest
             "regtest" -> btcRegTest
             _ -> error "Invalid chain key in key_io_valid.json"
+    getBool = \case
+        Bool b -> Just b
+        _ -> Nothing
 
 
 testKeyIOInvalidVector :: [Text] -> Assertion
 testKeyIOInvalidVector [a] = do
     let wifMs = (`fromWif` a) <$> allNets
-        secKeyM = (eitherToMaybe . runGetS S.get <=< decodeHex) a :: Maybe SecKey
+        secKeyM = (secKey <=< decodeHex) a :: Maybe SecKey
         scriptM = (eitherToMaybe . decodeOutputBS <=< decodeHex) a :: Maybe ScriptOutput
     assertBool "Payload is invalid WIF" $ all isNothing wifMs
     assertBool "Payload is invalid SecKey" $ isNothing secKeyM

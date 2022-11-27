@@ -9,3 +9,9 @@
         - "-fdefer-typed-holes"
         - "-Wno-typed-holes"
       within: []
+
+- modules:
+  - name: Data.ByteString
+    as: BS
+  - name: Data.ByteString.Lazy
+    as: BSL

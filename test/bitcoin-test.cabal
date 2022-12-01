@@ -1,0 +1,130 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.35.0.
+--
+-- see: https://github.com/sol/hpack
+
+name:           bitcoin-test
+version:        0.1.0
+synopsis:       Bitcoin test library for Haskell
+description:    Please see the README on GitHub at <https://github.com/haskell-bitcoin/bitcoin#readme>
+category:       Bitcoin, Finance, Network
+homepage:       http://github.com/haskell-bitcoin/bitcoin#readme
+bug-reports:    http://github.com/haskell-bitcoin/bitcoin/issues
+author:         Philippe Laprade,
+                Jean-Pierre Rupp,
+                Matthew Wraith,
+                Keagan McClelland
+maintainer:     keagan.mcclelland@gmail.com
+license:        BSD3
+build-type:     Simple
+extra-source-files:
+    ./data/bip341.json
+    ./data/complex_psbt.json
+    ./data/forkid_script_tests.json
+    ./data/forkid_sighash.json
+    ./data/key_io_invalid.json
+    ./data/key_io_valid.json
+    ./data/rfc6979abc.json
+    ./data/rfc6979core.json
+    ./data/rfc6979DERabc.json
+    ./data/rfc6979DERcore.json
+    ./data/script_tests.json
+    ./data/sig_nonstrict.json
+    ./data/sig_strict.json
+    ./data/sighash.json
+
+source-repository head
+  type: git
+  location: git://github.com/haskell-bitcoin/bitcoin.git
+
+library
+  exposed-modules:
+      Bitcoin.Address.Bech32Spec
+      Bitcoin.AddressSpec
+      Bitcoin.BlockSpec
+      Bitcoin.Crypto.HashSpec
+      Bitcoin.Crypto.SignatureSpec
+      Bitcoin.Keys.ExtendedSpec
+      Bitcoin.Keys.MnemonicSpec
+      Bitcoin.KeysSpec
+      Bitcoin.NetworkSpec
+      Bitcoin.Orphans
+      Bitcoin.ScriptSpec
+      Bitcoin.Transaction.PartialSpec
+      Bitcoin.Transaction.TaprootSpec
+      Bitcoin.TransactionSpec
+      Bitcoin.UtilSpec
+  hs-source-dirs:
+      lib
+  build-depends:
+      HUnit >=1.6.0.0
+    , QuickCheck >=2.13.2
+    , aeson >=1.4.6.0
+    , array >=0.5.4.0
+    , base >=4.9 && <5
+    , base16 >=0.3.0.1
+    , base64 ==0.4.*
+    , binary >=0.8.8
+    , bitcoin
+    , bytestring >=0.10.10.0
+    , containers >=0.6.2.1
+    , cryptonite >=0.30
+    , deepseq >=1.4.4.0
+    , entropy >=0.4.1.5
+    , hashable >=1.3.0.0
+    , hspec >=2.7.1
+    , memory >=0.15.0
+    , murmur3 >=1.0.3
+    , network >=3.1.1.1
+    , safe >=0.3.18
+    , scientific >=0.3.6.2
+    , secp256k1-haskell >=0.4.0
+    , split >=0.2.3.3
+    , string-conversions >=0.4.0.1
+    , text >=1.2.3.0
+    , time >=1.9.3
+    , transformers >=0.5.6.2
+    , unordered-containers >=0.2.10.0
+    , vector >=0.12.1.2
+  default-language: Haskell2010
+
+test-suite spec
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      Paths_bitcoin_test
+  hs-source-dirs:
+      exec
+  build-depends:
+      HUnit >=1.6.0.0
+    , QuickCheck >=2.13.2
+    , aeson >=1.4.6.0
+    , array >=0.5.4.0
+    , base >=4.9 && <5
+    , base16 >=0.3.0.1
+    , base64 ==0.4.*
+    , binary >=0.8.8
+    , bitcoin
+    , bitcoin-test
+    , bytestring >=0.10.10.0
+    , containers >=0.6.2.1
+    , cryptonite >=0.30
+    , deepseq >=1.4.4.0
+    , entropy >=0.4.1.5
+    , hashable >=1.3.0.0
+    , hspec >=2.7.1
+    , memory >=0.15.0
+    , murmur3 >=1.0.3
+    , network >=3.1.1.1
+    , safe >=0.3.18
+    , scientific >=0.3.6.2
+    , secp256k1-haskell >=0.4.0
+    , split >=0.2.3.3
+    , string-conversions >=0.4.0.1
+    , text >=1.2.3.0
+    , time >=1.9.3
+    , transformers >=0.5.6.2
+    , unordered-containers >=0.2.10.0
+    , vector >=0.12.1.2
+  default-language: Haskell2010

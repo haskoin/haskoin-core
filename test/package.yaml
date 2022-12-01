@@ -1,6 +1,6 @@
-name: bitcoin
+name: bitcoin-test
 version: 0.1.0
-synopsis: Bitcoin library for Haskell
+synopsis: Bitcoin test library for Haskell
 description: Please see the README on GitHub at <https://github.com/haskell-bitcoin/bitcoin#readme>
 category: Bitcoin, Finance, Network
 author:
@@ -10,14 +10,14 @@ author:
   - Keagan McClelland
 maintainer: keagan.mcclelland@gmail.com
 license: BSD3
-license-file: LICENSE
 homepage: http://github.com/haskell-bitcoin/bitcoin#readme
 git: git://github.com/haskell-bitcoin/bitcoin.git
 bug-reports: http://github.com/haskell-bitcoin/bitcoin/issues
 extra-source-files:
-  - README.md
-  - CHANGELOG.md
+  - ./data/*.json # raw data for tests
 dependencies:
+  - bitcoin
+  - aeson >= 1.4.6.0
   - array >= 0.5.4.0
   - base >=4.9 && <5
   - base16 >= 0.3.0.1
@@ -43,9 +43,16 @@ dependencies:
   - transformers >= 0.5.6.2
   - unordered-containers >= 0.2.10.0
   - vector >= 0.12.1.2
+  - base64 ^>= 0.4
+  - HUnit >= 1.6.0.0
 library:
-  source-dirs: src
-  other-modules: Bitcoin.Keys.Extended.Internal
+  source-dirs: lib
   when:
     - condition: false
-      other-modules: Paths_bitcoin
+      other-modules: Paths_bitcoin_test
+tests:
+  spec:
+    source-dirs: exec
+    main: Spec.hs
+    dependencies:
+      - bitcoin-test

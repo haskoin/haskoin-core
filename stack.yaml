@@ -1,5 +1,8 @@
-resolver: lts-19.3
+resolver: lts-21.0
 nix:
   packages:
     - secp256k1
     - pkg-config
+extra-deps:
+  - base16-1.0@sha256:9b72a280a7af75a5026fa25a1b8ae18ec10200a070947723f1fd61dc8d407862,2472
+  - secp256k1-haskell-0.7.0@sha256:1585601c67d7c62c698402ffe8462de216a499608521a8136d0aa15f0a03a23f,2140

@@ -17,4 +17,5 @@ Haskoin Core is a library of Bitcoin and Bitcoin Cash functions written in Haske
 
 ## Contributing
 
-Please use `ormolu` (or `fourmolu`) to format code prior to submission.  See `scripts/pre-commit.sh` for an example pre-commit hook.
+All code is formatted with [Ormolu](https://github.com/tweag/ormolu).
+Convenience formatting script available at [scripts/format](scripts/format)

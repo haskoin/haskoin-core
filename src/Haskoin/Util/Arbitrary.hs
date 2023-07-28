@@ -1,16 +1,16 @@
-{- |
-Module      : Haskoin.Test
-Copyright   : No rights reserved
-License     : MIT
-Maintainer  : jprupp@protonmail.ch
-Stability   : experimental
-Portability : POSIX
-
-Arbitrary instances for testing.
--}
-module Haskoin.Util.Arbitrary (
-    module X,
-) where
+-- |
+-- Module      : Haskoin.Test
+-- Copyright   : No rights reserved
+-- License     : MIT
+-- Maintainer  : jprupp@protonmail.ch
+-- Stability   : experimental
+-- Portability : POSIX
+--
+-- Arbitrary instances for testing.
+module Haskoin.Util.Arbitrary
+  ( module X,
+  )
+where
 
 import Haskoin.Util.Arbitrary.Address as X
 import Haskoin.Util.Arbitrary.Block as X

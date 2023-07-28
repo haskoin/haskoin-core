@@ -1,11 +1,11 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.35.1.
+-- This file has been generated from package.yaml by hpack version 0.35.2.
 --
 -- see: https://github.com/sol/hpack
 
 name:           haskoin-core
-version:        0.22.0
+version:        1.0.0
 synopsis:       Bitcoin & Bitcoin Cash library for Haskell
 description:    Please see the README on GitHub at <https://github.com/haskoin/haskoin-core#readme>
 category:       Bitcoin, Finance, Network
@@ -25,9 +25,9 @@ extra-source-files:
     data/forkid_sighash.json
     data/key_io_invalid.json
     data/key_io_valid.json
-    data/rfc6979abc.json
+    data/rfc6979cash.json
     data/rfc6979core.json
-    data/rfc6979DERabc.json
+    data/rfc6979DERcash.json
     data/rfc6979DERcore.json
     data/script_tests.json
     data/sig_nonstrict.json
@@ -51,18 +51,18 @@ library
       Haskoin.Block.Common
       Haskoin.Block.Headers
       Haskoin.Block.Merkle
-      Haskoin.Constants
       Haskoin.Crypto
       Haskoin.Crypto.Hash
+      Haskoin.Crypto.Keys
+      Haskoin.Crypto.Keys.Common
+      Haskoin.Crypto.Keys.Extended
+      Haskoin.Crypto.Keys.Mnemonic
       Haskoin.Crypto.Signature
-      Haskoin.Data
-      Haskoin.Keys
-      Haskoin.Keys.Common
-      Haskoin.Keys.Extended
-      Haskoin.Keys.Mnemonic
       Haskoin.Network
       Haskoin.Network.Bloom
       Haskoin.Network.Common
+      Haskoin.Network.Constants
+      Haskoin.Network.Data
       Haskoin.Network.Message
       Haskoin.Script
       Haskoin.Script.Common
@@ -87,8 +87,10 @@ library
       Haskoin.Util.Arbitrary.Script
       Haskoin.Util.Arbitrary.Transaction
       Haskoin.Util.Arbitrary.Util
+      Haskoin.Util.Helpers
+      Haskoin.Util.Marshal
   other-modules:
-      Haskoin.Keys.Extended.Internal
+      Haskoin.Crypto.Keys.Extended.Internal
   hs-source-dirs:
       src
   build-depends:
@@ -114,7 +116,7 @@ library
     , network >=3.1.1.1
     , safe >=0.3.18
     , scientific >=0.3.6.2
-    , secp256k1-haskell >=0.7.0
+    , secp256k1-haskell >=1.0.0
     , split >=0.2.3.3
     , string-conversions >=0.4.0.1
     , text >=1.2.3.0
@@ -133,10 +135,10 @@ test-suite spec
       Haskoin.AddressSpec
       Haskoin.BlockSpec
       Haskoin.Crypto.HashSpec
+      Haskoin.Crypto.Keys.ExtendedSpec
+      Haskoin.Crypto.Keys.MnemonicSpec
+      Haskoin.Crypto.KeysSpec
       Haskoin.Crypto.SignatureSpec
-      Haskoin.Keys.ExtendedSpec
-      Haskoin.Keys.MnemonicSpec
-      Haskoin.KeysSpec
       Haskoin.NetworkSpec
       Haskoin.ScriptSpec
       Haskoin.Transaction.PartialSpec
@@ -174,7 +176,7 @@ test-suite spec
     , network >=3.1.1.1
     , safe >=0.3.18
     , scientific >=0.3.6.2
-    , secp256k1-haskell >=0.7.0
+    , secp256k1-haskell >=1.0.0
     , split >=0.2.3.3
     , string-conversions >=0.4.0.1
     , text >=1.2.3.0

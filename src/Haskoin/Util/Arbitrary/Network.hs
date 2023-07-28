@@ -1,11 +1,10 @@
-{- |
-Module      : Haskoin.Test.Network
-Copyright   : No rights reserved
-License     : MIT
-Maintainer  : jprupp@protonmail.ch
-Stability   : experimental
-Portability : POSIX
--}
+-- |
+-- Module      : Haskoin.Test.Network
+-- Copyright   : No rights reserved
+-- License     : MIT
+-- Maintainer  : jprupp@protonmail.ch
+-- Stability   : experimental
+-- Portability : POSIX
 module Haskoin.Util.Arbitrary.Network where
 
 import qualified Data.ByteString as BS (empty, pack)
@@ -28,20 +27,20 @@ arbitraryVarString = VarString <$> arbitraryBS
 -- | Arbitrary 'NetworkAddress'.
 arbitraryNetworkAddress :: Gen NetworkAddress
 arbitraryNetworkAddress = do
-    s <- arbitrary
-    a <- arbitrary
-    p <- arbitrary
-    d <-
-        oneof
-            [ do
-                b <- arbitrary
-                c <- arbitrary
-                d <- arbitrary
-                return $ SockAddrInet6 (fromIntegral p) 0 (a, b, c, d) 0
-            , return $ SockAddrInet (fromIntegral (p :: Word16)) a
-            ]
-    let n = sockToHostAddress d
-    return $ NetworkAddress s n
+  s <- arbitrary
+  a <- arbitrary
+  p <- arbitrary
+  d <-
+    oneof
+      [ do
+          b <- arbitrary
+          c <- arbitrary
+          d <- arbitrary
+          return $ SockAddrInet6 (fromIntegral p) 0 (a, b, c, d) 0,
+        return $ SockAddrInet (fromIntegral (p :: Word16)) a
+      ]
+  let n = sockToHostAddress d
+  return $ NetworkAddress s n
 
 -- | Arbitrary 'NetworkAddressTime'.
 arbitraryNetworkAddressTime :: Gen (Word32, NetworkAddress)
@@ -62,52 +61,52 @@ arbitraryInv1 = Inv <$> listOf1 arbitraryInvVector
 -- | Arbitrary 'Version'.
 arbitraryVersion :: Gen Version
 arbitraryVersion =
-    Version <$> arbitrary
-        <*> arbitrary
-        <*> arbitrary
-        <*> arbitraryNetworkAddress
-        <*> arbitraryNetworkAddress
-        <*> arbitrary
-        <*> arbitraryVarString
-        <*> arbitrary
-        <*> arbitrary
+  Version
+    <$> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitraryNetworkAddress
+    <*> arbitraryNetworkAddress
+    <*> arbitrary
+    <*> arbitraryVarString
+    <*> arbitrary
+    <*> arbitrary
 
 -- | Arbitrary non-empty 'Addr'.
 arbitraryAddr1 :: Gen Addr
 arbitraryAddr1 = Addr <$> listOf1 arbitraryNetworkAddressTime
 
-{- | Arbitrary 'Alert' with random payload and signature. Signature is not
- valid.
--}
+-- | Arbitrary 'Alert' with random payload and signature. Signature is not
+-- valid.
 arbitraryAlert :: Gen Alert
 arbitraryAlert = Alert <$> arbitraryVarString <*> arbitraryVarString
 
 -- | Arbitrary 'Reject'.
 arbitraryReject :: Gen Reject
 arbitraryReject = do
-    m <- arbitraryMessageCommand
-    c <- arbitraryRejectCode
-    s <- arbitraryVarString
-    d <-
-        oneof
-            [ return BS.empty
-            , BS.pack <$> vectorOf 32 arbitrary
-            ]
-    return $ Reject m c s d
+  m <- arbitraryMessageCommand
+  c <- arbitraryRejectCode
+  s <- arbitraryVarString
+  d <-
+    oneof
+      [ return BS.empty,
+        BS.pack <$> vectorOf 32 arbitrary
+      ]
+  return $ Reject m c s d
 
 -- | Arbitrary 'RejectCode'.
 arbitraryRejectCode :: Gen RejectCode
 arbitraryRejectCode =
-    elements
-        [ RejectMalformed
-        , RejectInvalid
-        , RejectInvalid
-        , RejectDuplicate
-        , RejectNonStandard
-        , RejectDust
-        , RejectInsufficientFee
-        , RejectCheckpoint
-        ]
+  elements
+    [ RejectMalformed,
+      RejectInvalid,
+      RejectInvalid,
+      RejectDuplicate,
+      RejectNonStandard,
+      RejectDust,
+      RejectInsufficientFee,
+      RejectCheckpoint
+    ]
 
 -- | Arbitrary non-empty 'GetData'.
 arbitraryGetData :: Gen GetData
@@ -128,28 +127,27 @@ arbitraryPong = Pong <$> arbitrary
 -- | Arbitrary bloom filter flags.
 arbitraryBloomFlags :: Gen BloomFlags
 arbitraryBloomFlags =
-    elements
-        [ BloomUpdateNone
-        , BloomUpdateAll
-        , BloomUpdateP2PubKeyOnly
-        ]
+  elements
+    [ BloomUpdateNone,
+      BloomUpdateAll,
+      BloomUpdateP2PubKeyOnly
+    ]
 
-{- | Arbitrary bloom filter with its corresponding number of elements
- and false positive rate.
--}
+-- | Arbitrary bloom filter with its corresponding number of elements
+-- and false positive rate.
 arbitraryBloomFilter :: Gen (Int, Double, BloomFilter)
 arbitraryBloomFilter = do
-    n <- choose (0, 100000)
-    fp <- choose (1e-8, 1)
-    tweak <- arbitrary
-    fl <- arbitraryBloomFlags
-    return (n, fp, bloomCreate n fp tweak fl)
+  n <- choose (0, 100000)
+  fp <- choose (1e-8, 1)
+  tweak <- arbitrary
+  fl <- arbitraryBloomFlags
+  return (n, fp, bloomCreate n fp tweak fl)
 
 -- | Arbitrary 'FilterLoad'.
 arbitraryFilterLoad :: Gen FilterLoad
 arbitraryFilterLoad = do
-    (_, _, bf) <- arbitraryBloomFilter
-    return $ FilterLoad bf
+  (_, _, bf) <- arbitraryBloomFilter
+  return $ FilterLoad bf
 
 -- | Arbitrary 'FilterAdd'.
 arbitraryFilterAdd :: Gen FilterAdd
@@ -158,26 +156,26 @@ arbitraryFilterAdd = FilterAdd <$> arbitraryBS
 -- | Arbitrary 'MessageCommand'.
 arbitraryMessageCommand :: Gen MessageCommand
 arbitraryMessageCommand = do
-    ASCIIString str <- arbitrary
-    elements
-        [ MCVersion
-        , MCVerAck
-        , MCAddr
-        , MCInv
-        , MCGetData
-        , MCNotFound
-        , MCGetBlocks
-        , MCGetHeaders
-        , MCTx
-        , MCBlock
-        , MCMerkleBlock
-        , MCHeaders
-        , MCGetAddr
-        , MCFilterLoad
-        , MCFilterAdd
-        , MCFilterClear
-        , MCPing
-        , MCPong
-        , MCAlert
-        , MCOther (C8.take 12 (C8.pack (filter (/= '\NUL') str)))
-        ]
+  ASCIIString str <- arbitrary
+  elements
+    [ MCVersion,
+      MCVerAck,
+      MCAddr,
+      MCInv,
+      MCGetData,
+      MCNotFound,
+      MCGetBlocks,
+      MCGetHeaders,
+      MCTx,
+      MCBlock,
+      MCMerkleBlock,
+      MCHeaders,
+      MCGetAddr,
+      MCFilterLoad,
+      MCFilterAdd,
+      MCFilterClear,
+      MCPing,
+      MCPong,
+      MCAlert,
+      MCOther (C8.take 12 (C8.pack (filter (/= '\NUL') str)))
+    ]

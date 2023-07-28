@@ -1,20 +1,26 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE NoFieldSelectors #-}
 
-{- |
-Module      : Haskoin.Script.Standard
-Copyright   : No rights reserved
-License     : MIT
-Maintainer  : jprupp@protonmail.ch
-Stability   : experimental
-Portability : POSIX
-
-Standard scripts like pay-to-public-key, pay-to-public-key-hash,
-pay-to-script-hash, pay-to-multisig and corresponding SegWit variants.
--}
-module Haskoin.Script.Standard (
-    -- * Standard Script Outputs
+-- |
+-- Module      : Haskoin.Script.Standard
+-- Copyright   : No rights reserved
+-- License     : MIT
+-- Maintainer  : jprupp@protonmail.ch
+-- Stability   : experimental
+-- Portability : POSIX
+--
+-- Standard scripts like pay-to-public-key, pay-to-public-key-hash,
+-- pay-to-script-hash, pay-to-multisig and corresponding SegWit variants.
+module Haskoin.Script.Standard
+  ( -- * Standard Script Outputs
     ScriptOutput (..),
     RedeemScript,
     isPayPK,
@@ -26,9 +32,7 @@ module Haskoin.Script.Standard (
     isPayWitnessScriptHash,
     isDataCarrier,
     encodeOutput,
-    encodeOutputBS,
     decodeOutput,
-    decodeOutputBS,
     toP2SH,
     toP2WSH,
     sortMulSig,
@@ -37,22 +41,23 @@ module Haskoin.Script.Standard (
     ScriptInput (..),
     SimpleInput (..),
     encodeInput,
-    encodeInputBS,
     decodeInput,
-    decodeInputBS,
     isSpendPK,
     isSpendPKHash,
     isSpendMulSig,
     isScriptHashInput,
-) where
+  )
+where
 
 import Control.Applicative ((<|>))
 import Control.DeepSeq
 import Control.Monad (guard, liftM2, (<=<))
-import qualified Data.Aeson as A
-import qualified Data.Aeson.Encoding as A
+import Crypto.Secp256k1
+import Data.Aeson (ToJSON (..), Value (..), withText)
+import Data.Aeson.Encoding (Encoding, text)
+import Data.Aeson.Types (Parser)
 import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
+import Data.ByteString qualified as B
 import Data.Bytes.Get
 import Data.Bytes.Put
 import Data.Bytes.Serial
@@ -62,52 +67,51 @@ import Data.List (sortBy)
 import Data.Maybe (fromJust, isJust)
 import Data.Word (Word8)
 import GHC.Generics (Generic)
-import Haskoin.Crypto
-import Haskoin.Data
-import Haskoin.Keys.Common
+import Haskoin.Crypto.Hash
+import Haskoin.Crypto.Keys.Common
+import Haskoin.Network.Data
 import Haskoin.Script.Common
 import Haskoin.Script.SigHash
 import Haskoin.Util
 
-{- | Data type describing standard transaction output scripts. Output scripts
- provide the conditions that must be fulfilled for someone to spend the funds
- in a transaction output.
--}
+-- | Data type describing standard transaction output scripts. Output scripts
+-- provide the conditions that must be fulfilled for someone to spend the funds
+-- in a transaction output.
 data ScriptOutput
-    = -- | pay to public key
-      PayPK {getOutputPubKey :: !PubKeyI}
-    | -- | pay to public key hash
-      PayPKHash {getOutputHash :: !Hash160}
-    | -- | multisig
-      PayMulSig
-        { getOutputMulSigKeys :: ![PubKeyI]
-        , getOutputMulSigRequired :: !Int
-        }
-    | -- | pay to a script hash
-      PayScriptHash {getOutputHash :: !Hash160}
-    | -- | pay to witness public key hash
-      PayWitnessPKHash {getOutputHash :: !Hash160}
-    | -- | pay to witness script hash
-      PayWitnessScriptHash {getScriptHash :: !Hash256}
-    | -- | another pay to witness address
-      PayWitness
-        { getWitnessVersion :: !Word8
-        , getWitnessData :: !ByteString
-        }
-    | -- | provably unspendable data carrier
-      DataCarrier {getOutputData :: !ByteString}
-    deriving (Eq, Show, Read, Generic, Hashable, NFData)
+  = -- | pay to public key
+    PayPK {key :: !PublicKey}
+  | -- | pay to public key hash
+    PayPKHash {hash160 :: !Hash160}
+  | -- | multisig
+    PayMulSig
+      { keys :: ![PublicKey],
+        required :: !Int
+      }
+  | -- | pay to a script hash
+    PayScriptHash {hash160 :: !Hash160}
+  | -- | pay to witness public key hash
+    PayWitnessPKHash {hash160 :: !Hash160}
+  | -- | pay to witness script hash
+    PayWitnessScriptHash {hash256 :: !Hash256}
+  | -- | another pay to witness address
+    PayWitness
+      { version :: !Word8,
+        bytes :: !ByteString
+      }
+  | -- | provably unspendable data carrier
+    DataCarrier {bytes :: !ByteString}
+  deriving (Eq, Show, Read, Generic, NFData)
 
-instance A.FromJSON ScriptOutput where
-    parseJSON =
-        A.withText "scriptoutput" $ \t ->
-            either fail return $
-                maybeToEither "scriptoutput not hex" (decodeHex t)
-                    >>= decodeOutputBS
+instance MarshalJSON Ctx ScriptOutput where
+  unmarshalValue ctx =
+    withText "ScriptOutput" $ \t ->
+      case decodeHex t of
+        Nothing -> fail "Could not decode hex script"
+        Just bs -> either fail return $ unmarshal ctx bs
 
-instance A.ToJSON ScriptOutput where
-    toJSON = A.String . encodeHex . encodeOutputBS
-    toEncoding = A.text . encodeHex . encodeOutputBS
+  marshalValue ctx = String . encodeHex . marshal ctx
+
+  marshalEncoding ctx = hexEncoding . runPutL . marshalPut ctx
 
 -- | Is script a pay-to-public-key output?
 isPayPK :: ScriptOutput -> Bool
@@ -149,35 +153,39 @@ isDataCarrier :: ScriptOutput -> Bool
 isDataCarrier (DataCarrier _) = True
 isDataCarrier _ = False
 
-{- | Tries to decode a 'ScriptOutput' from a 'Script'. This can fail if the
- script is not recognized as any of the standard output types.
--}
-decodeOutput :: Script -> Either String ScriptOutput
-decodeOutput s = case scriptOps s of
-    -- Pay to PubKey
-    [OP_PUSHDATA bs _, OP_CHECKSIG] -> PayPK <$> runGetS deserialize bs
-    -- Pay to PubKey Hash
-    [OP_DUP, OP_HASH160, OP_PUSHDATA bs _, OP_EQUALVERIFY, OP_CHECKSIG] ->
-        PayPKHash <$> runGetS deserialize bs
-    -- Pay to Script Hash
-    [OP_HASH160, OP_PUSHDATA bs _, OP_EQUAL] ->
-        PayScriptHash <$> runGetS deserialize bs
-    -- Pay to Witness
-    [OP_0, OP_PUSHDATA bs OPCODE]
-        | BS.length bs == 20 -> PayWitnessPKHash <$> runGetS deserialize bs
-        | BS.length bs == 32 -> PayWitnessScriptHash <$> runGetS deserialize bs
-        | BS.length bs /= 20 && BS.length bs /= 32 ->
-            Left "Version 0 segwit program must be 20 or 32 bytes long"
-    -- Other Witness
-    [ver, OP_PUSHDATA bs _]
-        | isJust (opWitnessVersion ver)
-            && BS.length bs >= 2
-            && BS.length bs <= 40 ->
-            Right $ PayWitness (fromJust (opWitnessVersion ver)) bs
-    -- Provably unspendable data carrier output
-    [OP_RETURN, OP_PUSHDATA bs _] -> Right $ DataCarrier bs
-    -- Pay to MultiSig Keys
-    _ -> matchPayMulSig s
+-- | Tries to decode a 'ScriptOutput' from a 'Script'. This can fail if the
+-- script is not recognized as any of the standard output types.
+decodeOutput :: Ctx -> Script -> Either String ScriptOutput
+decodeOutput ctx s = case s.ops of
+  -- Pay to PubKey
+  [OP_PUSHDATA bs _, OP_CHECKSIG] ->
+    PayPK <$> unmarshal ctx bs
+  -- Pay to PubKey Hash
+  [OP_DUP, OP_HASH160, OP_PUSHDATA bs _, OP_EQUALVERIFY, OP_CHECKSIG] ->
+    PayPKHash <$> runGetS deserialize bs
+  -- Pay to Script Hash
+  [OP_HASH160, OP_PUSHDATA bs _, OP_EQUAL] ->
+    PayScriptHash <$> runGetS deserialize bs
+  -- Pay to Witness
+  [OP_0, OP_PUSHDATA bs OPCODE]
+    | B.length bs == 20 ->
+        PayWitnessPKHash <$> runGetS deserialize bs
+    | B.length bs == 32 ->
+        PayWitnessScriptHash <$> runGetS deserialize bs
+    | B.length bs /= 20 && B.length bs /= 32 ->
+        Left
+          "decodeOutput: invalid version 0 segwit \
+          \(must be 20 or 32 bytes)"
+  -- Other Witness
+  [ver, OP_PUSHDATA bs _]
+    | Just wv <- opWitnessVersion ver,
+      B.length bs >= 2,
+      B.length bs <= 40 ->
+        Right $ PayWitness wv bs
+  -- Provably unspendable data carrier output
+  [OP_RETURN, OP_PUSHDATA bs _] -> Right $ DataCarrier bs
+  -- Pay to MultiSig Keys
+  _ -> matchPayMulSig ctx s <|> Left "decodeOutput: Non-standard output"
 
 witnessVersionOp :: Word8 -> Maybe ScriptOp
 witnessVersionOp 0 = Just OP_0
@@ -219,51 +227,51 @@ opWitnessVersion OP_15 = Just 15
 opWitnessVersion OP_16 = Just 16
 opWitnessVersion _ = Nothing
 
--- | Similar to 'decodeOutput' but decodes from a 'ByteString'.
-decodeOutputBS :: ByteString -> Either String ScriptOutput
-decodeOutputBS = decodeOutput <=< runGetS deserialize
-
 -- | Computes a 'Script' from a standard 'ScriptOutput'.
-encodeOutput :: ScriptOutput -> Script
-encodeOutput s = Script $ case s of
-    -- Pay to PubKey
-    (PayPK k) -> [opPushData $ runPutS $ serialize k, OP_CHECKSIG]
-    -- Pay to PubKey Hash Address
-    (PayPKHash h) ->
-        [ OP_DUP
-        , OP_HASH160
-        , opPushData $ runPutS $ serialize h
-        , OP_EQUALVERIFY
-        , OP_CHECKSIG
-        ]
-    -- Pay to MultiSig Keys
-    (PayMulSig ps r)
-        | r <= length ps ->
-            let opM = intToScriptOp r
-                opN = intToScriptOp $ length ps
-                keys = map (opPushData . runPutS . serialize) ps
-             in opM : keys ++ [opN, OP_CHECKMULTISIG]
-        | otherwise -> error "encodeOutput: PayMulSig r must be <= than pkeys"
-    -- Pay to Script Hash Address
-    (PayScriptHash h) ->
-        [OP_HASH160, opPushData $ runPutS $ serialize h, OP_EQUAL]
-    -- Pay to Witness PubKey Hash Address
-    (PayWitnessPKHash h) ->
-        [OP_0, opPushData $ runPutS $ serialize h]
-    (PayWitnessScriptHash h) ->
-        [OP_0, opPushData $ runPutS $ serialize h]
-    (PayWitness v h) ->
-        [ case witnessVersionOp v of
-            Nothing -> error "encodeOutput: invalid witness version"
-            Just c -> c
-        , opPushData h
-        ]
-    -- Provably unspendable output
-    (DataCarrier d) -> [OP_RETURN, opPushData d]
+encodeOutput :: Ctx -> ScriptOutput -> Script
+encodeOutput ctx s = Script $ case s of
+  -- Pay to PubKey
+  (PayPK k) -> [opPushData $ marshal ctx k, OP_CHECKSIG]
+  -- Pay to PubKey Hash Address
+  (PayPKHash h) ->
+    [ OP_DUP,
+      OP_HASH160,
+      opPushData $ runPutS $ serialize h,
+      OP_EQUALVERIFY,
+      OP_CHECKSIG
+    ]
+  -- Pay to MultiSig Keys
+  (PayMulSig ps r)
+    | r <= length ps ->
+        let opM = intToScriptOp r
+            opN = intToScriptOp $ length ps
+            keys = map (opPushData . marshal ctx) ps
+         in opM : keys ++ [opN, OP_CHECKMULTISIG]
+    | otherwise -> error "encodeOutput: PayMulSig r must be <= than pkeys"
+  -- Pay to Script Hash Address
+  (PayScriptHash h) ->
+    [OP_HASH160, opPushData $ runPutS $ serialize h, OP_EQUAL]
+  -- Pay to Witness PubKey Hash Address
+  (PayWitnessPKHash h) ->
+    [OP_0, opPushData $ runPutS $ serialize h]
+  (PayWitnessScriptHash h) ->
+    [OP_0, opPushData $ runPutS $ serialize h]
+  (PayWitness v h) ->
+    [ case witnessVersionOp v of
+        Nothing -> error "encodeOutput: invalid witness version"
+        Just c -> c,
+      opPushData h
+    ]
+  -- Provably unspendable output
+  (DataCarrier d) -> [OP_RETURN, opPushData d]
 
--- | Similar to 'encodeOutput' but encodes to a ByteString
-encodeOutputBS :: ScriptOutput -> ByteString
-encodeOutputBS = runPutS . serialize . encodeOutput
+instance Marshal Ctx ScriptOutput where
+  marshalGet ctx = do
+    script <- deserialize
+    case decodeOutput ctx script of
+      Left e -> fail e
+      Right o -> return o
+  marshalPut ctx = serialize . encodeOutput ctx
 
 -- | Encode script as pay-to-script-hash script
 toP2SH :: Script -> ScriptOutput
@@ -274,59 +282,61 @@ toP2WSH :: Script -> ScriptOutput
 toP2WSH = PayWitnessScriptHash . sha256 . runPutS . serialize
 
 -- | Match @[OP_N, PubKey1, ..., PubKeyM, OP_M, OP_CHECKMULTISIG]@
-matchPayMulSig :: Script -> Either String ScriptOutput
-matchPayMulSig (Script ops) = case splitAt (length ops - 2) ops of
-    (m : xs, [n, OP_CHECKMULTISIG]) -> do
-        (intM, intN) <- liftM2 (,) (scriptOpToInt m) (scriptOpToInt n)
-        if intM <= intN && length xs == intN
-            then liftM2 PayMulSig (go xs) (return intM)
-            else Left "matchPayMulSig: Invalid M or N parameters"
-    _ -> Left "matchPayMulSig: script did not match output template"
+matchPayMulSig :: Ctx -> Script -> Either String ScriptOutput
+matchPayMulSig ctx (Script ops) = case splitAt (length ops - 2) ops of
+  (m : xs, [n, OP_CHECKMULTISIG]) -> do
+    (intM, intN) <- liftM2 (,) (scriptOpToInt m) (scriptOpToInt n)
+    if intM <= intN && length xs == intN
+      then liftM2 PayMulSig (go xs) (return intM)
+      else Left "matchPayMulSig: Invalid M or N parameters"
+  _ -> Left "matchPayMulSig: script did not match output template"
   where
-    go (OP_PUSHDATA bs _ : xs) = liftM2 (:) (runGetS deserialize bs) (go xs)
-    go [] = return []
-    go _ = Left "matchPayMulSig: invalid multisig opcode"
+    go (OP_PUSHDATA bs _ : xs) =
+      liftM2 (:) (unmarshal ctx bs) (go xs)
+    go [] =
+      Right []
+    go _ =
+      Left "matchPayMulSig: invalid multisig opcode"
 
-{- | Sort the public keys of a multisig output in ascending order by comparing
- their compressed serialized representations. Refer to BIP-67.
--}
-sortMulSig :: ScriptOutput -> ScriptOutput
-sortMulSig out = case out of
-    PayMulSig keys r -> PayMulSig (sortBy (compare `on` (runPutS . serialize)) keys) r
-    _ -> error "Can only call orderMulSig on PayMulSig scripts"
+-- | Sort the public keys of a multisig output in ascending order by comparing
+-- their compressed serialized representations. Refer to BIP-67.
+sortMulSig :: Ctx -> ScriptOutput -> ScriptOutput
+sortMulSig ctx out = case out of
+  PayMulSig keys r ->
+    PayMulSig
+      (sortBy (compare `on` marshal ctx) keys)
+      r
+  _ -> error "Can only call orderMulSig on PayMulSig scripts"
 
-{- | Data type describing standard transaction input scripts. Input scripts
- provide the signing data required to unlock the coins of the output they are
- trying to spend, except in pay-to-witness-public-key-hash and
- pay-to-script-hash transactions.
--}
+-- | Data type describing standard transaction input scripts. Input scripts
+-- provide the signing data required to unlock the coins of the output they are
+-- trying to spend, except in pay-to-witness-public-key-hash and
+-- pay-to-script-hash transactions.
 data SimpleInput
-    = SpendPK
-        { -- | transaction signature
-          getInputSig :: !TxSignature
-        }
-    | SpendPKHash
-        { -- | embedded signature
-          getInputSig :: !TxSignature
-        , -- | public key
-          getInputKey :: !PubKeyI
-        }
-    | SpendMulSig
-        { -- | list of signatures
-          getInputMulSigKeys :: ![TxSignature]
-        }
-    deriving (Eq, Show, Generic, NFData)
+  = SpendPK
+      { -- | transaction signature
+        signature :: !TxSignature
+      }
+  | SpendPKHash
+      { -- | embedded signature
+        signature :: !TxSignature,
+        -- | public key
+        key :: !PublicKey
+      }
+  | SpendMulSig
+      { -- | list of signatures
+        signatures :: ![TxSignature]
+      }
+  deriving (Eq, Show, Read, Generic, NFData)
 
-{- | Returns true if the input script is spending from a pay-to-public-key
- output.
--}
+-- | Returns true if the input script is spending from a pay-to-public-key
+-- output.
 isSpendPK :: ScriptInput -> Bool
 isSpendPK (RegularInput (SpendPK _)) = True
 isSpendPK _ = False
 
-{- | Returns true if the input script is spending from a pay-to-public-key-hash
- output.
--}
+-- | Returns true if the input script is spending from a pay-to-public-key-hash
+-- output.
 isSpendPKHash :: ScriptInput -> Bool
 isSpendPKHash (RegularInput (SpendPKHash _ _)) = True
 isSpendPKHash _ = False
@@ -341,91 +351,83 @@ isScriptHashInput :: ScriptInput -> Bool
 isScriptHashInput (ScriptHashInput _ _) = True
 isScriptHashInput _ = False
 
-{- | A redeem script is the output script serialized into the spending input
- script. It must be included in inputs that spend pay-to-script-hash outputs.
--}
+-- | A redeem script is the output script serialized into the spending input
+-- script. It must be included in inputs that spend pay-to-script-hash outputs.
 type RedeemScript = ScriptOutput
 
 -- | Standard input script high-level representation.
 data ScriptInput
-    = RegularInput
-        { -- | get wrapped simple input
-          getRegularInput :: !SimpleInput
-        }
-    | ScriptHashInput
-        { -- | get simple input associated with redeem script
-          getScriptHashInput :: !SimpleInput
-        , -- | redeem script
-          getScriptHashRedeem :: !RedeemScript
-        }
-    deriving (Eq, Show, Generic, NFData)
+  = RegularInput
+      { -- | get wrapped simple input
+        get :: !SimpleInput
+      }
+  | ScriptHashInput
+      { -- | get simple input associated with redeem script
+        get :: !SimpleInput,
+        -- | redeem script
+        redeem :: !RedeemScript
+      }
+  deriving (Show, Read, Eq, Generic, NFData)
 
 -- | Heuristic to decode an input script into one of the standard types.
-decodeSimpleInput :: Network -> Script -> Either String SimpleInput
-decodeSimpleInput net (Script ops) =
-    maybeToEither errMsg $ matchPK ops <|> matchPKHash ops <|> matchMulSig ops
+decodeSimpleInput :: Network -> Ctx -> Script -> Either String SimpleInput
+decodeSimpleInput net ctx (Script ops) =
+  maybeToEither errMsg $ matchPK ops <|> matchPKHash ops <|> matchMulSig ops
   where
     matchPK [op] = SpendPK <$> f op
     matchPK _ = Nothing
     matchPKHash [op, OP_PUSHDATA pub _] =
-        SpendPKHash <$> f op <*> eitherToMaybe (runGetS deserialize pub)
+      SpendPKHash <$> f op <*> eitherToMaybe (unmarshal ctx pub)
     matchPKHash _ = Nothing
     matchMulSig (x : xs) = do
-        guard $ x == OP_0
-        SpendMulSig <$> mapM f xs
+      guard $ x == OP_0
+      SpendMulSig <$> mapM f xs
     matchMulSig _ = Nothing
     f OP_0 = return TxSignatureEmpty
     f (OP_PUSHDATA "" OPCODE) = f OP_0
-    f (OP_PUSHDATA bs _) = eitherToMaybe $ decodeTxSig net bs
+    f (OP_PUSHDATA bs _) = eitherToMaybe $ decodeTxSig net ctx bs
     f _ = Nothing
     errMsg = "decodeInput: Could not decode script input"
 
-{- | Heuristic to decode a 'ScriptInput' from a 'Script'. This function fails if
- the script can not be parsed as a standard script input.
--}
-decodeInput :: Network -> Script -> Either String ScriptInput
-decodeInput net s@(Script ops) =
-    maybeToEither errMsg $ matchSimpleInput <|> matchPayScriptHash
+-- | Heuristic to decode a 'ScriptInput' from a 'Script'. This function fails if
+-- the script can not be parsed as a standard script input.
+decodeInput :: Network -> Ctx -> Script -> Either String ScriptInput
+decodeInput net ctx s@(Script ops) =
+  maybeToEither errMsg $ matchSimpleInput <|> matchPayScriptHash
   where
     matchSimpleInput =
-        RegularInput <$> eitherToMaybe (decodeSimpleInput net s)
+      RegularInput <$> eitherToMaybe (decodeSimpleInput net ctx s)
     matchPayScriptHash =
-        case splitAt (length (scriptOps s) - 1) ops of
-            (is, [OP_PUSHDATA bs _]) -> do
-                rdm <- eitherToMaybe $ decodeOutputBS bs
-                inp <- eitherToMaybe $ decodeSimpleInput net $ Script is
-                return $ ScriptHashInput inp rdm
-            _ -> Nothing
+      case splitAt (length s.ops - 1) ops of
+        (is, [OP_PUSHDATA bs _]) -> do
+          rdm <- eitherToMaybe $ unmarshal ctx bs
+          inp <- eitherToMaybe $ decodeSimpleInput net ctx $ Script is
+          return $ ScriptHashInput inp rdm
+        _ -> Nothing
     errMsg = "decodeInput: Could not decode script input"
 
-{- | Like 'decodeInput' but decodes directly from a serialized script
- 'ByteString'.
--}
-decodeInputBS :: Network -> ByteString -> Either String ScriptInput
-decodeInputBS net = decodeInput net <=< runGetS deserialize
+instance Marshal (Network, Ctx) ScriptInput where
+  marshalGet (net, ctx) =
+    deserialize >>= either fail return . decodeInput net ctx
+
+  marshalPut (net, ctx) =
+    serialize . encodeInput net ctx
 
 -- | Encode a standard input into a script.
-encodeInput :: ScriptInput -> Script
-encodeInput s = case s of
-    RegularInput ri -> encodeSimpleInput ri
-    ScriptHashInput i o ->
-        Script $
-            scriptOps (encodeSimpleInput i) ++ [opPushData $ encodeOutputBS o]
-
-{- | Similar to 'encodeInput' but encodes directly to a serialized script
- 'ByteString'.
--}
-encodeInputBS :: ScriptInput -> ByteString
-encodeInputBS = runPutS . serialize . encodeInput
+encodeInput :: Network -> Ctx -> ScriptInput -> Script
+encodeInput net ctx s = case s of
+  RegularInput ri -> encodeSimpleInput net ctx ri
+  ScriptHashInput i o ->
+    Script $ (encodeSimpleInput net ctx i).ops ++ [opPushData $ marshal ctx o]
 
 -- | Encode a standard 'SimpleInput' into opcodes as an input 'Script'.
-encodeSimpleInput :: SimpleInput -> Script
-encodeSimpleInput s =
-    Script $
-        case s of
-            SpendPK ts -> [f ts]
-            SpendPKHash ts p -> [f ts, opPushData $ runPutS $ serialize p]
-            SpendMulSig xs -> OP_0 : map f xs
+encodeSimpleInput :: Network -> Ctx -> SimpleInput -> Script
+encodeSimpleInput net ctx s =
+  Script $
+    case s of
+      SpendPK ts -> [f ts]
+      SpendPKHash ts p -> [f ts, opPushData $ marshal ctx p]
+      SpendMulSig xs -> OP_0 : map f xs
   where
     f TxSignatureEmpty = OP_0
-    f ts = opPushData $ encodeTxSig ts
+    f ts = opPushData $ encodeTxSig net ctx ts

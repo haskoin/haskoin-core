@@ -1,0 +1,6 @@
+cradle:
+  stack:
+    - path: "./src"
+      component: haskoin-core:lib
+    - path: "./test"
+      component: haskoin-core:test:spec

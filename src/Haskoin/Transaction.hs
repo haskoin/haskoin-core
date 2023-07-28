@@ -1,21 +1,21 @@
-{- |
-Module      : Haskoin.Transaction
-Copyright   : No rights reserved
-License     : MIT
-Maintainer  : jprupp@protonmail.ch
-Stability   : experimental
-Portability : POSIX
-
-Transactions and related code.
--}
-module Haskoin.Transaction (
-    module Common,
+-- |
+-- Module      : Haskoin.Transaction
+-- Copyright   : No rights reserved
+-- License     : MIT
+-- Maintainer  : jprupp@protonmail.ch
+-- Stability   : experimental
+-- Portability : POSIX
+--
+-- Transactions and related code.
+module Haskoin.Transaction
+  ( module Common,
     module Builder,
     module Segwit,
     module Taproot,
     module Partial,
     module Genesis,
-) where
+  )
+where
 
 import Haskoin.Transaction.Builder as Builder
 import Haskoin.Transaction.Common as Common

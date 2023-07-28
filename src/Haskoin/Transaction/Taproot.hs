@@ -1,21 +1,26 @@
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE NoFieldSelectors #-}
 
-{- |
-Module      : Haskoin.Transaction.Taproot
-Copyright   : No rights reserved
-License     : MIT
-Maintainer  : jprupp@protonmail.ch
-Stability   : experimental
-Portability : POSIX
-
-This module provides support for reperesenting full taproot outputs and parsing
-taproot witnesses.  For reference see BIPS 340, 341, and 342.
--}
-module Haskoin.Transaction.Taproot (
-    XOnlyPubKey (..),
+-- |
+-- Module      : Haskoin.Transaction.Taproot
+-- Copyright   : No rights reserved
+-- License     : MIT
+-- Maintainer  : jprupp@protonmail.ch
+-- Stability   : experimental
+-- Portability : POSIX
+--
+-- This module provides support for reperesenting full taproot outputs and parsing
+-- taproot witnesses.  For reference see BIPS 340, 341, and 342.
+module Haskoin.Transaction.Taproot
+  ( XOnlyPubKey (..),
     TapLeafVersion,
     MAST (..),
     mastCommitment,
@@ -28,283 +33,283 @@ module Haskoin.Transaction.Taproot (
     viewTaprootWitness,
     encodeTaprootWitness,
     verifyScriptPathData,
-) where
+  )
+where
 
 import Control.Applicative (many)
 import Control.Monad ((<=<))
-import Crypto.Hash (
-    Digest,
+import Crypto.Hash
+  ( Digest,
     SHA256,
     digestFromByteString,
     hashFinalize,
     hashUpdate,
     hashUpdates,
- )
-import Data.Aeson (FromJSON (parseJSON), ToJSON (toJSON), withText)
+  )
+import Crypto.Secp256k1
+import Data.Aeson
+  ( FromJSON (parseJSON),
+    ToJSON (toJSON),
+    Value (String),
+    withText,
+  )
+import Data.Aeson.Types (Parser, Value)
 import Data.Binary (Binary (..))
 import Data.Bits ((.&.), (.|.))
 import Data.Bool (bool)
-import qualified Data.ByteArray as BA
+import Data.ByteArray qualified as BA
 import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
-import Data.Bytes.Get (getBytes, runGetS)
-import Data.Bytes.Put (putByteString, runPutS)
+import Data.ByteString qualified as BS
+import Data.Bytes.Get (MonadGet, getBytes, runGetS)
+import Data.Bytes.Put (MonadPut, putByteString, runPutL, runPutS)
 import Data.Bytes.Serial (Serial (..), deserialize, serialize)
 import Data.Bytes.VarInt (VarInt (VarInt))
 import Data.Foldable (foldl')
 import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Serialize (Serialize, get, getByteString, getWord8, put)
 import Data.Word (Word8)
-import Haskoin.Crypto (PubKey, initTaggedHash, tweak, tweakAddPubKey)
-import Haskoin.Keys.Common (PubKeyI (PubKeyI), pubKeyPoint)
-import Haskoin.Script.Common (Script)
-import Haskoin.Script.Standard (ScriptOutput (PayWitness))
-import Haskoin.Transaction.Common (WitnessStack)
-import Haskoin.Util (decodeHex, eitherToMaybe, encodeHex)
+import Haskoin.Crypto.Hash
+import Haskoin.Crypto.Keys.Common
+import Haskoin.Crypto.Keys.Extended
+import Haskoin.Script.Common
+import Haskoin.Script.Standard
+import Haskoin.Transaction.Common
+import Haskoin.Util
 
-{- | An x-only pubkey corresponds to the keys @(x,y)@ and @(x, -y)@.  The
-equality test only checks the x-coordinate.  An x-only pubkey serializes to 32
-bytes.
-
-@since 0.21.0
--}
-newtype XOnlyPubKey = XOnlyPubKey {xOnlyPubKey :: PubKey}
-    deriving (Show)
+-- | An x-only pubkey corresponds to the keys @(x,y)@ and @(x, -y)@.  The
+-- equality test only checks the x-coordinate.  An x-only pubkey serializes to 32
+-- bytes.
+--
+-- @since 0.21.0
+newtype XOnlyPubKey = XOnlyPubKey {point :: PubKey}
+  deriving (Read, Show)
 
 instance Eq XOnlyPubKey where
-    k1 == k2 = runPutS (serialize k1) == runPutS (serialize k2)
+  XOnlyPubKey k1 == XOnlyPubKey k2 = f k1 == f k2
+    where
+      f = BS.take 32 . (.get)
 
-instance Serial XOnlyPubKey where
-    serialize (XOnlyPubKey pk) =
-        putByteString
-            . BS.drop 1
-            . runPutS
-            . serialize
-            $ PubKeyI pk True
-    deserialize =
-        either fail (pure . XOnlyPubKey . pubKeyPoint)
-            . runGetS deserialize
-            . BS.cons 0x02
-            =<< getBytes 32
+instance Marshal Ctx XOnlyPubKey where
+  marshalPut ctx (XOnlyPubKey pk) =
+    putByteString
+      . BS.drop 1
+      . marshal ctx
+      $ PublicKey pk True
 
-instance Serialize XOnlyPubKey where
-    put = serialize
-    get = deserialize
+  marshalGet ctx =
+    either fail (pure . XOnlyPubKey . (\PublicKey {point} -> point))
+      . unmarshal ctx
+      . BS.cons 0x02
+      =<< getBytes 32
 
-instance Binary XOnlyPubKey where
-    put = serialize
-    get = deserialize
+instance MarshalJSON Ctx XOnlyPubKey where
+  unmarshalValue ctx =
+    withText "XOnlyPubKey" $ either fail pure . (des <=< hex)
+    where
+      hex = maybe (Left "Unable to decode hex") Right . decodeHex
+      des = runGetS $ marshalGet ctx
 
--- | Hex encoding
-instance FromJSON XOnlyPubKey where
-    parseJSON =
-        withText "XOnlyPubKey" $
-            either fail pure
-                . (runGetS deserialize <=< maybe (Left "Unable to decode hex") Right . decodeHex)
+  marshalValue ctx =
+    String . encodeHex . marshal ctx
 
--- | Hex encoding
-instance ToJSON XOnlyPubKey where
-    toJSON = toJSON . encodeHex . runPutS . serialize
+  marshalEncoding ctx =
+    hexEncoding . runPutL . marshalPut ctx
 
 -- | @since 0.21.0
 type TapLeafVersion = Word8
 
-{- | Merklized Abstract Syntax Tree.  This type can represent trees where only a
-subset of the leaves are known.  Note that the tree is invariant under swapping
-branches at an internal node.
-
-@since 0.21.0
--}
+-- | Merklized Abstract Syntax Tree.  This type can represent trees where only a
+-- subset of the leaves are known.  Note that the tree is invariant under swapping
+-- branches at an internal node.
+--
+-- @since 0.21.0
 data MAST
-    = MASTBranch MAST MAST
-    | MASTLeaf TapLeafVersion Script
-    | MASTCommitment (Digest SHA256)
-    deriving (Show)
+  = MASTBranch MAST MAST
+  | MASTLeaf TapLeafVersion Script
+  | MASTCommitment (Digest SHA256)
+  deriving (Show)
 
-{- | Get the inclusion proofs for the leaves in the tree.  The proof is ordered
-leaf-to-root.
-
-@since 0.21.0
--}
+-- | Get the inclusion proofs for the leaves in the tree.  The proof is ordered
+-- leaf-to-root.
+--
+-- @since 0.21.0
 getMerkleProofs :: MAST -> [(TapLeafVersion, Script, [Digest SHA256])]
 getMerkleProofs = getProofs mempty
   where
     getProofs proof = \case
-        MASTBranch branchL branchR ->
-            (updateProof proof (mastCommitment branchR) <$> getMerkleProofs branchL)
-                <> (updateProof proof (mastCommitment branchL) <$> getMerkleProofs branchR)
-        MASTLeaf v s -> [(v, s, proof)]
-        MASTCommitment{} -> mempty
+      MASTBranch branchL branchR ->
+        (updateProof proof (mastCommitment branchR) <$> getMerkleProofs branchL)
+          <> (updateProof proof (mastCommitment branchL) <$> getMerkleProofs branchR)
+      MASTLeaf v s -> [(v, s, proof)]
+      MASTCommitment {} -> mempty
     updateProof proofInit branchCommitment (v, s, proofTail) =
-        (v, s, reverse $ proofInit <> (branchCommitment : proofTail))
+      (v, s, reverse $ proofInit <> (branchCommitment : proofTail))
 
-{- | Calculate the root hash for this tree.
-
-@since 0.21.0
--}
+-- | Calculate the root hash for this tree.
+--
+-- @since 0.21.0
 mastCommitment :: MAST -> Digest SHA256
 mastCommitment = \case
-    MASTBranch leftBranch rightBranch ->
-        hashBranch (mastCommitment leftBranch) (mastCommitment rightBranch)
-    MASTLeaf leafVersion leafScript -> leafHash leafVersion leafScript
-    MASTCommitment theCommitment -> theCommitment
+  MASTBranch leftBranch rightBranch ->
+    hashBranch (mastCommitment leftBranch) (mastCommitment rightBranch)
+  MASTLeaf leafVersion leafScript -> leafHash leafVersion leafScript
+  MASTCommitment theCommitment -> theCommitment
 
 hashBranch :: Digest SHA256 -> Digest SHA256 -> Digest SHA256
 hashBranch hashA hashB =
-    hashFinalize $
-        hashUpdates
-            (initTaggedHash "TapBranch")
-            [ min hashA hashB
-            , max hashA hashB
-            ]
+  hashFinalize $
+    hashUpdates
+      (initTaggedHash "TapBranch")
+      [ min hashA hashB,
+        max hashA hashB
+      ]
 
 leafHash :: TapLeafVersion -> Script -> Digest SHA256
 leafHash leafVersion leafScript =
-    hashFinalize
-        . hashUpdate (initTaggedHash "TapLeaf")
-        . runPutS
-        $ do
-            serialize leafVersion
-            serialize $ VarInt (BS.length scriptBytes)
-            putByteString scriptBytes
+  hashFinalize
+    . hashUpdate (initTaggedHash "TapLeaf")
+    . runPutS
+    $ do
+      serialize leafVersion
+      serialize $ VarInt (BS.length scriptBytes)
+      putByteString scriptBytes
   where
     scriptBytes = runPutS $ serialize leafScript
 
-{- | Representation of a full taproot output.
-
-@since 0.21.0
--}
+-- | Representation of a full taproot output.
+--
+-- @since 0.21.0
 data TaprootOutput = TaprootOutput
-    { taprootInternalKey :: PubKey
-    , taprootMAST :: Maybe MAST
-    }
-    deriving (Show)
+  { internalKey :: PubKey,
+    mast :: Maybe MAST
+  }
 
 -- | @since 0.21.0
-taprootOutputKey :: TaprootOutput -> PubKey
-taprootOutputKey TaprootOutput{taprootInternalKey, taprootMAST} =
-    fromMaybe keyFail $ tweak commitment >>= tweakAddPubKey taprootInternalKey
+taprootOutputKey :: Ctx -> TaprootOutput -> PubKey
+taprootOutputKey ctx TaprootOutput {..} =
+  fromMaybe keyFail $
+    tweak commitment >>= tweakAddPubKey ctx internalKey
   where
-    commitment = taprootCommitment taprootInternalKey $ mastCommitment <$> taprootMAST
+    commitment =
+      taprootCommitment ctx internalKey $
+        mastCommitment <$> mast
     keyFail = error "haskoin-core taprootOutputKey: key derivation failed"
 
-taprootCommitment :: PubKey -> Maybe (Digest SHA256) -> ByteString
-taprootCommitment internalKey merkleRoot =
-    BA.convert . hashFinalize
-        . maybe id (flip hashUpdate) merkleRoot
-        . (`hashUpdate` keyBytes)
-        $ initTaggedHash "TapTweak"
+taprootCommitment :: Ctx -> PubKey -> Maybe (Digest SHA256) -> ByteString
+taprootCommitment ctx internalKey merkleRoot =
+  BA.convert
+    . hashFinalize
+    . maybe id (flip hashUpdate) merkleRoot
+    . (`hashUpdate` keyBytes)
+    $ initTaggedHash "TapTweak"
   where
-    keyBytes = runPutS . serialize $ XOnlyPubKey internalKey
+    keyBytes = runPutS . marshalPut ctx $ XOnlyPubKey internalKey
 
-{- | Generate the output script for a taproot output
+-- | Generate the output script for a taproot output
+--
+-- @since 0.21.0
+taprootScriptOutput :: Ctx -> TaprootOutput -> ScriptOutput
+taprootScriptOutput ctx =
+  PayWitness 0x01
+    . runPutS
+    . marshalPut ctx
+    . XOnlyPubKey
+    . taprootOutputKey ctx
 
-@since 0.21.0
--}
-taprootScriptOutput :: TaprootOutput -> ScriptOutput
-taprootScriptOutput = PayWitness 0x01 . runPutS . serialize . XOnlyPubKey . taprootOutputKey
-
-{- | Comprehension of taproot witness data
-
-@since 0.21.0
--}
+-- | Comprehension of taproot witness data
+--
+-- @since 0.21.0
 data TaprootWitness
-    = -- | Signature
-      KeyPathSpend ByteString
-    | ScriptPathSpend ScriptPathData
-    deriving (Eq, Show)
+  = -- | Signature
+    KeyPathSpend ByteString
+  | ScriptPathSpend ScriptPathData
+  deriving (Eq)
 
 -- | @since 0.21.0
 data ScriptPathData = ScriptPathData
-    { scriptPathAnnex :: Maybe ByteString
-    , scriptPathStack :: [ByteString]
-    , scriptPathScript :: Script
-    , scriptPathExternalIsOdd :: Bool
-    , -- | This value is masked by 0xFE
-      scriptPathLeafVersion :: Word8
-    , scriptPathInternalKey :: PubKey
-    , scriptPathControl :: [ByteString]
-    }
-    deriving (Eq, Show)
+  { annex :: Maybe ByteString,
+    stack :: [ByteString],
+    script :: Script,
+    extIsOdd :: Bool,
+    -- | This value is masked by 0xFE
+    leafVersion :: Word8,
+    internalKey :: PubKey,
+    control :: [ByteString]
+  }
+  deriving (Eq)
 
-{- | Try to interpret a 'WitnessStack' as taproot witness data.
-
-@since 0.21.0
--}
-viewTaprootWitness :: WitnessStack -> Maybe TaprootWitness
-viewTaprootWitness witnessStack = case reverse witnessStack of
-    [sig] -> Just $ KeyPathSpend sig
-    annexA : remainingStack
-        | 0x50 : _ <- BS.unpack annexA ->
-            parseSpendPathData (Just annexA) remainingStack
-    remainingStack -> parseSpendPathData Nothing remainingStack
+-- | Try to interpret a 'WitnessStack' as taproot witness data.
+--
+-- @since 0.21.0
+viewTaprootWitness :: Ctx -> WitnessStack -> Maybe TaprootWitness
+viewTaprootWitness ctx witnessStack = case reverse witnessStack of
+  [sig] -> Just $ KeyPathSpend sig
+  annexA : remainingStack
+    | 0x50 : _ <- BS.unpack annexA ->
+        parseSpendPathData (Just annexA) remainingStack
+  remainingStack -> parseSpendPathData Nothing remainingStack
   where
-    parseSpendPathData scriptPathAnnex = \case
-        scriptBytes : controlBytes : scriptPathStack -> do
-            scriptPathScript <- eitherToMaybe $ runGetS deserialize scriptBytes
-            (v, scriptPathInternalKey, scriptPathControl) <- deconstructControl controlBytes
-            pure . ScriptPathSpend $
-                ScriptPathData
-                    { scriptPathAnnex
-                    , scriptPathStack
-                    , scriptPathScript
-                    , scriptPathExternalIsOdd = odd v
-                    , scriptPathLeafVersion = v .&. 0xFE
-                    , scriptPathInternalKey
-                    , scriptPathControl
-                    }
-        _ -> Nothing
+    parseSpendPathData annex = \case
+      scriptBytes : controlBytes : stack -> do
+        script <- eitherToMaybe $ runGetS deserialize scriptBytes
+        (v, internalKey, control) <- deconstructControl controlBytes
+        let extIsOdd = odd v
+            leafVersion = v .&. 0xFE
+        pure $ ScriptPathSpend ScriptPathData {..}
+      _ -> Nothing
     deconstructControl = eitherToMaybe . runGetS deserializeControl
     deserializeControl = do
-        v <- getWord8
-        k <- xOnlyPubKey <$> deserialize
-        proof <- many $ getByteString 32
-        pure (v, k, proof)
+      v <- getWord8
+      XOnlyPubKey k <- marshalGet ctx
+      proof <- many $ getByteString 32
+      pure (v, k, proof)
 
-{- | Transform the high-level representation of taproot witness data into a witness stack
-
-@since 0.21.0
--}
-encodeTaprootWitness :: TaprootWitness -> WitnessStack
-encodeTaprootWitness = \case
-    KeyPathSpend signature -> pure signature
-    ScriptPathSpend scriptPathData ->
-        scriptPathStack scriptPathData
-            <> [ runPutS . serialize $ scriptPathScript scriptPathData
-               , mconcat
-                    [ BS.pack [scriptPathLeafVersion scriptPathData .|. parity scriptPathData]
-                    , runPutS . serialize . XOnlyPubKey $ scriptPathInternalKey scriptPathData
-                    , mconcat $ scriptPathControl scriptPathData
-                    ]
-               , fromMaybe mempty $ scriptPathAnnex scriptPathData
-               ]
+-- | Transform the high-level representation of taproot witness data into a witness stack
+--
+-- @since 0.21.0
+encodeTaprootWitness :: Ctx -> TaprootWitness -> WitnessStack
+encodeTaprootWitness ctx = \case
+  KeyPathSpend signature -> pure signature
+  ScriptPathSpend scriptPathData -> wit scriptPathData
   where
-    parity = bool 0 1 . scriptPathExternalIsOdd
+    wit d = (.stack) d <> [script d, keys d, annex d]
+    keys d = mconcat [verpar d, xonlyk d, ctrl d]
+    script = runPutS . serialize . (.script)
+    verpar d = BS.pack [(.leafVersion) d .|. parity d]
+    xonlyk = runPutS . marshalPut ctx . XOnlyPubKey . (.internalKey)
+    annex = fromMaybe mempty . (.annex)
+    ctrl = mconcat . (.control)
+    parity = bool 0 1 . (.extIsOdd)
 
-{- | Verify that the script path spend is valid, except for script execution.
-
-@since 0.21.0
--}
+-- | Verify that the script path spend is valid, except for script execution.
+--
+-- @since 0.21.0
 verifyScriptPathData ::
-    -- | Output key
-    PubKey ->
-    ScriptPathData ->
-    Bool
-verifyScriptPathData outputKey scriptPathData = fromMaybe False $ do
-    tweak commitment >>= fmap onComputedKey . tweakAddPubKey (scriptPathInternalKey scriptPathData)
+  Ctx ->
+  -- | Output key
+  PubKey ->
+  ScriptPathData ->
+  Bool
+verifyScriptPathData ctx outkey spd = fromMaybe False $ do
+  tweak commitment
+    >>= fmap onComputedKey
+      . tweakAddPubKey ctx spd.internalKey
   where
     onComputedKey computedKey =
-        XOnlyPubKey outputKey == XOnlyPubKey computedKey
-            && expectedParity == keyParity computedKey
-    commitment = taprootCommitment (scriptPathInternalKey scriptPathData) (Just merkleRoot)
+      XOnlyPubKey outkey == XOnlyPubKey computedKey
+        && expectedParity == keyParity ctx computedKey
+    commitment =
+      taprootCommitment ctx spd.internalKey (Just merkleRoot)
     merkleRoot =
-        foldl' hashBranch theLeafHash
-            . mapMaybe (digestFromByteString @SHA256)
-            $ scriptPathControl scriptPathData
-    theLeafHash = (leafHash <$> (.&. 0xFE) . scriptPathLeafVersion <*> scriptPathScript) scriptPathData
-    expectedParity = bool 0 1 $ scriptPathExternalIsOdd scriptPathData
+      foldl' hashBranch theLeafHash $
+        mapMaybe (digestFromByteString @SHA256) spd.control
+    theLeafHash =
+      (leafHash <$> (.&. 0xFE) . (.leafVersion) <*> (.script))
+        spd
+    expectedParity = bool 0 1 spd.extIsOdd
 
-keyParity :: PubKey -> Word8
-keyParity key = case BS.unpack . runPutS . serialize $ PubKeyI key True of
+keyParity :: Ctx -> PubKey -> Word8
+keyParity ctx key =
+  case BS.unpack . marshal ctx $ PublicKey key True of
     0x02 : _ -> 0x00
     _ -> 0x01

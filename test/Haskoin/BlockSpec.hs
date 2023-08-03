@@ -7,6 +7,7 @@ module Haskoin.BlockSpec
   )
 where
 
+import Control.Monad
 import Control.Monad.State.Strict
 import Data.Either (fromRight)
 import Data.Maybe (fromJust)

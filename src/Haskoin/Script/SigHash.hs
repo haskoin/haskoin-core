@@ -329,7 +329,7 @@ instance Marshal (Network, Ctx) TxSignature where
 instance MarshalJSON (Network, Ctx) TxSignature where
   marshalValue (net, ctx) = String . encodeHex . encodeTxSig net ctx
   marshalEncoding s = hexEncoding . runPutL . marshalPut s
-  unmarshalValue (net, ctx) = 
+  unmarshalValue (net, ctx) =
     withText "TxSignature" $ \t ->
       case decodeHex t of
         Nothing -> fail "Cannot decode hex signature"

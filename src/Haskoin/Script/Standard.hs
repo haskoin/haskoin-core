@@ -185,7 +185,9 @@ decodeOutput ctx s = case s.ops of
   -- Provably unspendable data carrier output
   [OP_RETURN, OP_PUSHDATA bs _] -> Right $ DataCarrier bs
   -- Pay to MultiSig Keys
-  _ -> matchPayMulSig ctx s <|> Left "decodeOutput: Non-standard output"
+  _ -> case matchPayMulSig ctx s of
+    Right x -> return x
+    Left _ -> Left "decodeOutput: Non-standard output"
 
 witnessVersionOp :: Word8 -> Maybe ScriptOp
 witnessVersionOp 0 = Just OP_0

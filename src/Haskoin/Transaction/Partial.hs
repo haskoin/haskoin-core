@@ -55,8 +55,7 @@ where
 
 import Control.Applicative ((<|>))
 import Control.DeepSeq (NFData)
-import Control.Monad (foldM, guard, replicateM, void)
-import Control.Monad.Cont (unless)
+import Control.Monad (foldM, guard, replicateM, unless, void)
 import Crypto.Secp256k1
 import Data.Binary (Binary (..))
 import Data.ByteString (ByteString)

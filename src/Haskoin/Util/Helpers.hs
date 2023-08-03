@@ -119,8 +119,8 @@ integerToBS i
     f x = Just (fromInteger x :: Word8, x `shiftR` 8)
 
 hexEncoding :: LB.ByteString -> Encoding
-hexEncoding b = 
-  unsafeToEncoding $ 
+hexEncoding b =
+  unsafeToEncoding $
     char7 '"' <> hexBuilder b <> char7 '"'
 
 hexBuilder :: LB.ByteString -> Builder

@@ -61,7 +61,7 @@ import Data.Bytes.Put
 import Data.Bytes.Serial
 import Data.Conduit (ConduitT, Void, await, runConduit, (.|))
 import Data.Conduit.List (sourceList)
-import Data.Either (fromRight)
+import Data.Either (fromRight, rights)
 import Data.List (nub)
 import Data.Maybe (catMaybes, fromJust, isJust)
 import Data.String.Conversions (cs)
@@ -509,9 +509,11 @@ verifyStdInput net ctx tx i so0 val
   | isSegwit so0 =
       fromRight False $ (inp == mempty &&) . verifySegwitInput so0 <$> wp so0
   | otherwise =
-      fromRight False $
-        (verifyLegacyInput so0 <$> unmarshal (net, ctx) inp)
-          <|> (nestedScriptOutput >>= \so -> verifyNestedInput so0 so <$> wp so)
+      or $
+        rights
+          [ verifyLegacyInput so0 <$> unmarshal (net, ctx) inp,
+            nestedScriptOutput >>= \so -> verifyNestedInput so0 so <$> wp so
+          ]
   where
     inp = (tx.inputs !! i).script
     theTxSigHash so = Sign.makeSigHash net ctx tx i so val

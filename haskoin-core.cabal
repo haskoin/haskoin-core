@@ -5,7 +5,7 @@ cabal-version: 1.12
 -- see: https://github.com/sol/hpack
 
 name:           haskoin-core
-version:        1.0.1
+version:        1.0.2
 synopsis:       Bitcoin & Bitcoin Cash library for Haskell
 description:    Please see the README on GitHub at <https://github.com/haskoin/haskoin-core#readme>
 category:       Bitcoin, Finance, Network
@@ -33,6 +33,18 @@ extra-source-files:
     data/sig_nonstrict.json
     data/sig_strict.json
     data/sighash.json
+    data/test_vectors_aserti3-2d_run01.txt
+    data/test_vectors_aserti3-2d_run02.txt
+    data/test_vectors_aserti3-2d_run03.txt
+    data/test_vectors_aserti3-2d_run04.txt
+    data/test_vectors_aserti3-2d_run05.txt
+    data/test_vectors_aserti3-2d_run06.txt
+    data/test_vectors_aserti3-2d_run07.txt
+    data/test_vectors_aserti3-2d_run08.txt
+    data/test_vectors_aserti3-2d_run09.txt
+    data/test_vectors_aserti3-2d_run10.txt
+    data/test_vectors_aserti3-2d_run11.txt
+    data/test_vectors_aserti3-2d_run12.txt
     README.md
     CHANGELOG.md
 

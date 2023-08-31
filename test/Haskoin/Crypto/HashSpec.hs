@@ -14,6 +14,7 @@ import Data.ByteString.Short qualified as Short
 import Data.Bytes.Get
 import Data.Bytes.Put
 import Data.Bytes.Serial
+import Data.Default (def)
 import Data.Maybe (fromJust)
 import Data.String (fromString)
 import Data.String.Conversions
@@ -28,27 +29,27 @@ import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck
 
-serialVals :: [SerialBox]
-serialVals =
-  [ SerialBox arbitraryBS,
-    SerialBox arbitraryHash160,
-    SerialBox arbitraryHash256,
-    SerialBox arbitraryHash512
-  ]
-
-readVals :: [ReadBox]
-readVals =
-  [ ReadBox arbitraryBS,
-    ReadBox arbitraryBSS,
-    ReadBox arbitraryHash160,
-    ReadBox arbitraryHash256,
-    ReadBox arbitraryHash512
-  ]
+identityTests :: IdentityTests
+identityTests =
+  def
+    { readTests =
+        [ ReadBox arbitraryHash160,
+          ReadBox arbitraryHash256,
+          ReadBox arbitraryHash512,
+          ReadBox arbitraryCheckSum32
+        ],
+      serialTests =
+        [ SerialBox arbitraryHash160,
+          SerialBox arbitraryHash256,
+          SerialBox arbitraryHash512,
+          SerialBox arbitraryCheckSum32
+        ]
+    }
 
 spec :: Spec
 spec =
   describe "Hash" $ do
-    testIdentity serialVals readVals [] []
+    testIdentity identityTests
     describe "Property Tests" $ do
       prop "join512( split512(h) ) == h" $
         forAll arbitraryHash256 $

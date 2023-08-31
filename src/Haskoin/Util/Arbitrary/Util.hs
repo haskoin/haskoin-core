@@ -1,4 +1,5 @@
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 -- |
@@ -18,17 +19,16 @@ module Haskoin.Util.Arbitrary.Util
     arbitraryMaybe,
     arbitraryNetwork,
     arbitraryUTCTime,
-    SerialBox (..),
-    JsonBox (..),
-    NetBox (..),
     ReadBox (..),
+    JsonBox (..),
+    MarshalJsonBox (..),
+    SerialBox (..),
+    MarshalBox (..),
+    IdentityTests (..),
     testIdentity,
     testSerial,
     testRead,
     testJson,
-    testNetJson,
-    arbitraryNetData,
-    genNetData,
   )
 where
 
@@ -42,14 +42,17 @@ import qualified Data.ByteString.Short as BSS
 import Data.Bytes.Get
 import Data.Bytes.Put
 import Data.Bytes.Serial
+import Data.Default
 import qualified Data.Map.Strict as Map
 import Data.Proxy
 import Data.Time.Clock (UTCTime (..))
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import qualified Data.Typeable as T
 import Data.Word (Word32)
+import Haskoin.Crypto (Ctx)
 import Haskoin.Network.Constants
 import Haskoin.Network.Data
+import Haskoin.Util
 import Test.Hspec (Spec, describe, shouldBe, shouldSatisfy)
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck
@@ -98,10 +101,8 @@ arbitraryNetwork = elements allNets
 
 -- Helpers for creating Serial and JSON Identity tests
 
-data SerialBox
-  = forall a.
-    (Show a, Eq a, T.Typeable a, Serial a) =>
-    SerialBox (Gen a)
+instance Show Ctx where
+  show _ = "Ctx"
 
 data ReadBox
   = forall a.
@@ -113,30 +114,68 @@ data JsonBox
     (Show a, Eq a, T.Typeable a, A.ToJSON a, A.FromJSON a) =>
     JsonBox (Gen a)
 
-data NetBox
-  = forall a.
-    (Show a, Eq a, T.Typeable a) =>
-    NetBox
-      ( Network -> a -> A.Value,
-        Network -> a -> A.Encoding,
-        Network -> A.Value -> A.Parser a,
-        Gen (Network, a)
-      )
+data MarshalJsonBox
+  = forall s a.
+    (Show a, Show s, Eq a, T.Typeable a, MarshalJSON s a) =>
+    MarshalJsonBox (Gen (s, a))
 
-testIdentity :: [SerialBox] -> [ReadBox] -> [JsonBox] -> [NetBox] -> Spec
-testIdentity serialVals readVals jsonVals netVals = do
-  describe "Binary Encoding" $
-    forM_ serialVals $
-      \(SerialBox g) -> testSerial g
+data SerialBox
+  = forall a.
+    (Show a, Eq a, T.Typeable a, Serial a) =>
+    SerialBox (Gen a)
+
+data MarshalBox
+  = forall s a.
+    (Show a, Show s, Eq a, T.Typeable a, Marshal s a) =>
+    MarshalBox (Gen (s, a))
+
+data IdentityTests = IdentityTests
+  { readTests :: [ReadBox],
+    jsonTests :: [JsonBox],
+    marshalJsonTests :: [MarshalJsonBox],
+    serialTests :: [SerialBox],
+    marshalTests :: [MarshalBox]
+  }
+
+instance Default IdentityTests where
+  def =
+    IdentityTests
+      { readTests = [],
+        jsonTests = [],
+        marshalJsonTests = [],
+        serialTests = [],
+        marshalTests = []
+      }
+
+testIdentity :: IdentityTests -> Spec
+testIdentity t = do
   describe "Read/Show Encoding" $
-    forM_ readVals $
+    forM_ t.readTests $
       \(ReadBox g) -> testRead g
   describe "Data.Aeson Encoding" $
-    forM_ jsonVals $
+    forM_ t.jsonTests $
       \(JsonBox g) -> testJson g
-  describe "Data.Aeson Encoding with Network" $
-    forM_ netVals $
-      \(NetBox (j, e, p, g)) -> testNetJson j e p g
+  describe "MarshalJSON Encoding" $
+    forM_ t.marshalJsonTests $
+      \(MarshalJsonBox g) -> testMarshalJson g
+  describe "Binary Encoding" $
+    forM_ t.serialTests $
+      \(SerialBox g) -> testSerial g
+  describe "Marshal Encoding" $
+    forM_ t.marshalTests $
+      \(MarshalBox g) -> testMarshal g
+
+-- | Generate Read/Show identity tests
+testRead ::
+  (Eq a, Read a, Show a, T.Typeable a) => Gen a -> Spec
+testRead gen =
+  prop ("read/show identity for " <> name) $
+    forAll gen $
+      \x -> (read . show) x `shouldBe` x
+  where
+    name = show $ T.typeRep $ proxy gen
+    proxy :: Gen a -> Proxy a
+    proxy = const Proxy
 
 -- | Generate binary identity tests
 testSerial ::
@@ -153,16 +192,19 @@ testSerial gen =
     proxy :: Gen a -> Proxy a
     proxy = const Proxy
 
--- | Generate Read/Show identity tests
-testRead ::
-  (Eq a, Read a, Show a, T.Typeable a) => Gen a -> Spec
-testRead gen =
-  prop ("read/show identity for " <> name) $
-    forAll gen $
-      \x -> (read . show) x `shouldBe` x
+-- | Generate Marshal identity tests
+testMarshal ::
+  (Eq a, Show a, Show s, T.Typeable a, Marshal s a) =>
+  Gen (s, a) ->
+  Spec
+testMarshal gen = do
+  prop ("Marshal marshalPut/marshalGet identity for " <> name) $
+    forAll gen $ \(s, a) -> do
+      (unmarshal s . marshal s) a `shouldBe` Right a
+      (unmarshalLazy s . marshalLazy s) a `shouldBe` a
   where
     name = show $ T.typeRep $ proxy gen
-    proxy :: Gen a -> Proxy a
+    proxy :: Gen (s, a) -> Proxy a
     proxy = const Proxy
 
 -- | Generate Data.Aeson identity tests
@@ -182,40 +224,25 @@ testJson gen = do
       (A.decode . A.encodingToLazyByteString . A.toEncoding) (toMap x)
         == Just (toMap x)
 
--- | Generate Data.Aeson identity tests for type that need the @Network@
-testNetJson ::
-  (Eq a, Show a, T.Typeable a) =>
-  (Network -> a -> A.Value) ->
-  (Network -> a -> A.Encoding) ->
-  (Network -> A.Value -> A.Parser a) ->
-  Gen (Network, a) ->
+-- | Generate MarshalJSON identity tests
+testMarshalJson ::
+  (Eq a, Show a, Show s, T.Typeable a, MarshalJSON s a) =>
+  Gen (s, a) ->
   Spec
-testNetJson j e p g = do
-  prop ("Data.Aeson toJSON/fromJSON identity (with network) for " <> name) $
-    forAll g $
-      \(net, x) -> dec net (encVal net x) `shouldBe` Just x
-  prop ("Data.Aeson toEncoding/fromJSON identity (with network) for " <> name) $
-    forAll g $
-      \(net, x) -> dec net (encEnc net x) `shouldBe` Just x
+testMarshalJson gen = do
+  prop ("MarshalJSON marshalValue/unmarshalValue identity for " <> name) $
+    forAll gen $
+      \(s, a) -> a `shouldSatisfy` marshalJsonID s
+  prop ("MarshalJSON marshalEncoding/unmarshalValue identity for " <> name) $
+    forAll gen $
+      \(s, a) -> a `shouldSatisfy` marshalEncodingID s
   where
-    encVal net = A.encode . toMap . j net
-    encEnc net = A.encodingToLazyByteString . toMapE . e net
-    dec net = A.parseMaybe (p net) . fromMap <=< A.decode
-    name = show $ T.typeRep $ proxy j
-    proxy :: (Network -> a -> A.Value) -> Proxy a
+    name = show $ T.typeRep $ proxy gen
+    proxy :: Gen (s, a) -> Proxy a
     proxy = const Proxy
-
-arbitraryNetData :: (Arbitrary a) => Gen (Network, a)
-arbitraryNetData = do
-  net <- arbitraryNetwork
-  x <- arbitrary
-  return (net, x)
-
-genNetData :: Gen a -> Gen (Network, a)
-genNetData gen = do
-  net <- arbitraryNetwork
-  x <- gen
-  return (net, x)
+    marshalJsonID s a =
+      A.parseMaybe (unmarshalValue s) (marshalValue s a) == Just a
+    marshalEncodingID s a = unmarshalJSON s (marshalJSON s a) == Just a
 
 toMap :: a -> Map.Map String a
 toMap = Map.singleton "object"

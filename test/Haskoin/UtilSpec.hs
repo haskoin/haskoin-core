@@ -7,6 +7,7 @@ import Data.Aeson.Encoding (encodingToLazyByteString)
 import Data.Aeson.Types (Parser, parse)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
+import Data.Default (def)
 import Data.Either (fromLeft, fromRight, isLeft, isRight)
 import Data.Foldable (toList)
 import Data.List (permutations)
@@ -21,9 +22,18 @@ import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck (forAll)
 
+identityTests :: IdentityTests
+identityTests =
+  def
+    { readTests =
+        [ ReadBox arbitraryNetwork
+        ]
+    }
+
 spec :: Spec
 spec =
   describe "utility functions" $ do
+    testIdentity identityTests
     prop "bsToInteger . integerToBS" getPutInteger
     prop "decodeHex . encodeHex" $ forAll arbitraryBS fromToHex
     prop "compare updateIndex with Data.Sequence" testUpdateIndex

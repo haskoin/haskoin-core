@@ -14,6 +14,7 @@ import Data.ByteString.Char8 qualified as C
 import Data.Bytes.Get
 import Data.Bytes.Put
 import Data.Bytes.Serial
+import Data.Default (def)
 import Data.Maybe
 import Data.Serialize qualified as S
 import Data.String (fromString)
@@ -30,16 +31,30 @@ import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck
 
+identityTests :: Ctx -> IdentityTests
+identityTests ctx =
+  def
+    { readTests =
+        [ ReadBox (arbitrary :: Gen SecKey),
+          ReadBox arbitraryPrivateKey,
+          ReadBox (arbitraryPublicKey ctx)
+        ],
+      marshalJsonTests =
+        [ MarshalJsonBox $ (,) <$> arbitraryNetwork <*> arbitraryPrivateKey,
+          MarshalJsonBox ((,) ctx <$> arbitraryPublicKey ctx)
+        ],
+      serialTests =
+        [ SerialBox arbitraryPrivateKey
+        ],
+      marshalTests =
+        [ MarshalBox ((,) ctx <$> arbitraryPublicKey ctx)
+        ]
+    }
+
 spec :: Spec
 spec = prepareContext $ \ctx -> do
   describe "Key pair property checks" $ do
-    testNetJson
-      marshalValue
-      marshalEncoding
-      unmarshalValue
-      $ (,)
-        <$> arbitraryNetwork
-        <*> fmap fst (arbitraryKeyPair ctx)
+    testIdentity $ identityTests ctx
     prop "Public key is canonical" $
       forAll (arbitraryKeyPair ctx) (isCanonicalPubKey ctx . snd)
     prop "Key pair key show . read identity" $

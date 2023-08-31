@@ -24,6 +24,10 @@ import Test.QuickCheck
 arbitraryPrivateKey :: Gen PrivateKey
 arbitraryPrivateKey = wrapSecKey <$> arbitrary <*> arbitrary
 
+-- | Arbitrary public key, either compressed or not.
+arbitraryPublicKey :: Ctx -> Gen PublicKey
+arbitraryPublicKey ctx = snd <$> arbitraryKeyPair ctx
+
 -- | Arbitrary keypair, both either compressed or not.
 arbitraryKeyPair :: Ctx -> Gen (PrivateKey, PublicKey)
 arbitraryKeyPair ctx = do
@@ -43,9 +47,13 @@ arbitraryXPrvKey =
     <*> arbitraryHash256
     <*> arbitrary
 
+-- | Arbitrary extended public key.
+arbitraryXPubKey :: Ctx -> Gen XPubKey
+arbitraryXPubKey ctx = snd <$> arbitraryXKeyPair ctx
+
 -- | Arbitrary extended public key with its corresponding private key.
-arbitraryXPubKey :: Ctx -> Gen (XPrvKey, XPubKey)
-arbitraryXPubKey ctx = (\k -> (k, deriveXPubKey ctx k)) <$> arbitraryXPrvKey
+arbitraryXKeyPair :: Ctx -> Gen (XPrvKey, XPubKey)
+arbitraryXKeyPair ctx = (\k -> (k, deriveXPubKey ctx k)) <$> arbitraryXPrvKey
 
 {- Custom derivations -}
 

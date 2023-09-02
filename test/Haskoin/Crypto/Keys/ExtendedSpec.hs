@@ -13,6 +13,7 @@ import Data.ByteString.Lazy.Char8 qualified as B8
 import Data.Bytes.Get
 import Data.Bytes.Put
 import Data.Bytes.Serial
+import Data.Default (def)
 import Data.Either (isLeft)
 import Data.Maybe (fromJust, isJust, isNothing)
 import Data.String (fromString)
@@ -29,51 +30,44 @@ import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck hiding ((.&.))
 
-serialVals :: [SerialBox]
-serialVals =
-  [ SerialBox arbitraryDerivPath,
-    SerialBox arbitraryHardPath,
-    SerialBox arbitrarySoftPath
-  ]
-
-readVals :: Ctx -> [ReadBox]
-readVals ctx =
-  [ ReadBox arbitraryDerivPath,
-    ReadBox arbitraryHardPath,
-    ReadBox arbitrarySoftPath,
-    ReadBox arbitraryXPrvKey,
-    ReadBox (snd <$> arbitraryXPubKey ctx),
-    ReadBox arbitraryParsedPath,
-    ReadBox arbitraryBip32PathIndex
-  ]
-
-jsonVals :: [JsonBox]
-jsonVals =
-  [ JsonBox arbitraryDerivPath,
-    JsonBox arbitraryHardPath,
-    JsonBox arbitrarySoftPath,
-    JsonBox arbitraryParsedPath
-  ]
-
-netVals :: Ctx -> [NetBox]
-netVals ctx =
-  [ NetBox
-      ( marshalValue,
-        marshalEncoding,
-        unmarshalValue,
-        genNetData arbitraryXPrvKey
-      ),
-    NetBox
-      ( marshalValue . (,ctx),
-        marshalEncoding . (,ctx),
-        unmarshalValue . (,ctx),
-        genNetData (snd <$> arbitraryXPubKey ctx)
-      )
-  ]
+identityTests :: Ctx -> IdentityTests
+identityTests ctx =
+  def
+    { readTests =
+        [ ReadBox arbitraryXPrvKey,
+          ReadBox (arbitraryXPubKey ctx),
+          ReadBox arbitraryDerivPath,
+          ReadBox arbitraryHardPath,
+          ReadBox arbitrarySoftPath,
+          ReadBox arbitraryParsedPath,
+          ReadBox arbitraryBip32PathIndex
+        ],
+      jsonTests =
+        [ JsonBox arbitraryDerivPath,
+          JsonBox arbitraryHardPath,
+          JsonBox arbitrarySoftPath,
+          JsonBox arbitraryParsedPath
+        ],
+      marshalJsonTests =
+        [ MarshalJsonBox $ (,) <$> arbitraryNetwork <*> arbitraryXPrvKey,
+          MarshalJsonBox $
+            (,) <$> ((,ctx) <$> arbitraryNetwork) <*> arbitraryXPubKey ctx
+        ],
+      serialTests =
+        [ SerialBox arbitraryDerivPath,
+          SerialBox arbitraryHardPath,
+          SerialBox arbitrarySoftPath
+        ],
+      marshalTests =
+        [ MarshalBox $ (,) <$> arbitraryNetwork <*> arbitraryXPrvKey,
+          MarshalBox $
+            (,) <$> ((,ctx) <$> arbitraryNetwork) <*> arbitraryXPubKey ctx
+        ]
+    }
 
 spec :: Spec
 spec = prepareContext $ \ctx -> do
-  testIdentity serialVals (readVals ctx) jsonVals (netVals ctx)
+  testIdentity $ identityTests ctx
   describe "Custom identity tests" $ do
     prop "encodes and decodes extended private key" $
       forAll arbitraryNetwork $ \net ->
@@ -82,7 +76,7 @@ spec = prepareContext $ \ctx -> do
     prop "encodes and decodes extended public key" $
       forAll arbitraryNetwork $ \net ->
         forAll (arbitraryXPubKey ctx) $
-          customCerealID (marshalGet (net, ctx)) (marshalPut (net, ctx)) . snd
+          customCerealID (marshalGet (net, ctx)) (marshalPut (net, ctx))
   describe "bip32 subkey derivation vector 1" $ vectorSpec ctx m1 vector1
   describe "bip32 subkey derivation vector 2" $ vectorSpec ctx m2 vector2
   describe "bip32 subkey derivation vector 3" $ vectorSpec ctx m3 vector3
@@ -122,7 +116,7 @@ spec = prepareContext $ \ctx -> do
       forAll arbitraryXPrvKey $ \k ->
         xPrvImport net (xPrvExport net k) == Just k
     prop "exports and imports extended public key" $
-      forAll (arbitraryXPubKey ctx) $ \(_, k) ->
+      forAll (arbitraryXPubKey ctx) $ \k ->
         xPubImport net ctx (xPubExport net ctx k) == Just k
 
 pubKeyOfSubKeyIsSubKeyOfPubKey :: Ctx -> XPrvKey -> Word32 -> Bool

@@ -12,6 +12,7 @@ import Data.ByteString qualified as B
 import Data.Bytes.Get
 import Data.Bytes.Put
 import Data.Bytes.Serial
+import Data.Default (def)
 import Data.Either
 import Data.Maybe
 import Data.String (fromString)
@@ -31,39 +32,38 @@ import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck
 
-serialVals :: Ctx -> [SerialBox]
-serialVals ctx =
-  [ SerialBox $ flip arbitraryTx ctx =<< arbitraryNetwork,
-    SerialBox $ flip arbitraryWitnessTx ctx =<< arbitraryNetwork,
-    SerialBox $ flip arbitraryLegacyTx ctx =<< arbitraryNetwork,
-    SerialBox $ flip arbitraryTxIn ctx =<< arbitraryNetwork,
-    SerialBox $ flip arbitraryTxOut ctx =<< arbitraryNetwork,
-    SerialBox arbitraryOutPoint
-  ]
-
-readVals :: Ctx -> [ReadBox]
-readVals ctx =
-  [ ReadBox arbitraryTxHash,
-    ReadBox $ flip arbitraryTx ctx =<< arbitraryNetwork,
-    ReadBox $ flip arbitraryTxIn ctx =<< arbitraryNetwork,
-    ReadBox $ flip arbitraryTxOut ctx =<< arbitraryNetwork,
-    ReadBox arbitraryOutPoint
-  ]
-
-jsonVals :: Ctx -> [JsonBox]
-jsonVals ctx =
-  [ JsonBox arbitraryTxHash,
-    JsonBox $ flip arbitraryTx ctx =<< arbitraryNetwork,
-    JsonBox $ flip arbitraryWitnessTx ctx =<< arbitraryNetwork,
-    JsonBox $ flip arbitraryLegacyTx ctx =<< arbitraryNetwork,
-    JsonBox $ flip arbitraryTxIn ctx =<< arbitraryNetwork,
-    JsonBox $ flip arbitraryTxOut ctx =<< arbitraryNetwork,
-    JsonBox arbitraryOutPoint
-  ]
+identityTests :: Ctx -> IdentityTests
+identityTests ctx =
+  def
+    { readTests =
+        [ ReadBox arbitraryTxHash,
+          ReadBox $ flip arbitraryTx ctx =<< arbitraryNetwork,
+          ReadBox $ flip arbitraryTxIn ctx =<< arbitraryNetwork,
+          ReadBox $ flip arbitraryTxOut ctx =<< arbitraryNetwork,
+          ReadBox arbitraryOutPoint
+        ],
+      jsonTests =
+        [ JsonBox arbitraryTxHash,
+          JsonBox $ flip arbitraryTx ctx =<< arbitraryNetwork,
+          JsonBox $ flip arbitraryWitnessTx ctx =<< arbitraryNetwork,
+          JsonBox $ flip arbitraryLegacyTx ctx =<< arbitraryNetwork,
+          JsonBox $ flip arbitraryTxIn ctx =<< arbitraryNetwork,
+          JsonBox $ flip arbitraryTxOut ctx =<< arbitraryNetwork,
+          JsonBox arbitraryOutPoint
+        ],
+      serialTests =
+        [ SerialBox $ flip arbitraryTx ctx =<< arbitraryNetwork,
+          SerialBox $ flip arbitraryWitnessTx ctx =<< arbitraryNetwork,
+          SerialBox $ flip arbitraryLegacyTx ctx =<< arbitraryNetwork,
+          SerialBox $ flip arbitraryTxIn ctx =<< arbitraryNetwork,
+          SerialBox $ flip arbitraryTxOut ctx =<< arbitraryNetwork,
+          SerialBox arbitraryOutPoint
+        ]
+    }
 
 spec :: Spec
 spec = prepareContext $ \ctx -> do
-  testIdentity (serialVals ctx) (readVals ctx) (jsonVals ctx) []
+  testIdentity $ identityTests ctx
   describe "Transaction properties" $ do
     prop "decode and encode txid" $
       forAll arbitraryTxHash $

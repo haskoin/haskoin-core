@@ -7,6 +7,7 @@ module Haskoin.NetworkSpec (spec) where
 import Data.Bytes.Get
 import Data.Bytes.Put
 import Data.Bytes.Serial
+import Data.Default (def)
 import Data.Maybe (fromJust)
 import Data.Text (Text)
 import Data.Word (Word32)
@@ -22,34 +23,37 @@ import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck
 
-serialVals :: [SerialBox]
-serialVals =
-  [ SerialBox arbitraryVarInt,
-    SerialBox arbitraryVarString,
-    SerialBox arbitraryNetworkAddress,
-    SerialBox arbitraryInvType,
-    SerialBox arbitraryInvVector,
-    SerialBox arbitraryInv1,
-    SerialBox arbitraryVersion,
-    SerialBox arbitraryAddr1,
-    SerialBox arbitraryAlert,
-    SerialBox arbitraryReject,
-    SerialBox arbitraryRejectCode,
-    SerialBox arbitraryGetData,
-    SerialBox arbitraryNotFound,
-    SerialBox arbitraryPing,
-    SerialBox arbitraryPong,
-    SerialBox arbitraryMessageCommand,
-    SerialBox arbitraryMessageHeader,
-    SerialBox arbitraryBloomFlags,
-    SerialBox arbitraryBloomFilter,
-    SerialBox arbitraryFilterLoad,
-    SerialBox arbitraryFilterAdd
-  ]
+identityTests :: IdentityTests
+identityTests =
+  def
+    { serialTests =
+        [ SerialBox arbitraryVarInt,
+          SerialBox arbitraryVarString,
+          SerialBox arbitraryNetworkAddress,
+          SerialBox arbitraryInvType,
+          SerialBox arbitraryInvVector,
+          SerialBox arbitraryInv1,
+          SerialBox arbitraryVersion,
+          SerialBox arbitraryAddr1,
+          SerialBox arbitraryAlert,
+          SerialBox arbitraryReject,
+          SerialBox arbitraryRejectCode,
+          SerialBox arbitraryGetData,
+          SerialBox arbitraryNotFound,
+          SerialBox arbitraryPing,
+          SerialBox arbitraryPong,
+          SerialBox arbitraryMessageCommand,
+          SerialBox arbitraryMessageHeader,
+          SerialBox arbitraryBloomFlags,
+          SerialBox arbitraryBloomFilter,
+          SerialBox arbitraryFilterLoad,
+          SerialBox arbitraryFilterAdd
+        ]
+    }
 
 spec :: Spec
 spec = prepareContext $ \ctx -> do
-  testIdentity serialVals [] [] []
+  testIdentity identityTests
   describe "Custom identity tests" $ do
     prop "Data.Serialize Encoding for type Message" $
       forAll arbitraryNetwork $ \net ->

@@ -5,6 +5,7 @@ module Haskoin.AddressSpec (spec) where
 
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
+import Data.Default (def)
 import Data.Maybe (fromJust, isJust)
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -19,19 +20,17 @@ import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck
 
-serialVals :: [SerialBox]
-serialVals = [SerialBox arbitraryAddressAll]
-
-readVals :: [ReadBox]
-readVals = [ReadBox arbitraryAddressAll]
-
-netVals :: [NetBox]
-netVals =
-  [NetBox (marshalValue, marshalEncoding, unmarshalValue, arbitraryNetAddress)]
+identityTests :: IdentityTests
+identityTests =
+  def
+    { readTests = [ReadBox arbitraryAddressAll],
+      serialTests = [SerialBox arbitraryAddressAll],
+      marshalJsonTests = [MarshalJsonBox arbitraryNetAddress]
+    }
 
 spec :: Spec
 spec = prepareContext $ \ctx -> do
-  testIdentity serialVals readVals [] netVals
+  testIdentity identityTests
   describe "Address properties" $ do
     prop "encodes and decodes base58 bytestring" $
       forAll arbitraryBS $ \bs ->

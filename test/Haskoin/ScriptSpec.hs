@@ -2,7 +2,6 @@
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TupleSections #-}
 
 module Haskoin.ScriptSpec (spec) where
 
@@ -13,6 +12,7 @@ import Data.ByteString qualified as B
 import Data.Bytes.Get
 import Data.Bytes.Put
 import Data.Bytes.Serial
+import Data.Default (def)
 import Data.Either
 import Data.List
 import Data.Maybe
@@ -34,50 +34,60 @@ import Test.Hspec.QuickCheck
 import Test.QuickCheck
 import Text.Read
 
-serialVals :: [SerialBox]
-serialVals =
-  [ SerialBox arbitraryScriptOp,
-    SerialBox arbitraryScript
-  ]
-
-readVals :: Ctx -> [ReadBox]
-readVals ctx =
-  [ ReadBox arbitrarySigHash,
-    ReadBox arbitrarySigHashFlag,
-    ReadBox arbitraryScript,
-    ReadBox arbitraryPushDataType,
-    ReadBox arbitraryScriptOp,
-    ReadBox ((`arbitraryScriptOutput` ctx) =<< arbitraryNetwork)
-  ]
-
-jsonVals :: Ctx -> [JsonBox]
-jsonVals ctx =
-  [ JsonBox $
-      fmap (marshalValue ctx) $
-        arbitraryNetwork >>= flip arbitraryScriptOutput ctx,
-    JsonBox arbitraryOutPoint,
-    JsonBox arbitrarySigHash,
-    JsonBox $
-      fmap (marshalValue ctx . fst) $
-        arbitraryNetwork >>= flip arbitrarySigInput ctx
-  ]
-
-netVals :: Ctx -> [NetBox]
-netVals ctx =
-  [ NetBox
-      ( marshalValue . (,ctx),
-        marshalEncoding . (,ctx),
-        unmarshalValue . (,ctx),
-        do
-          net <- arbitraryNetwork
-          (_, _, txsig) <- arbitraryTxSignature net ctx
-          return (net, txsig)
-      )
-  ]
+identityTests :: Ctx -> IdentityTests
+identityTests ctx =
+  def
+    { readTests =
+        [ ReadBox arbitrarySigHash,
+          ReadBox arbitrarySigHashFlag,
+          ReadBox arbitraryScript,
+          ReadBox arbitraryPushDataType,
+          ReadBox arbitraryScriptOp,
+          ReadBox ((`arbitraryScriptOutput` ctx) =<< arbitraryNetwork),
+          ReadBox ((`arbitraryScriptInput` ctx) =<< arbitraryNetwork)
+        ],
+      jsonTests =
+        [ JsonBox arbitraryScript,
+          JsonBox arbitraryOutPoint,
+          JsonBox arbitrarySigHash
+        ],
+      marshalJsonTests =
+        [ MarshalJsonBox $ do
+            n <- arbitraryNetwork
+            (_, _, ts) <- arbitraryTxSignature n ctx
+            return ((n, ctx), ts),
+          MarshalJsonBox $ do
+            n <- arbitraryNetwork
+            o <- arbitraryScriptOutput n ctx
+            return (ctx, o),
+          MarshalJsonBox $ do
+            n <- arbitraryNetwork
+            (i, _) <- arbitrarySigInput n ctx
+            return (ctx, i)
+        ],
+      serialTests =
+        [ SerialBox arbitraryScriptOp,
+          SerialBox arbitraryScript
+        ],
+      marshalTests =
+        [ MarshalBox $ do
+            n <- arbitraryNetwork
+            (_, _, ts) <- arbitraryTxSignature n ctx
+            return ((n, ctx), ts),
+          MarshalBox $ do
+            n <- arbitraryNetwork
+            o <- arbitraryScriptOutput n ctx
+            return (ctx, o),
+          MarshalBox $ do
+            n <- arbitraryNetwork
+            i <- arbitraryScriptInput n ctx
+            return ((n, ctx), i)
+        ]
+    }
 
 spec :: Spec
 spec = prepareContext $ \ctx -> do
-  testIdentity serialVals (readVals ctx) (jsonVals ctx) (netVals ctx)
+  testIdentity $ identityTests ctx
   describe "btc scripts" $ props btc ctx
   describe "bch scripts" $ props bch ctx
   describe "multi signatures" $

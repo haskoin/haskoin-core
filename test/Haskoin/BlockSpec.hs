@@ -9,6 +9,7 @@ where
 
 import Control.Monad
 import Control.Monad.State.Strict
+import Data.Default (def)
 import Data.Either (fromRight)
 import Data.Maybe (fromJust)
 import Data.String (fromString)
@@ -28,36 +29,36 @@ import Test.Hspec.QuickCheck
 import Test.QuickCheck
 import Text.Printf (printf)
 
-serialVals :: Ctx -> [SerialBox]
-serialVals ctx =
-  [ SerialBox (flip arbitraryBlock ctx =<< arbitraryNetwork),
-    SerialBox arbitraryBlockHash,
-    SerialBox arbitraryBlockHeader,
-    SerialBox arbitraryGetBlocks,
-    SerialBox arbitraryGetHeaders,
-    SerialBox arbitraryHeaders,
-    SerialBox arbitraryMerkleBlock,
-    SerialBox arbitraryBlockNode
-  ]
-
-readVals :: Ctx -> [ReadBox]
-readVals ctx =
-  [ ReadBox (flip arbitraryBlock ctx =<< arbitraryNetwork),
-    ReadBox arbitraryBlockHash,
-    ReadBox arbitraryBlockHeader,
-    ReadBox arbitraryGetBlocks,
-    ReadBox arbitraryGetHeaders,
-    ReadBox arbitraryHeaders,
-    ReadBox arbitraryMerkleBlock,
-    ReadBox arbitraryBlockNode
-  ]
-
-jsonVals :: Ctx -> [JsonBox]
-jsonVals ctx =
-  [ JsonBox (flip arbitraryBlock ctx =<< arbitraryNetwork),
-    JsonBox arbitraryBlockHash,
-    JsonBox arbitraryBlockHeader
-  ]
+identityTests :: Ctx -> IdentityTests
+identityTests ctx =
+  def
+    { readTests =
+        [ ReadBox (flip arbitraryBlock ctx =<< arbitraryNetwork),
+          ReadBox arbitraryBlockHash,
+          ReadBox arbitraryBlockHeader,
+          ReadBox arbitraryGetBlocks,
+          ReadBox arbitraryGetHeaders,
+          ReadBox arbitraryHeaders,
+          ReadBox arbitraryMerkleBlock,
+          ReadBox arbitraryBlockNode,
+          ReadBox arbitraryHeaderMemory
+        ],
+      jsonTests =
+        [ JsonBox (flip arbitraryBlock ctx =<< arbitraryNetwork),
+          JsonBox arbitraryBlockHash,
+          JsonBox arbitraryBlockHeader
+        ],
+      serialTests =
+        [ SerialBox (flip arbitraryBlock ctx =<< arbitraryNetwork),
+          SerialBox arbitraryBlockHash,
+          SerialBox arbitraryBlockHeader,
+          SerialBox arbitraryGetBlocks,
+          SerialBox arbitraryGetHeaders,
+          SerialBox arbitraryHeaders,
+          SerialBox arbitraryMerkleBlock,
+          SerialBox arbitraryBlockNode
+        ]
+    }
 
 myTime :: Timestamp
 myTime = 1499083075
@@ -74,7 +75,7 @@ chain net bh i = do
 
 spec :: Spec
 spec = prepareContext $ \ctx -> do
-  testIdentity (serialVals ctx) (readVals ctx) (jsonVals ctx) []
+  testIdentity $ identityTests ctx
   describe "blockchain headers" $ do
     it "gets best block on bchRegTest" $
       let net = bchRegTest

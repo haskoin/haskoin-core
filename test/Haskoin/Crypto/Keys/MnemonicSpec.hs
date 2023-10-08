@@ -26,6 +26,7 @@ spec =
     it "entropy to mnemonic sentence" toMnemonicTest
     it "mnemonic sentence to entropy" fromMnemonicTest
     it "mnemonic sentence to seed" mnemonicToSeedTest
+    it "mnemonic indices to seed" indicesToSeedTest
     it "mnemonic sentence with invalid checksum" fromMnemonicInvalidTest
     it "empty mnemonic sentence is invalid" $ sequence_ [emptyMnemonicTest]
     it "generate 12 words" $ property toMnemonic128
@@ -88,6 +89,15 @@ emptyMnemonicTest =
     case fromMnemonic "" of
       Right _ -> False
       Left err -> "fromMnemonic: empty mnemonic" `isPrefixOf` err
+
+indicesToSeedTest :: Assertion
+indicesToSeedTest =
+  assertEqual "" (seeds !! 1) $
+    encodeHex $
+      fromRight (error "Could not decode mnemonic seed from indices") $
+        indicesToSeed
+          "TREZOR"
+          [1019, 2015, 1790, 2039, 1983, 1533, 2031, 1919, 1019, 2015, 1790, 2040]
 
 ents :: [Text]
 ents =

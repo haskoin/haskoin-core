@@ -18,8 +18,10 @@ module Haskoin.Crypto.Keys.Mnemonic
     Passphrase,
     Seed,
     toMnemonic,
+    toMnemonicIndices,
     fromMnemonic,
     mnemonicToSeed,
+    indicesToSeed
   )
 where
 
@@ -62,21 +64,27 @@ pbkdfParams :: Parameters
 pbkdfParams = Parameters {iterCounts = 2048, outputLength = 64}
 
 -- | Provide intial 'Entropy' as a 'ByteString' of length multiple of 4 bytes.
--- Output a 'Mnemonic' sentence.
-toMnemonic :: Entropy -> Either String Mnemonic
-toMnemonic ent = do
+-- Output the indices corresponding to the mnemonic sentence (first word is 0,
+-- not 1).
+toMnemonicIndices :: Entropy -> Either String [Int]
+toMnemonicIndices ent = do
   when (B.null ent) $
     Left "toMnemonic: entropy can not be empty"
   when (remainder /= 0) $
     Left "toMnemonic: entropy must be multiples of 4 bytes"
   when (cs_len > 16) $
     Left "toMnemonic: maximum entropy is 64 bytes (512 bits)"
-  return ms
+  return $ bsToIndices $ ent `B.append` c
   where
     (cs_len, remainder) = B.length ent `quotRem` 4
     c = calcCS cs_len ent
-    indices = bsToIndices $ ent `B.append` c
-    ms = T.unwords $ map (wl !) indices
+
+-- | Provide intial 'Entropy' as a 'ByteString' of length multiple of 4 bytes.
+-- Output a 'Mnemonic' sentence.
+toMnemonic :: Entropy -> Either String Mnemonic
+toMnemonic ent = do
+    indices <- toMnemonicIndices ent
+    return $ T.unwords $ map (wl !) indices
 
 -- | Revert 'toMnemonic'. Do not use this to generate a 'Seed'. Instead use
 -- 'mnemonicToSeed'. This outputs the original 'Entropy' used to generate a
@@ -135,6 +143,12 @@ mnemonicToSeed pf ms = do
   ent <- fromMnemonic ms
   mnm <- toMnemonic ent
   return $ anyToSeed pf mnm
+
+-- | Get a 512-bit 'Seed' from a list of 'Mnemonic' indices (first word is 0,
+-- not 1). Will validate checksum. 'Passphrase' can be used to protect the
+-- 'Mnemonic'. Use an empty string as 'Passphrase' if none is required.
+indicesToSeed :: Passphrase -> [Int] -> Either String Seed
+indicesToSeed pf = mnemonicToSeed pf . T.unwords . map (wl !)
 
 -- | Get indices of words in word list.
 getIndices :: [Text] -> Either String [Int]

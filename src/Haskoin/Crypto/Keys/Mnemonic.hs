@@ -20,6 +20,8 @@ module Haskoin.Crypto.Keys.Mnemonic
     toMnemonic,
     fromMnemonic,
     mnemonicToSeed,
+    wordList,
+    wordListMap
   )
 where
 
@@ -76,7 +78,7 @@ toMnemonic ent = do
     (cs_len, remainder) = B.length ent `quotRem` 4
     c = calcCS cs_len ent
     indices = bsToIndices $ ent `B.append` c
-    ms = T.unwords $ map (wl !) indices
+    ms = T.unwords $ map (wordList !) indices
 
 -- | Revert 'toMnemonic'. Do not use this to generate a 'Seed'. Instead use
 -- 'mnemonicToSeed'. This outputs the original 'Entropy' used to generate a
@@ -142,7 +144,7 @@ getIndices ws
   | null n = return $ catMaybes i
   | otherwise = Left $ "getIndices: words not found: " ++ cs w
   where
-    i = map (`M.lookup` wl') ws
+    i = map (`M.lookup` wordListMap) ws
     n = elemIndices Nothing i
     w = T.unwords $ map (ws !!) n
 
@@ -174,12 +176,13 @@ bsToIndices bs =
     go 0 _ = []
     go n i = fromIntegral (i `mod` 2048) : go (n - 1) (i `shiftR` 11)
 
-wl' :: M.Map Text Int
-wl' = V.ifoldr' (flip M.insert) M.empty wl
+-- | Map of words to their position (index) in the word list.
+wordListMap :: M.Map Text Int
+wordListMap = V.ifoldr' (flip M.insert) M.empty wordList
 
 -- | Standard English dictionary from BIP-39 specification.
-wl :: Vector Text
-wl =
+wordList :: Vector Text
+wordList =
   V.fromListN
     2048
     [ "abandon",

@@ -5,12 +5,12 @@
 
 packages:
 - completed:
-    hackage: secp256k1-haskell-1.0.0@sha256:42e1dc0ddba74b752bddf7d55c19aa10b24ff6f51889a53bc07c2ff2107aca16,2082
+    hackage: secp256k1-haskell-1.1.0@sha256:37d65ec4352aa90a5cba7e26c0c9f11b4c740fcb40c527f0e04f066015f0ef3d,2235
     pantry-tree:
-      sha256: 7846a02f6292cb0179cdf7252b3832f74b3109079e45248c931791f951355702
-      size: 600
+      sha256: 54d3c988b19fd94007915ea578982b2a0dafaf95772ff2b50c12d998cb45c1dc
+      size: 882
   original:
-    hackage: secp256k1-haskell-1.0.0@sha256:42e1dc0ddba74b752bddf7d55c19aa10b24ff6f51889a53bc07c2ff2107aca16,2082
+    hackage: secp256k1-haskell-1.1.0@sha256:37d65ec4352aa90a5cba7e26c0c9f11b4c740fcb40c527f0e04f066015f0ef3d,2235
 snapshots:
 - completed:
     sha256: d4a54df12888fc5d1ef2d4ff987225fa7bedb2cff74385b33fbec4a384ebd619

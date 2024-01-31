@@ -13,7 +13,7 @@ packages:
     hackage: secp256k1-haskell-1.1.0@sha256:37d65ec4352aa90a5cba7e26c0c9f11b4c740fcb40c527f0e04f066015f0ef3d,2235
 snapshots:
 - completed:
-    sha256: d4a54df12888fc5d1ef2d4ff987225fa7bedb2cff74385b33fbec4a384ebd619
-    size: 644615
-    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/nightly/2023/8/2.yaml
-  original: nightly-2023-08-02
+    sha256: 1b4c2669e26fa828451830ed4725e4d406acc25a1fa24fcc039465dd13d7a575
+    size: 714100
+    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/22/6.yaml
+  original: lts-22.6

@@ -1,4 +1,4 @@
-resolver: nightly-2023-08-02
+resolver: lts-22.6
 nix:
   packages:
     - secp256k1

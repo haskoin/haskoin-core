@@ -1,3 +1,4 @@
+{-# LANGUAGE DuplicateRecordFields #-}
 -- |
 -- Module      : Haskoin.Transaction
 -- Copyright   : No rights reserved

@@ -1,3 +1,4 @@
+{-# LANGUAGE DuplicateRecordFields #-}
 -- |
 -- Module      : Haskoin.Block
 -- Copyright   : No rights reserved

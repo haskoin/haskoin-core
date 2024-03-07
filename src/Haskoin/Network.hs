@@ -1,3 +1,4 @@
+{-# LANGUAGE DuplicateRecordFields #-}
 -- |
 -- Module      : Haskoin.Network
 -- Copyright   : No rights reserved

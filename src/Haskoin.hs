@@ -1,3 +1,4 @@
+{-# LANGUAGE DuplicateRecordFields #-}
 -- |
 -- Module      : Haskoin
 -- Description : Bitcoin (BTC/BCH) Libraries for Haskell

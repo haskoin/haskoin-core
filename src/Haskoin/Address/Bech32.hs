@@ -150,9 +150,9 @@ bech32VerifyChecksum :: HRP -> [Word5] -> Maybe Bech32Encoding
 bech32VerifyChecksum hrp dat =
   let poly = bech32Polymod (bech32HRPExpand hrp ++ dat)
    in if
-          | poly == bech32Const Bech32 -> Just Bech32
-          | poly == bech32Const Bech32m -> Just Bech32m
-          | otherwise -> Nothing
+        | poly == bech32Const Bech32 -> Just Bech32
+        | poly == bech32Const Bech32m -> Just Bech32m
+        | otherwise -> Nothing
 
 -- | Maximum length of a Bech32 result.
 maxBech32Length :: Int

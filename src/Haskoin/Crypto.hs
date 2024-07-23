@@ -1,4 +1,5 @@
 {-# LANGUAGE DuplicateRecordFields #-}
+
 -- |
 -- Module      : Haskoin.Crypto
 -- Copyright   : No rights reserved

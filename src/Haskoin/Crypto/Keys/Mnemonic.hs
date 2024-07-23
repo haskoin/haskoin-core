@@ -21,7 +21,7 @@ module Haskoin.Crypto.Keys.Mnemonic
     fromMnemonic,
     mnemonicToSeed,
     wordList,
-    wordListMap
+    wordListMap,
   )
 where
 

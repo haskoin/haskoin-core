@@ -1,9 +1,11 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Haskoin.Transaction.PartialSpec (spec) where
 
@@ -11,7 +13,7 @@ import Control.Monad ((<=<))
 import Data.Aeson (FromJSON, parseJSON, withObject, (.:))
 import Data.Bifunctor (first)
 import Data.ByteString (ByteString)
-import Data.ByteString.Base64 (decodeBase64)
+import Data.ByteString.Base64 (decodeBase64Untyped)
 import Data.Bytes.Get
 import Data.Bytes.Put
 import Data.Bytes.Serial
@@ -605,7 +607,9 @@ parseComplexJSON ctx = withObject "ComplexPSBT" $ \obj -> do
           )
     parsePsbt =
       either fail pure
-        . (runGet (getPSBT ctx) <=< first Text.unpack . decodeBase64)
+        . ( runGet (getPSBT ctx)
+              <=< first Text.unpack . decodeBase64Untyped
+          )
         . encodeUtf8
     psbtField fieldName obj =
       obj .: fieldName >>= parsePsbt

@@ -1,7 +1,5 @@
-resolver: nightly-2024-07-23
+resolver: lts-23.0
 nix:
   packages:
     - secp256k1
     - pkg-config
-extra-deps:
-  - secp256k1-haskell-1.2.0@sha256:1a21581b0c54be26e1fb706d06dce51ef10cb72c13abfc3614a70189f23d6d50,2235
